@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="d-flex align-items-center mb-4">
+        <h4 class="mb-0" style="color: var(--ga-text-primary);">
+            <i class="bi bi-box-seam me-2"></i>Inventory
+        </h4>
+        <span id="inventoryCount" class="badge ms-2" style="background-color: var(--ga-accent);">0</span>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="card mb-4" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-body">
+            <form id="filterForm" class="row g-3 align-items-end">
+                <div class="col-md-3 col-sm-6">
+                    <label for="filterStatus" class="form-label small text-muted">Status</label>
+                    <select id="filterStatus" class="form-select form-select-sm"
+                            style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                        <option value="">All</option>
+                        <option value="active">Active</option>
+                        <option value="consumed">Consumed</option>
+                        <option value="expired">Expired</option>
+                        <option value="discarded">Discarded</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <label for="filterLocation" class="form-label small text-muted">Location</label>
+                    <select id="filterLocation" class="form-select form-select-sm"
+                            style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                        <option value="">All</option>
+                        <option value="fridge">Fridge</option>
+                        <option value="freezer">Freezer</option>
+                        <option value="pantry">Pantry</option>
+                        <option value="counter">Counter</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-sm-6 d-flex align-items-end">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="filterNeedsReview">
+                        <label class="form-check-label small" for="filterNeedsReview" style="color: var(--ga-text-secondary);">
+                            Needs Review
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <button type="submit" class="btn btn-sm w-100" style="background-color: var(--ga-accent); color: #fff;">
+                        <i class="bi bi-funnel me-1"></i>Apply
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="text-center py-5">
+        <div class="spinner-border text-success" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="text-muted mt-2 small">Loading inventory...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="text-center py-5 d-none">
+        <i class="bi bi-inbox fs-1 text-muted"></i>
+        <p class="text-muted mt-2">No inventory items found.</p>
+    </div>
+
+    <!-- Results Table -->
+    <div id="inventoryTableWrapper" class="table-responsive d-none">
+        <table class="table table-hover align-middle" id="inventoryTable"
+               style="color: var(--ga-text-primary);">
+            <thead>
+                <tr style="border-color: var(--ga-border);">
+                    <th class="small text-muted">Name</th>
+                    <th class="small text-muted">Brand</th>
+                    <th class="small text-muted">Status</th>
+                    <th class="small text-muted">Location</th>
+                    <th class="small text-muted">Quantity</th>
+                    <th class="small text-muted">Expiry</th>
+                    <th class="small text-muted">Price</th>
+                    <th class="small text-muted">Owner</th>
+                    <th class="small text-muted">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="inventoryBody">
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div id="paginationWrapper" class="d-flex justify-content-between align-items-center mt-3">
+            <span id="paginationInfo" class="small text-muted"></span>
+            <div>
+                <button id="prevPage" class="btn btn-sm btn-outline-secondary me-1" disabled>
+                    <i class="bi bi-chevron-left"></i> Prev
+                </button>
+                <button id="nextPage" class="btn btn-sm btn-outline-secondary">
+                    Next <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/inventory.js"></script>
+{% endblock %}

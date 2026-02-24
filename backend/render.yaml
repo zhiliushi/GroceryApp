@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: groceryapp-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: ALLOWED_ORIGINS
+        value: '["*"]'
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false  # Set in Render dashboard (paste entire JSON)
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: OPEN_FOOD_FACTS_API
+        value: https://world.openfoodfacts.org/api/v2
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: AI_MODEL_NAME
+        value: llama3.2
+    healthCheckPath: /health
+    autoDeploy: true

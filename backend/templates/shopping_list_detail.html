@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Shopping List — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="/shopping-lists" class="text-decoration-none" style="color: var(--ga-text-secondary);">
+        <i class="bi bi-arrow-left"></i> Back to Shopping Lists
+    </a>
+</div>
+
+<!-- Loading spinner -->
+<div id="loadingSpinner" class="spinner-container">
+    <div class="spinner-border text-success" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+
+<!-- Content (hidden until loaded) -->
+<div id="detailContent" class="d-none">
+    <!-- List info card -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 id="listName" class="mb-3" style="color: var(--ga-text-primary);">—</h5>
+            <div class="row">
+                <div class="col-sm-6">
+                    <small class="text-muted d-block">Owner</small>
+                    <span id="listOwner" style="color: var(--ga-text-primary);">—</span>
+                </div>
+                <div class="col-sm-6">
+                    <small class="text-muted d-block">Created Date</small>
+                    <span id="listCreated" style="color: var(--ga-text-primary);">—</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items table -->
+    <div class="card">
+        <div class="card-header">
+            <span style="color: var(--ga-text-primary);">Items</span>
+            <span id="itemCount" class="badge bg-secondary ms-2">0</span>
+        </div>
+        <div class="card-body p-0">
+            <!-- Empty state for items -->
+            <div id="itemsEmpty" class="empty-state d-none">
+                <i class="bi bi-bag d-block"></i>
+                <p class="mb-0">No items in this list.</p>
+            </div>
+
+            <!-- Items table -->
+            <div id="itemsTableContainer" class="d-none">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Quantity</th>
+                                <th>Unit</th>
+                                <th>Category</th>
+                                <th>Checked</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const targetUid = '{{ target_uid }}';
+        const listId = '{{ list_id }}';
+        const spinner = document.getElementById('loadingSpinner');
+        const detailContent = document.getElementById('detailContent');
+
+        try {
+            const data = await apiGet(`/api/admin/shopping-lists/${targetUid}/${listId}`);
+            spinner.classList.add('d-none');
+
+            if (!data || !data.list) {
+                showToast('Shopping list not found.', 'error');
+                return;
+            }
+
+            // Populate list info
+            document.getElementById('listName').textContent = data.list.name || '(Untitled)';
+            document.getElementById('listOwner').textContent = data.list.user_id || '—';
+            document.getElementById('listCreated').textContent = formatDate(data.list.createdDate);
+
+            // Populate items
+            const items = data.items || [];
+            document.getElementById('itemCount').textContent = items.length;
+
+            if (items.length === 0) {
+                document.getElementById('itemsEmpty').classList.remove('d-none');
+            } else {
+                const tbody = document.getElementById('itemsTableBody');
+
+                items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    const isChecked = item.checked === true;
+                    const strikeStyle = isChecked ? 'text-decoration: line-through; opacity: 0.6;' : '';
+
+                    tr.innerHTML = `
+                        <td style="${strikeStyle} color: var(--ga-text-primary);">${item.name || '—'}</td>
+                        <td style="${strikeStyle}">${item.quantity !== null && item.quantity !== undefined ? item.quantity : '—'}</td>
+                        <td style="${strikeStyle}">${item.unit || '—'}</td>
+                        <td style="${strikeStyle}">${item.category ? `<span class="badge bg-secondary">${item.category}</span>` : '—'}</td>
+                        <td>
+                            <i class="bi ${isChecked ? 'bi-check-circle-fill text-success' : 'bi-circle text-muted'}"></i>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('itemsTableContainer').classList.remove('d-none');
+            }
+
+            detailContent.classList.remove('d-none');
+        } catch (err) {
+            spinner.classList.add('d-none');
+            showToast('Failed to load shopping list: ' + err.message, 'error');
+        }
+    });
+</script>
+{% endblock %}

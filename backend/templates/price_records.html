@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Price Records — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div class="d-flex align-items-center">
+            <h4 class="mb-0" style="color: var(--ga-text-primary);">
+                <i class="bi bi-tag me-2"></i>Price Records
+            </h4>
+            <span id="recordCount" class="badge ms-2" style="background-color: var(--ga-accent);">0</span>
+        </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="card mb-3" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-body py-2">
+            <div class="input-group">
+                <span class="input-group-text" style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-secondary);">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" id="searchInput" class="form-control" placeholder="Search by barcode, product name, or store..."
+                       style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                <button id="searchBtn" class="btn btn-outline-secondary" type="button">Search</button>
+                <button id="clearBtn" class="btn btn-outline-secondary d-none" type="button">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Delete Bar -->
+    <div id="bulkBar" class="card mb-3 d-none" style="background-color: var(--ga-bg-card); border-color: var(--ga-accent);">
+        <div class="card-body py-2 d-flex align-items-center justify-content-between">
+            <span style="color: var(--ga-text-primary);">
+                <strong id="selectedCount">0</strong> record(s) selected
+            </span>
+            <button id="bulkDeleteBtn" class="btn btn-danger btn-sm" onclick="bulkDeleteRecords()">
+                <i class="bi bi-trash me-1"></i>Delete Selected
+            </button>
+        </div>
+    </div>
+
+    <!-- Price Records Card -->
+    <div class="card" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-body p-0">
+            <!-- Loading Spinner -->
+            <div id="loadingSpinner" class="text-center py-5">
+                <div class="spinner-border text-success" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="text-muted mt-2 small">Loading price records...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="text-center py-5 d-none">
+                <i class="bi bi-inbox fs-1 text-muted"></i>
+                <p class="text-muted mt-2">No price records found.</p>
+            </div>
+
+            <!-- Results Table -->
+            <div id="tableWrapper" class="table-responsive d-none">
+                <table class="table table-hover align-middle mb-0" style="color: var(--ga-text-primary);">
+                    <thead>
+                        <tr style="border-color: var(--ga-border);">
+                            <th class="small text-muted" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
+                            <th class="small text-muted">Barcode</th>
+                            <th class="small text-muted">Product</th>
+                            <th class="small text-muted">Price</th>
+                            <th class="small text-muted">Store</th>
+                            <th class="small text-muted">Location</th>
+                            <th class="small text-muted">User</th>
+                            <th class="small text-muted">Date</th>
+                            <th class="small text-muted">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div id="paginationWrapper" class="d-none">
+                <div class="d-flex align-items-center justify-content-between px-3 py-2" style="border-top: 1px solid var(--ga-border);">
+                    <span id="paginationInfo" class="small text-muted"></span>
+                    <div>
+                        <button id="prevPage" class="btn btn-sm btn-outline-secondary me-1" disabled>
+                            <i class="bi bi-chevron-left"></i> Prev
+                        </button>
+                        <button id="nextPage" class="btn btn-sm btn-outline-secondary" disabled>
+                            Next <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/price_records.js"></script>
+{% endblock %}

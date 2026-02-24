@@ -1,0 +1,27 @@
+{% if total_pages is defined and total_pages > 1 %}
+<nav>
+    <ul class="pagination pagination-sm justify-content-center mt-3">
+        <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ current_page - 1 }}{% if query_params %}&{{ query_params }}{% endif %}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == current_page %}
+        <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+        {% elif p <= 3 or p > total_pages - 2 or (p >= current_page - 1 and p <= current_page + 1) %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ p }}{% if query_params %}&{{ query_params }}{% endif %}">{{ p }}</a>
+        </li>
+        {% elif p == 4 or p == total_pages - 2 %}
+        <li class="page-item disabled"><span class="page-link">...</span></li>
+        {% endif %}
+        {% endfor %}
+        <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ current_page + 1 }}{% if query_params %}&{{ query_params }}{% endif %}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+    </ul>
+</nav>
+{% endif %}

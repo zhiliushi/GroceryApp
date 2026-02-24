@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1">Dashboard</h3>
+        <small class="text-muted" id="dashboardDate"></small>
+    </div>
+</div>
+
+<!-- User Info (shown during setup when not yet admin) -->
+<div class="card mb-4 d-none" id="userInfoCard">
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-person-circle fs-2 text-success"></i>
+            <div>
+                <div id="userInfoName" class="fw-bold"></div>
+                <div id="userInfoEmail" class="text-muted small"></div>
+                <div class="mt-1">
+                    <span class="badge bg-secondary" id="userInfoRole"></span>
+                    <code class="ms-2 small" id="userInfoUid" style="color: var(--ga-text-secondary);"></code>
+                </div>
+            </div>
+        </div>
+        <div class="mt-2 d-none" id="adminSetupHint">
+            <small class="text-warning"><i class="bi bi-info-circle me-1"></i>
+                To get admin access, set <code>ADMIN_UIDS</code> env var on Render with your UID above, then refresh.
+            </small>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-lg-2">
+        <div class="card stats-card">
+            <div class="stats-value" id="statTotalUsers">—</div>
+            <div class="stats-label">Total Users</div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card stats-card">
+            <div class="stats-value" id="statTotalItems">—</div>
+            <div class="stats-label">Total Items</div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card stats-card">
+            <div class="stats-value" id="statActiveItems">—</div>
+            <div class="stats-label">Active Items</div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card stats-card">
+            <div class="stats-value" id="statExpiredItems">—</div>
+            <div class="stats-label">Expired Items</div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card stats-card">
+            <div class="stats-value" id="statNeedsReview">—</div>
+            <div class="stats-label">Needs Review</div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card stats-card">
+            <div class="stats-value" id="statTotalFoodbanks">—</div>
+            <div class="stats-label">Total Foodbanks</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity & Quick Actions -->
+<div class="row g-3">
+    <!-- Recent Activity -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-clock-history me-2"></i>Recent Activity</span>
+                <a href="/inventory" class="btn btn-sm btn-outline-secondary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="spinner-container" id="recentLoading">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="table-responsive d-none" id="recentTableContainer">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Status</th>
+                                <th>Expiry</th>
+                                <th>Added</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="empty-state d-none" id="recentEmpty">
+                    <i class="bi bi-inbox d-block"></i>
+                    <p>No recent activity found.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning me-2"></i>Quick Actions
+            </div>
+            <div class="card-body d-grid gap-2">
+                <button class="btn btn-accent" onclick="seedFoodbanks()">
+                    <i class="bi bi-database-add me-2"></i>Seed Foodbanks
+                </button>
+                <button class="btn btn-outline-secondary" onclick="refreshFoodbanks()">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Refresh Foodbanks
+                </button>
+                <hr class="my-2" style="border-color: var(--ga-border);">
+                <a href="/users" class="btn btn-outline-secondary">
+                    <i class="bi bi-people me-2"></i>Manage Users
+                </a>
+                <a href="/needs-review" class="btn btn-outline-secondary">
+                    <i class="bi bi-flag me-2"></i>Review Items
+                </a>
+                <a href="/contributed-products" class="btn btn-outline-secondary">
+                    <i class="bi bi-clipboard-check me-2"></i>Contributed Products
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(async function() {
+    // Display current date
+    const now = new Date();
+    document.getElementById('dashboardDate').textContent = now.toLocaleDateString('en-MY', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    // Load user info
+    let isAdmin = false;
+    try {
+        const me = await apiGet('/api/me');
+        if (me && me.authenticated) {
+            const card = document.getElementById('userInfoCard');
+            card.classList.remove('d-none');
+            document.getElementById('userInfoName').textContent = me.display_name || 'User';
+            document.getElementById('userInfoEmail').textContent = me.email;
+            document.getElementById('userInfoRole').textContent = me.role;
+            document.getElementById('userInfoUid').textContent = 'UID: ' + me.uid;
+            isAdmin = me.role === 'admin';
+            if (!isAdmin) {
+                document.getElementById('adminSetupHint').classList.remove('d-none');
+            }
+        }
+    } catch (err) {
+        console.warn('Could not load user info:', err);
+    }
+
+    // Load dashboard stats (admin only)
+    try {
+        const data = await apiGet('/api/admin/dashboard');
+        if (data && !data.detail) {
+            document.getElementById('statTotalUsers').textContent = data.total_users ?? 0;
+            document.getElementById('statTotalItems').textContent = data.total_items ?? 0;
+            document.getElementById('statActiveItems').textContent = data.active_items ?? 0;
+            document.getElementById('statExpiredItems').textContent = data.expired_items ?? 0;
+            document.getElementById('statNeedsReview').textContent = data.needs_review_count ?? 0;
+            document.getElementById('statTotalFoodbanks').textContent = data.total_foodbanks ?? 0;
+        }
+    } catch (err) {
+        console.log('Dashboard stats not available (admin only):', err.message || err);
+    }
+
+    // Load recent activity (admin only)
+    try {
+        const items = await apiGet('/api/admin/inventory?limit=10');
+        const loading = document.getElementById('recentLoading');
+        const tableContainer = document.getElementById('recentTableContainer');
+        const emptyState = document.getElementById('recentEmpty');
+        const tbody = document.getElementById('recentTableBody');
+
+        loading.classList.add('d-none');
+
+        const list = items?.items || items || [];
+
+        if (Array.isArray(list) && list.length > 0) {
+            tableContainer.classList.remove('d-none');
+            tbody.innerHTML = list.map(item => `
+                <tr>
+                    <td>
+                        <strong>${item.name || item.product_name || '—'}</strong>
+                        ${item.brand ? `<br><small class="text-muted">${item.brand}</small>` : ''}
+                    </td>
+                    <td>${item.category || '—'}</td>
+                    <td>${statusBadge(item.status)}</td>
+                    <td>${formatDate(item.expiry_date)}</td>
+                    <td>${formatDate(item.created_at)}</td>
+                </tr>
+            `).join('');
+        } else {
+            emptyState.classList.remove('d-none');
+        }
+    } catch (err) {
+        document.getElementById('recentLoading').classList.add('d-none');
+        document.getElementById('recentEmpty').classList.remove('d-none');
+    }
+})();
+
+async function seedFoodbanks() {
+    if (!confirm('Seed foodbanks data? This will populate foodbank entries.')) return;
+    try {
+        const result = await apiPost('/api/foodbanks/seed');
+        if (result) {
+            showToast('Foodbanks seeded successfully.', 'success');
+            setTimeout(() => location.reload(), 1000);
+        }
+    } catch (err) {
+        console.error('Seed foodbanks failed:', err);
+        showToast('Failed to seed foodbanks.', 'error');
+    }
+}
+
+async function refreshFoodbanks() {
+    try {
+        const result = await apiPost('/api/foodbanks/refresh');
+        if (result) {
+            showToast('Foodbanks refreshed successfully.', 'success');
+            setTimeout(() => location.reload(), 1000);
+        }
+    } catch (err) {
+        console.error('Refresh foodbanks failed:', err);
+        showToast('Failed to refresh foodbanks.', 'error');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}{% if product_barcode %}Edit Product{% else %}Add Product{% endif %} — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="mb-4">
+        <a href="/products" class="text-decoration-none" style="color: var(--ga-text-secondary);">
+            <i class="bi bi-arrow-left"></i> Back to Products
+        </a>
+    </div>
+
+    <h4 class="mb-4" style="color: var(--ga-text-primary);">
+        {% if product_barcode %}Edit Product{% else %}Add Product{% endif %}
+    </h4>
+
+    <!-- Loading spinner (only for edit mode) -->
+    {% if product_barcode %}
+    <div id="formSpinner" class="text-center py-5">
+        <div class="spinner-border text-success" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card {% if product_barcode %}d-none{% endif %}" id="formCard"
+         style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-body">
+            <form id="productForm" onsubmit="return false;">
+                <input type="hidden" id="editBarcode" value="{{ product_barcode or '' }}">
+
+                <!-- Barcode + Lookup -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="pBarcode" class="form-label" style="color: var(--ga-text-secondary);">
+                            Barcode <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="pBarcode" required
+                                   {% if product_barcode %}readonly{% endif %}
+                                   placeholder="Enter barcode..."
+                                   style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                            {% if not product_barcode %}
+                            <button type="button" id="lookupBtn" class="btn btn-outline-info" onclick="lookupBarcode()">
+                                <i class="bi bi-search me-1"></i>Lookup
+                            </button>
+                            {% endif %}
+                        </div>
+                        <small class="text-muted">{% if not product_barcode %}Enter a barcode and click Lookup to pre-fill from Open Food Facts{% endif %}</small>
+                    </div>
+
+                    <!-- Source (read-only info) -->
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label" style="color: var(--ga-text-secondary);">Source</label>
+                        <input type="text" class="form-control" id="pSource" readonly value="manual"
+                               style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-secondary);">
+                    </div>
+                </div>
+
+                <!-- Lookup Status -->
+                <div id="lookupStatus" class="alert alert-info d-none mb-3" role="alert">
+                    <i class="bi bi-info-circle me-1"></i><span id="lookupMsg"></span>
+                </div>
+
+                <!-- Product Name -->
+                <div class="mb-3">
+                    <label for="pName" class="form-label" style="color: var(--ga-text-secondary);">
+                        Product Name <span class="text-danger">*</span>
+                    </label>
+                    <input type="text" class="form-control" id="pName" required
+                           placeholder="e.g. Chocolate Chip Cookies"
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+
+                <div class="row">
+                    <!-- Brands -->
+                    <div class="col-md-6 mb-3">
+                        <label for="pBrands" class="form-label" style="color: var(--ga-text-secondary);">Brands</label>
+                        <input type="text" class="form-control" id="pBrands"
+                               placeholder="e.g. Nestle"
+                               style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                    </div>
+
+                    <!-- Categories -->
+                    <div class="col-md-6 mb-3">
+                        <label for="pCategories" class="form-label" style="color: var(--ga-text-secondary);">Categories</label>
+                        <input type="text" class="form-control" id="pCategories"
+                               placeholder="e.g. Snacks, Biscuits"
+                               style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                    </div>
+                </div>
+
+                <!-- Image URL + Preview -->
+                <div class="mb-3">
+                    <label for="pImageUrl" class="form-label" style="color: var(--ga-text-secondary);">Image URL</label>
+                    <input type="url" class="form-control" id="pImageUrl"
+                           placeholder="https://..."
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+
+                <!-- Image Preview -->
+                <div id="imagePreview" class="mb-3 d-none">
+                    <img id="previewImg" src="" alt="Product image" class="rounded"
+                         style="max-height: 120px; object-fit: contain; background: #2a2a2a; padding: 8px;">
+                </div>
+
+                <hr style="border-color: var(--ga-border);">
+
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="/products" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="button" onclick="saveProduct()" class="btn btn-accent" id="btnSubmit">
+                        {% if product_barcode %}
+                            <i class="bi bi-check-lg me-1"></i>Update
+                        {% else %}
+                            <i class="bi bi-plus-lg me-1"></i>Create
+                        {% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/products.js"></script>
+{% endblock %}

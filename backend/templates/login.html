@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In — GroceryApp{% endblock %}
+
+{% block public_content %}
+<div class="login-container">
+    <div class="login-card card p-4">
+        <div class="text-center mb-4">
+            <i class="bi bi-cart3 fs-1 text-success"></i>
+            <h4 class="mt-2" style="color: var(--ga-text-primary);">GroceryApp</h4>
+            <p class="text-muted small">Sign in to manage your groceries</p>
+        </div>
+
+        <div id="loginError" class="alert alert-danger d-none" role="alert"></div>
+
+        <form id="loginForm">
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" required autofocus
+                       style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" required
+                       style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+            </div>
+            <button type="submit" class="btn btn-accent w-100">Sign In</button>
+        </form>
+
+        <div class="text-center mt-3">
+            <div class="d-flex align-items-center my-3">
+                <hr class="flex-grow-1" style="border-color: var(--ga-border);">
+                <span class="px-2 text-muted small">or</span>
+                <hr class="flex-grow-1" style="border-color: var(--ga-border);">
+            </div>
+            <button id="googleSignIn" class="btn btn-outline-light w-100">
+                <i class="bi bi-google me-2"></i>Sign in with Google
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

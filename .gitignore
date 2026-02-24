@@ -1,0 +1,115 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+ENV/
+env/
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+.coverage
+.pytest_cache/
+.tox/
+
+# Production
+/build
+/dist
+
+# Misc
+.DS_Store
+*.pem
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vs/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+.firebaserc
+
+# Credentials & Secrets
+serviceAccountKey.json
+credentials.json
+*.pem
+*.key
+*.crt
+.credentials/
+*firebase-adminsdk*.json
+mobile-app/android/local.properties
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Editor backup
+*~
+*.swp
+*.bak
+
+# React Native / Android build artifacts
+mobile-app/android/app/.cxx/
+mobile-app/android/app/build/
+mobile-app/android/.gradle/
+mobile-app/ios/build/
+mobile-app/ios/Pods/
+*.hprof
+
+# Windows reserved names (shouldn't exist)
+nul

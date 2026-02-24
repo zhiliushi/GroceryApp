@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Needs Review — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="d-flex align-items-center mb-4">
+        <h4 class="mb-0" style="color: var(--ga-text-primary);">
+            <i class="bi bi-flag-fill me-2 text-warning"></i>Needs Review
+        </h4>
+        <span id="reviewCount" class="badge ms-2 bg-warning text-dark">0</span>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="reviewLoading" class="text-center py-5">
+        <div class="spinner-border text-warning" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="text-muted mt-2 small">Loading items for review...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="reviewEmpty" class="text-center py-5 d-none">
+        <i class="bi bi-check-circle fs-1 text-success"></i>
+        <p class="text-muted mt-2">All clear! No items need review.</p>
+    </div>
+
+    <!-- Results Table -->
+    <div id="reviewTableWrapper" class="table-responsive d-none">
+        <table class="table table-hover align-middle" id="reviewTable"
+               style="color: var(--ga-text-primary);">
+            <thead>
+                <tr style="border-color: var(--ga-border);">
+                    <th class="small text-muted">Name</th>
+                    <th class="small text-muted">Brand</th>
+                    <th class="small text-muted">Status</th>
+                    <th class="small text-muted">Location</th>
+                    <th class="small text-muted">Quantity</th>
+                    <th class="small text-muted">Expiry</th>
+                    <th class="small text-muted">Price</th>
+                    <th class="small text-muted">Owner</th>
+                    <th class="small text-muted">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="reviewBody">
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', async function () {
+        const loading = document.getElementById('reviewLoading');
+        const emptyState = document.getElementById('reviewEmpty');
+        const tableWrapper = document.getElementById('reviewTableWrapper');
+        const countBadge = document.getElementById('reviewCount');
+        const tbody = document.getElementById('reviewBody');
+
+        try {
+            const data = await apiGet('/api/admin/needs-review?limit=50');
+            if (!data) return;
+
+            const count = data.count || 0;
+            if (countBadge) countBadge.textContent = count;
+
+            if (loading) loading.classList.add('d-none');
+
+            if (!data.items || data.items.length === 0) {
+                if (emptyState) emptyState.classList.remove('d-none');
+                return;
+            }
+
+            tbody.innerHTML = '';
+            data.items.forEach(function (item) {
+                const tr = document.createElement('tr');
+                tr.style.borderColor = 'var(--ga-border)';
+
+                const ownerShort = item.user_id
+                    ? item.user_id.substring(0, 8) + '...'
+                    : '\u2014';
+
+                const quantityStr = item.quantity != null
+                    ? item.quantity + (item.unit ? ' ' + item.unit : '')
+                    : '\u2014';
+
+                function esc(str) {
+                    if (!str) return '\u2014';
+                    const d = document.createElement('div');
+                    d.textContent = str;
+                    return d.innerHTML;
+                }
+
+                tr.innerHTML =
+                    '<td>' + esc(item.name) + '</td>' +
+                    '<td>' + esc(item.brand) + '</td>' +
+                    '<td>' + statusBadge(item.status) + '</td>' +
+                    '<td class="text-capitalize">' + esc(item.storage_location) + '</td>' +
+                    '<td>' + quantityStr + '</td>' +
+                    '<td>' + formatDate(item.expiry_date) + '</td>' +
+                    '<td>' + formatCurrency(item.price) + '</td>' +
+                    '<td><span class="small text-muted" title="' + esc(item.user_id) + '">' + esc(ownerShort) + '</span></td>' +
+                    '<td>' +
+                        '<a href="/inventory/' + encodeURIComponent(item.user_id) + '/' + encodeURIComponent(item.id) + '"' +
+                        '   class="btn btn-sm btn-outline-warning">' +
+                        '   <i class="bi bi-pencil-square me-1"></i>Review' +
+                        '</a>' +
+                    '</td>';
+
+                tbody.appendChild(tr);
+            });
+
+            if (tableWrapper) tableWrapper.classList.remove('d-none');
+
+        } catch (err) {
+            console.error('Failed to load needs-review items:', err);
+            if (loading) loading.classList.add('d-none');
+            showToast('Failed to load items needing review.', 'error');
+        }
+    });
+</script>
+{% endblock %}

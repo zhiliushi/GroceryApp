@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Users — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-0">
+            Users
+            <span class="badge bg-secondary fs-6 align-middle d-none" id="userCountBadge"></span>
+        </h3>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <!-- Loading spinner -->
+        <div class="spinner-container" id="usersLoading">
+            <div class="spinner-border text-success" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+
+        <!-- Users table -->
+        <div class="table-responsive d-none" id="usersTableContainer">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 48px;"></th>
+                        <th>Email</th>
+                        <th>Display Name</th>
+                        <th>Role</th>
+                        <th>Created</th>
+                        <th>Last Login</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Empty state -->
+        <div class="empty-state d-none" id="usersEmpty">
+            <i class="bi bi-people d-block"></i>
+            <p>No users found.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(async function() {
+    try {
+        const data = await apiGet('/api/admin/users');
+        const loading = document.getElementById('usersLoading');
+        const tableContainer = document.getElementById('usersTableContainer');
+        const emptyState = document.getElementById('usersEmpty');
+        const tbody = document.getElementById('usersTableBody');
+        const countBadge = document.getElementById('userCountBadge');
+
+        loading.classList.add('d-none');
+
+        const users = data?.users || [];
+        const count = data?.count ?? users.length;
+
+        if (count > 0) {
+            countBadge.textContent = count;
+            countBadge.classList.remove('d-none');
+        }
+
+        if (users.length > 0) {
+            tableContainer.classList.remove('d-none');
+            tbody.innerHTML = users.map(user => {
+                const initials = getInitials(user.display_name || user.email);
+                const isAdmin = user.role === 'admin';
+                const roleBadgeClass = isAdmin ? 'badge-active' : 'bg-secondary';
+                const toggleLabel = isAdmin ? 'Remove Admin' : 'Make Admin';
+                const toggleBtnClass = isAdmin ? 'btn-outline-warning' : 'btn-outline-success';
+
+                return `
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center justify-content-center rounded-circle"
+                                 style="width: 36px; height: 36px; background-color: var(--ga-accent); color: #fff; font-size: 0.8rem; font-weight: 600;">
+                                ${initials}
+                            </div>
+                        </td>
+                        <td>
+                            <a href="/users/${user.uid}" style="color: var(--ga-accent); text-decoration: none;">
+                                ${user.email || '—'}
+                            </a>
+                        </td>
+                        <td>${user.display_name || '—'}</td>
+                        <td><span class="badge ${roleBadgeClass}">${user.role || 'user'}</span></td>
+                        <td>${formatDate(user.created_at)}</td>
+                        <td>${formatDateTime(user.last_login)}</td>
+                        <td>
+                            <button class="btn btn-sm ${toggleBtnClass}"
+                                    onclick="toggleRole('${user.uid}', '${user.role || 'user'}')"
+                                    id="roleBtn-${user.uid}">
+                                ${toggleLabel}
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            emptyState.classList.remove('d-none');
+        }
+    } catch (err) {
+        console.error('Failed to load users:', err);
+        document.getElementById('usersLoading').classList.add('d-none');
+        document.getElementById('usersEmpty').classList.remove('d-none');
+        showToast('Failed to load users.', 'error');
+    }
+})();
+
+function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+}
+
+async function toggleRole(uid, currentRole) {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    const action = newRole === 'admin' ? 'grant admin privileges to' : 'remove admin privileges from';
+
+    if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+
+    const btn = document.getElementById(`roleBtn-${uid}`);
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Updating...';
+
+    try {
+        const result = await apiPut(`/api/admin/users/${uid}/role`, { role: newRole });
+        if (result) {
+            showToast(`User role updated to ${newRole}.`, 'success');
+            setTimeout(() => location.reload(), 800);
+        }
+    } catch (err) {
+        console.error('Failed to update role:', err);
+        showToast('Failed to update user role.', 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+</script>
+{% endblock %}

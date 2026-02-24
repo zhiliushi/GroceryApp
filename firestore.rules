@@ -1,0 +1,148 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------------------------------------------------------------
+    // Helper functions
+    // -----------------------------------------------------------------------
+
+    // The requesting user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // The requesting user owns this user document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // The incoming data has a required string field
+    function hasString(field) {
+      return field in request.resource.data
+          && request.resource.data[field] is string
+          && request.resource.data[field].size() > 0;
+    }
+
+    // The incoming data has a required number field
+    function hasNumber(field) {
+      return field in request.resource.data
+          && request.resource.data[field] is number;
+    }
+
+    // -----------------------------------------------------------------------
+    // User profile: /users/{userId}
+    // -----------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+                    && hasString('email')
+                    && hasString('tier')
+                    && request.resource.data.tier in ['free', 'paid'];
+      allow update: if isOwner(userId)
+                    && (!('tier' in request.resource.data)
+                        || request.resource.data.tier in ['free', 'paid']);
+      allow delete: if isOwner(userId);
+
+      // ---------------------------------------------------------------------
+      // Inventory items: /users/{userId}/grocery_items/{itemId}
+      // ---------------------------------------------------------------------
+
+      match /grocery_items/{itemId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+                      && hasString('name')
+                      && hasString('categoryId')
+                      && hasNumber('quantity')
+                      && hasString('unitId')
+                      && hasString('location')
+                      && hasString('status')
+                      && request.resource.data.status in ['active', 'consumed', 'expired', 'discarded']
+                      && request.resource.data.location in ['fridge', 'pantry', 'freezer'];
+        allow update: if isOwner(userId)
+                      && (!('status' in request.resource.data)
+                          || request.resource.data.status in ['active', 'consumed', 'expired', 'discarded'])
+                      && (!('location' in request.resource.data)
+                          || request.resource.data.location in ['fridge', 'pantry', 'freezer']);
+        allow delete: if isOwner(userId);
+      }
+
+      // ---------------------------------------------------------------------
+      // Shopping lists: /users/{userId}/shopping_lists/{listId}
+      // ---------------------------------------------------------------------
+
+      match /shopping_lists/{listId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+                      && hasString('name')
+                      && 'isCompleted' in request.resource.data
+                      && request.resource.data.isCompleted is bool;
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+
+        // -----------------------------------------------------------------
+        // List items: /users/{userId}/shopping_lists/{listId}/items/{itemId}
+        // -----------------------------------------------------------------
+
+        match /items/{itemId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId)
+                        && hasString('itemName')
+                        && hasNumber('quantity')
+                        && hasString('unitId')
+                        && hasString('categoryId')
+                        && 'isPurchased' in request.resource.data
+                        && request.resource.data.isPurchased is bool;
+          allow update: if isOwner(userId);
+          allow delete: if isOwner(userId);
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Analytics: /users/{userId}/analytics/{eventId}
+      // ---------------------------------------------------------------------
+
+      match /analytics/{eventId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+                      && hasString('eventType')
+                      && hasNumber('timestamp');
+        // Analytics events are immutable — no updates allowed
+        allow update: if false;
+        allow delete: if isOwner(userId);
+      }
+
+      // ---------------------------------------------------------------------
+      // Price records: /users/{userId}/price_records/{recordId}
+      // ---------------------------------------------------------------------
+
+      match /price_records/{recordId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+                      && hasString('barcode')
+                      && hasNumber('price')
+                      && hasString('store_name')
+                      && hasNumber('created_at');
+        allow update: if false;  // Price records are immutable
+        allow delete: if isOwner(userId);
+      }
+
+      // ---------------------------------------------------------------------
+      // Sync metadata: /users/{userId}/sync_meta/{docId}
+      // ---------------------------------------------------------------------
+
+      match /sync_meta/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Default: deny all access to any other paths
+    // -----------------------------------------------------------------------
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

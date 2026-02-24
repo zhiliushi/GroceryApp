@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="d-flex align-items-center mb-4">
+        <h4 class="mb-0" style="color: var(--ga-text-primary);">
+            <i class="bi bi-gear me-2"></i>Settings
+        </h4>
+    </div>
+
+    <div class="row g-4">
+        <!-- Account Section -->
+        <div class="col-lg-6">
+            <div class="card" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+                <div class="card-header" style="border-color: var(--ga-border);">
+                    <i class="bi bi-person-circle me-2"></i>Account
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label small" style="color: var(--ga-text-secondary);">Email</label>
+                        <p class="mb-0" style="color: var(--ga-text-primary);">{{ user.email }}</p>
+                    </div>
+                    <div>
+                        <label class="form-label small" style="color: var(--ga-text-secondary);">Role</label>
+                        <p class="mb-0">
+                            <span class="badge" style="background-color: var(--ga-accent);">{{ user.role }}</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Application Section -->
+        <div class="col-lg-6">
+            <div class="card" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+                <div class="card-header" style="border-color: var(--ga-border);">
+                    <i class="bi bi-info-circle me-2"></i>Application
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label small" style="color: var(--ga-text-secondary);">Version</label>
+                        <p class="mb-0" style="color: var(--ga-text-primary);">GroceryApp Web v2.2.0</p>
+                    </div>
+                    <div>
+                        <label class="form-label small" style="color: var(--ga-text-secondary);">Platform</label>
+                        <p class="mb-0" style="color: var(--ga-text-primary);">Web Admin Interface</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FSM Engine Section -->
+        <div class="col-12">
+            <div class="card" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+                <div class="card-header" style="border-color: var(--ga-border);">
+                    <i class="bi bi-diagram-3 me-2"></i>FSM Engine
+                </div>
+                <div class="card-body">
+                    <p class="small mb-3" style="color: var(--ga-text-secondary);">
+                        Available finite state machines that govern application workflows.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" style="color: var(--ga-text-primary);">
+                            <thead>
+                                <tr style="border-color: var(--ga-border);">
+                                    <th class="small text-muted">State Machine</th>
+                                    <th class="small text-muted">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="border-color: var(--ga-border);">
+                                    <td>
+                                        <i class="bi bi-arrow-repeat me-1 text-success"></i>
+                                        <strong>Item Lifecycle</strong>
+                                    </td>
+                                    <td class="small" style="color: var(--ga-text-secondary);">
+                                        Manages item states from active through consumed, expired, or discarded.
+                                        Handles transitions triggered by user actions and scheduled expiry checks.
+                                    </td>
+                                </tr>
+                                <tr style="border-color: var(--ga-border);">
+                                    <td>
+                                        <i class="bi bi-check2-square me-1 text-info"></i>
+                                        <strong>Review Workflow</strong>
+                                    </td>
+                                    <td class="small" style="color: var(--ga-text-secondary);">
+                                        Governs the contributed product review pipeline from pending_review
+                                        through approved or rejected by an admin reviewer.
+                                    </td>
+                                </tr>
+                                <tr style="border-color: var(--ga-border);">
+                                    <td>
+                                        <i class="bi bi-heart me-1 text-warning"></i>
+                                        <strong>Foodbank Pipeline</strong>
+                                    </td>
+                                    <td class="small" style="color: var(--ga-text-secondary);">
+                                        Coordinates foodbank data ingestion, validation, geocoding,
+                                        and availability status updates for donation matching.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

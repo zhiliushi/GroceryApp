@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block title %}User Detail — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="/users" class="text-decoration-none" style="color: var(--ga-text-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>Back to Users
+    </a>
+</div>
+
+<!-- User Info Card -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="spinner-container" id="userInfoLoading">
+            <div class="spinner-border text-success" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+        <div class="d-none" id="userInfoContent">
+            <div class="d-flex align-items-center mb-3">
+                <div class="d-flex align-items-center justify-content-center rounded-circle me-3"
+                     style="width: 56px; height: 56px; background-color: var(--ga-accent); color: #fff; font-size: 1.2rem; font-weight: 600;"
+                     id="userAvatar">
+                </div>
+                <div>
+                    <h4 class="mb-0" id="userDisplayName">—</h4>
+                    <span class="text-muted" id="userEmail">—</span>
+                </div>
+                <span class="badge ms-3" id="userRoleBadge">—</span>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <small class="text-muted d-block">UID</small>
+                    <code id="userUid" style="color: var(--ga-text-secondary); font-size: 0.85rem;">—</code>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-muted d-block">Created</small>
+                    <span id="userCreated">—</span>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-muted d-block">Last Login</small>
+                    <span id="userLastLogin">—</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3" role="tablist" style="border-bottom-color: var(--ga-border);">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="inventoryTab" data-bs-toggle="tab" data-bs-target="#inventoryPane"
+                type="button" role="tab" aria-controls="inventoryPane" aria-selected="true">
+            <i class="bi bi-box-seam me-1"></i>Inventory
+            <span class="badge bg-secondary ms-1 d-none" id="inventoryCountBadge"></span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="shoppingTab" data-bs-toggle="tab" data-bs-target="#shoppingPane"
+                type="button" role="tab" aria-controls="shoppingPane" aria-selected="false">
+            <i class="bi bi-list-check me-1"></i>Shopping Lists
+            <span class="badge bg-secondary ms-1 d-none" id="shoppingCountBadge"></span>
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- Inventory Tab -->
+    <div class="tab-pane fade show active" id="inventoryPane" role="tabpanel" aria-labelledby="inventoryTab">
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="spinner-container" id="inventoryLoading">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="table-responsive d-none" id="inventoryTableContainer">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Quantity</th>
+                                <th>Status</th>
+                                <th>Expiry</th>
+                                <th>Added</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="empty-state d-none" id="inventoryEmpty">
+                    <i class="bi bi-box-seam d-block"></i>
+                    <p>No inventory items found for this user.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shopping Lists Tab -->
+    <div class="tab-pane fade" id="shoppingPane" role="tabpanel" aria-labelledby="shoppingTab">
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="spinner-container" id="shoppingLoading">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="d-none" id="shoppingContent">
+                </div>
+                <div class="empty-state d-none" id="shoppingEmpty">
+                    <i class="bi bi-list-check d-block"></i>
+                    <p>No shopping lists found for this user.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const targetUid = '{{ target_uid }}';
+
+(async function() {
+    // Load user info
+    try {
+        const user = await apiGet(`/api/admin/users/${targetUid}`);
+        const loading = document.getElementById('userInfoLoading');
+        const content = document.getElementById('userInfoContent');
+
+        loading.classList.add('d-none');
+        content.classList.remove('d-none');
+
+        if (user) {
+            const displayName = user.display_name || user.email || '—';
+            document.getElementById('userDisplayName').textContent = displayName;
+            document.getElementById('userEmail').textContent = user.email || '—';
+            document.getElementById('userUid').textContent = user.uid || targetUid;
+            document.getElementById('userCreated').textContent = formatDate(user.created_at);
+            document.getElementById('userLastLogin').textContent = formatDateTime(user.last_login);
+
+            // Avatar initials
+            const initials = getInitials(displayName);
+            document.getElementById('userAvatar').textContent = initials;
+
+            // Role badge
+            const badge = document.getElementById('userRoleBadge');
+            const isAdmin = user.role === 'admin';
+            badge.textContent = user.role || 'user';
+            badge.classList.add(isAdmin ? 'badge-active' : 'bg-secondary');
+        }
+    } catch (err) {
+        console.error('Failed to load user info:', err);
+        document.getElementById('userInfoLoading').classList.add('d-none');
+        showToast('Failed to load user details.', 'error');
+    }
+
+    // Load inventory
+    try {
+        const data = await apiGet('/api/admin/inventory?limit=50');
+        const loading = document.getElementById('inventoryLoading');
+        const tableContainer = document.getElementById('inventoryTableContainer');
+        const emptyState = document.getElementById('inventoryEmpty');
+        const tbody = document.getElementById('inventoryTableBody');
+        const countBadge = document.getElementById('inventoryCountBadge');
+
+        loading.classList.add('d-none');
+
+        const allItems = data?.items || data || [];
+        const items = Array.isArray(allItems)
+            ? allItems.filter(item => item.user_id === targetUid || item.uid === targetUid)
+            : [];
+
+        if (items.length > 0) {
+            countBadge.textContent = items.length;
+            countBadge.classList.remove('d-none');
+            tableContainer.classList.remove('d-none');
+            tbody.innerHTML = items.map(item => `
+                <tr>
+                    <td>
+                        <strong>${item.name || item.product_name || '—'}</strong>
+                        ${item.brand ? `<br><small class="text-muted">${item.brand}</small>` : ''}
+                    </td>
+                    <td>${item.category || '—'}</td>
+                    <td>${item.quantity ?? '—'}${item.unit ? ' ' + item.unit : ''}</td>
+                    <td>${statusBadge(item.status)}</td>
+                    <td>${formatDate(item.expiry_date)}</td>
+                    <td>${formatDate(item.created_at)}</td>
+                </tr>
+            `).join('');
+        } else {
+            emptyState.classList.remove('d-none');
+        }
+    } catch (err) {
+        console.error('Failed to load inventory:', err);
+        document.getElementById('inventoryLoading').classList.add('d-none');
+        document.getElementById('inventoryEmpty').classList.remove('d-none');
+    }
+
+    // Load shopping lists
+    try {
+        const data = await apiGet('/api/admin/shopping-lists');
+        const loading = document.getElementById('shoppingLoading');
+        const content = document.getElementById('shoppingContent');
+        const emptyState = document.getElementById('shoppingEmpty');
+        const countBadge = document.getElementById('shoppingCountBadge');
+
+        loading.classList.add('d-none');
+
+        const allLists = data?.shopping_lists || data?.lists || data || [];
+        const lists = Array.isArray(allLists)
+            ? allLists.filter(list => list.user_id === targetUid || list.uid === targetUid)
+            : [];
+
+        if (lists.length > 0) {
+            countBadge.textContent = lists.length;
+            countBadge.classList.remove('d-none');
+            content.classList.remove('d-none');
+            content.innerHTML = lists.map(list => {
+                const itemCount = list.items?.length || list.item_count || 0;
+                return `
+                    <div class="border-bottom p-3" style="border-color: var(--ga-border) !important;">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${list.name || 'Untitled List'}</strong>
+                                <br>
+                                <small class="text-muted">
+                                    ${itemCount} item${itemCount !== 1 ? 's' : ''}
+                                    &middot; Created ${formatDate(list.created_at)}
+                                </small>
+                            </div>
+                            <div>
+                                ${statusBadge(list.status || 'active')}
+                            </div>
+                        </div>
+                        ${list.items && list.items.length > 0 ? `
+                            <div class="mt-2">
+                                <ul class="list-unstyled mb-0">
+                                    ${list.items.slice(0, 5).map(li => `
+                                        <li class="small text-muted">
+                                            <i class="bi bi-${li.checked ? 'check-square' : 'square'} me-1"></i>
+                                            ${li.name || li.product_name || '—'}
+                                            ${li.quantity ? `<span class="text-muted"> x${li.quantity}</span>` : ''}
+                                        </li>
+                                    `).join('')}
+                                    ${list.items.length > 5 ? `<li class="small text-muted">... and ${list.items.length - 5} more</li>` : ''}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        } else {
+            emptyState.classList.remove('d-none');
+        }
+    } catch (err) {
+        console.error('Failed to load shopping lists:', err);
+        document.getElementById('shoppingLoading').classList.add('d-none');
+        document.getElementById('shoppingEmpty').classList.remove('d-none');
+    }
+})();
+
+function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+}
+</script>
+{% endblock %}

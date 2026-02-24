@@ -1,0 +1,85 @@
+<nav class="sidebar">
+    <div class="p-3">
+        <a href="/dashboard" class="text-decoration-none d-flex align-items-center mb-3">
+            <i class="bi bi-cart3 fs-4 text-success"></i>
+            <span class="brand-text ms-2 fw-bold" style="color: var(--ga-accent);">GroceryApp</span>
+        </a>
+    </div>
+
+    <ul class="nav flex-column px-2 flex-grow-1">
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/dashboard">
+                <i class="bi bi-speedometer2"></i> <span>Dashboard</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'inventory' %}active{% endif %}" href="/inventory">
+                <i class="bi bi-box-seam"></i> <span>Inventory</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'shopping_lists' %}active{% endif %}" href="/shopping-lists">
+                <i class="bi bi-list-check"></i> <span>Shopping Lists</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'foodbanks' %}active{% endif %}" href="/foodbanks">
+                <i class="bi bi-heart"></i> <span>Foodbanks</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'analytics' %}active{% endif %}" href="/analytics">
+                <i class="bi bi-graph-up"></i> <span>Analytics</span>
+            </a>
+        </li>
+
+        {% if user.is_admin %}
+        <li class="nav-item mt-3">
+            <small class="text-muted px-3" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px;">
+                <span>Admin</span>
+            </small>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'products' %}active{% endif %}" href="/products">
+                <i class="bi bi-database"></i> <span>Products</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'users' %}active{% endif %}" href="/users">
+                <i class="bi bi-people"></i> <span>Users</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'contributed' %}active{% endif %}" href="/contributed-products">
+                <i class="bi bi-clipboard-check"></i> <span>Contributed</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'needs_review' %}active{% endif %}" href="/needs-review">
+                <i class="bi bi-flag"></i> <span>Needs Review</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'price_records' %}active{% endif %}" href="/price-records">
+                <i class="bi bi-tag"></i> <span>Price Records</span>
+            </a>
+        </li>
+        {% endif %}
+
+        <li class="nav-item">
+            <a class="nav-link {% if active_page == 'settings' %}active{% endif %}" href="/settings">
+                <i class="bi bi-gear"></i> <span>Settings</span>
+            </a>
+        </li>
+    </ul>
+
+    <div class="p-3 border-top" style="border-color: var(--ga-border) !important;">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-person-circle text-muted"></i>
+            <small class="user-email ms-2 text-muted text-truncate" style="max-width: 160px;">{{ user.email }}</small>
+        </div>
+        <button onclick="signOut()" class="btn btn-sm btn-outline-secondary w-100 mt-2">
+            <i class="bi bi-box-arrow-right"></i> <span>Sign Out</span>
+        </button>
+    </div>
+</nav>

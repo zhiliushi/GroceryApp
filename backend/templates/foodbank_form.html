@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}{% if foodbank_id %}Edit Foodbank{% else %}New Foodbank{% endif %} — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="/foodbanks" class="text-decoration-none" style="color: var(--ga-text-secondary);">
+        <i class="bi bi-arrow-left"></i> Back to Foodbanks
+    </a>
+</div>
+
+<h4 class="mb-4" style="color: var(--ga-text-primary);">
+    {% if foodbank_id %}Edit Foodbank{% else %}New Foodbank{% endif %}
+</h4>
+
+<!-- Loading spinner (only for edit mode) -->
+{% if foodbank_id %}
+<div id="formSpinner" class="spinner-container">
+    <div class="spinner-border text-success" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+{% endif %}
+
+<div class="card {% if foodbank_id %}d-none{% endif %}" id="formCard">
+    <div class="card-body">
+        <form id="foodbankForm" onsubmit="return false;">
+            <input type="hidden" id="foodbankId" value="{{ foodbank_id or '' }}">
+
+            <div class="row">
+                <!-- Name -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbName" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="fbName" required
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+
+                <!-- Country -->
+                <div class="col-md-3 mb-3">
+                    <label for="fbCountry" class="form-label">Country <span class="text-danger">*</span></label>
+                    <select class="form-select" id="fbCountry" required
+                            style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                        <option value="MY" selected>Malaysia (MY)</option>
+                        <option value="SG">Singapore (SG)</option>
+                        <option value="US">United States (US)</option>
+                    </select>
+                </div>
+
+                <!-- State -->
+                <div class="col-md-3 mb-3">
+                    <label for="fbState" class="form-label">State <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="fbState" required
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="mb-3">
+                <label for="fbDescription" class="form-label">Description</label>
+                <textarea class="form-control" id="fbDescription" rows="3"
+                          style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);"></textarea>
+            </div>
+
+            <div class="row">
+                <!-- Location Name -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbLocationName" class="form-label">Location Name</label>
+                    <input type="text" class="form-control" id="fbLocationName"
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+
+                <!-- Location Link -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbLocationLink" class="form-label">Location Link (URL)</label>
+                    <input type="url" class="form-control" id="fbLocationLink" placeholder="https://..."
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+            </div>
+
+            <!-- Location Address -->
+            <div class="mb-3">
+                <label for="fbLocationAddress" class="form-label">Location Address</label>
+                <input type="text" class="form-control" id="fbLocationAddress"
+                       style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+            </div>
+
+            <div class="row">
+                <!-- Latitude -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbLatitude" class="form-label">Latitude</label>
+                    <input type="number" class="form-control" id="fbLatitude" step="any"
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+
+                <!-- Longitude -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbLongitude" class="form-label">Longitude</label>
+                    <input type="number" class="form-control" id="fbLongitude" step="any"
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Source URL -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbSourceUrl" class="form-label">Source URL</label>
+                    <input type="url" class="form-control" id="fbSourceUrl" placeholder="https://..."
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+
+                <!-- Source Name -->
+                <div class="col-md-6 mb-3">
+                    <label for="fbSourceName" class="form-label">Source Name</label>
+                    <input type="text" class="form-control" id="fbSourceName"
+                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                </div>
+            </div>
+
+            <hr style="border-color: var(--ga-border);">
+
+            <div class="d-flex justify-content-end gap-2">
+                <a href="/foodbanks" class="btn btn-outline-secondary">Cancel</a>
+                <button type="button" onclick="saveFoodbank('{{ foodbank_id or '' }}')" class="btn btn-accent" id="btnSubmit">
+                    {% if foodbank_id %}
+                        <i class="bi bi-check-lg"></i> Update
+                    {% else %}
+                        <i class="bi bi-plus-lg"></i> Create
+                    {% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/foodbanks.js"></script>
+{% endblock %}

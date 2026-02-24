@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Shopping Lists — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <h4 class="mb-0" style="color: var(--ga-text-primary);">Shopping Lists</h4>
+    <span id="listCount" class="badge bg-secondary ms-2 d-none">0</span>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <!-- Loading spinner -->
+        <div id="loadingSpinner" class="spinner-container">
+            <div class="spinner-border text-success" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+
+        <!-- Empty state -->
+        <div id="emptyState" class="empty-state d-none">
+            <i class="bi bi-list-check d-block"></i>
+            <p class="mb-0">No shopping lists found.</p>
+        </div>
+
+        <!-- Data table -->
+        <div id="tableContainer" class="d-none">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Owner</th>
+                            <th>Created Date</th>
+                            <th>Items</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listsTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const spinner = document.getElementById('loadingSpinner');
+        const emptyState = document.getElementById('emptyState');
+        const tableContainer = document.getElementById('tableContainer');
+        const tbody = document.getElementById('listsTableBody');
+        const countBadge = document.getElementById('listCount');
+
+        try {
+            const data = await apiGet('/api/admin/shopping-lists?limit=50');
+            spinner.classList.add('d-none');
+
+            if (!data || !data.lists || data.lists.length === 0) {
+                emptyState.classList.remove('d-none');
+                return;
+            }
+
+            countBadge.textContent = data.count;
+            countBadge.classList.remove('d-none');
+
+            data.lists.forEach(list => {
+                const tr = document.createElement('tr');
+                const truncatedUid = list.user_id
+                    ? list.user_id.substring(0, 8) + '...'
+                    : '—';
+
+                tr.innerHTML = `
+                    <td style="color: var(--ga-text-primary);">${list.name || '(Untitled)'}</td>
+                    <td>
+                        <span class="text-muted" title="${list.user_id || ''}">${truncatedUid}</span>
+                    </td>
+                    <td>${formatDate(list.createdDate)}</td>
+                    <td>
+                        <span class="badge bg-secondary">${list.item_count || 0}</span>
+                    </td>
+                    <td>
+                        <a href="/shopping-lists/${list.user_id}/${list.id}" class="btn btn-sm btn-outline-light">
+                            <i class="bi bi-eye"></i> View
+                        </a>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            tableContainer.classList.remove('d-none');
+        } catch (err) {
+            spinner.classList.add('d-none');
+            showToast('Failed to load shopping lists: ' + err.message, 'error');
+            emptyState.classList.remove('d-none');
+        }
+    });
+</script>
+{% endblock %}

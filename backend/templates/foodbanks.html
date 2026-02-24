@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Foodbanks — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div class="d-flex align-items-center">
+        <h4 class="mb-0" style="color: var(--ga-text-primary);">Foodbanks</h4>
+        <span id="foodbankCount" class="badge bg-secondary ms-2 d-none">0</span>
+    </div>
+    {% if user.is_admin %}
+    <a href="/foodbanks/new" class="btn btn-accent">
+        <i class="bi bi-plus-lg"></i> Add Foodbank
+    </a>
+    {% endif %}
+</div>
+
+{% if user.is_admin %}
+<!-- Admin quick actions -->
+<div class="d-flex gap-2 mb-4">
+    <button onclick="seedFoodbanks()" class="btn btn-outline-success btn-sm" id="btnSeed">
+        <i class="bi bi-database-add"></i> Seed Malaysia
+    </button>
+    <button onclick="refreshFoodbanks()" class="btn btn-outline-info btn-sm" id="btnRefresh">
+        <i class="bi bi-arrow-clockwise"></i> Refresh All
+    </button>
+</div>
+
+<!-- Sources panel (collapsible) -->
+<div class="card mb-4" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+    <div class="card-header d-flex align-items-center justify-content-between py-2"
+         style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); cursor: pointer;"
+         data-bs-toggle="collapse" data-bs-target="#sourcesBody">
+        <span style="color: var(--ga-text-primary);">
+            <i class="bi bi-broadcast me-1"></i> Data Sources
+            <span id="sourceCount" class="badge bg-secondary ms-1 d-none">0</span>
+        </span>
+        <i class="bi bi-chevron-down" style="color: var(--ga-text-secondary);"></i>
+    </div>
+    <div id="sourcesBody" class="collapse">
+        <div class="card-body p-0">
+            <div id="sourcesSpinner" class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-success" role="status"></div>
+            </div>
+            <div class="table-responsive">
+                <table id="sourcesTable" class="table table-sm align-middle mb-0 d-none" style="color: var(--ga-text-primary);">
+                    <thead>
+                        <tr style="border-color: var(--ga-border);">
+                            <th class="small text-muted ps-3">Name</th>
+                            <th class="small text-muted">Country</th>
+                            <th class="small text-muted">Status</th>
+                            <th class="small text-muted">Last Success</th>
+                            <th class="small text-muted">Last Error</th>
+                            <th class="small text-muted">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sourcesTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Country filter -->
+<div class="mb-4">
+    <label for="countryFilter" class="form-label text-muted small">Filter by Country</label>
+    <select id="countryFilter" class="form-select" style="max-width: 200px; background-color: var(--ga-bg-card); border-color: var(--ga-border); color: var(--ga-text-primary);">
+        <option value="MY" selected>Malaysia (MY)</option>
+        <option value="SG">Singapore (SG)</option>
+        <option value="US">United States (US)</option>
+        <option value="">All Countries</option>
+    </select>
+</div>
+
+<!-- Loading spinner -->
+<div id="loadingSpinner" class="spinner-container">
+    <div class="spinner-border text-success" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+
+<!-- Empty state -->
+<div id="emptyState" class="empty-state d-none">
+    <i class="bi bi-heart d-block"></i>
+    <p class="mb-0">No foodbanks found.</p>
+</div>
+
+<!-- Foodbank cards grid -->
+<div id="foodbankGrid" class="row g-3 d-none">
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/foodbanks.js"></script>
+{% endblock %}

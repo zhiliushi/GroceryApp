@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Item Detail — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Back Link -->
+    <a href="/inventory" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left me-1"></i>Back to Inventory
+    </a>
+
+    <!-- Loading Spinner -->
+    <div id="detailLoading" class="text-center py-5">
+        <div class="spinner-border text-success" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="text-muted mt-2 small">Loading item details...</p>
+    </div>
+
+    <!-- Item Detail Card -->
+    <div id="detailCard" class="card d-none" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-header d-flex justify-content-between align-items-center" style="border-color: var(--ga-border);">
+            <h5 id="detailTitle" class="mb-0" style="color: var(--ga-text-primary);"></h5>
+            <div>
+                <button id="btnEdit" class="btn btn-sm btn-outline-warning" onclick="toggleEdit()">
+                    <i class="bi bi-pencil me-1"></i>Edit
+                </button>
+                <button id="btnCancel" class="btn btn-sm btn-outline-secondary d-none" onclick="toggleEdit()">
+                    <i class="bi bi-x me-1"></i>Cancel
+                </button>
+                <button id="btnSave" class="btn btn-sm d-none" style="background-color: var(--ga-accent); color: #fff;"
+                        onclick="saveItem('{{ target_uid }}', '{{ item_id }}')">
+                    <i class="bi bi-check-lg me-1"></i>Save
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-4">
+                <!-- Left Column -->
+                <div class="col-md-6">
+                    <table class="table table-borderless mb-0" style="color: var(--ga-text-primary);">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted small" style="width: 140px;">Name</td>
+                                <td>
+                                    <span class="view-mode" id="viewName"></span>
+                                    <input type="text" class="form-control form-control-sm edit-mode d-none" id="editName"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Brand</td>
+                                <td>
+                                    <span class="view-mode" id="viewBrand"></span>
+                                    <input type="text" class="form-control form-control-sm edit-mode d-none" id="editBrand"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Barcode</td>
+                                <td>
+                                    <span class="view-mode" id="viewBarcode"></span>
+                                    <input type="text" class="form-control form-control-sm edit-mode d-none" id="editBarcode"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Category</td>
+                                <td>
+                                    <span class="view-mode" id="viewCategory"></span>
+                                    <input type="text" class="form-control form-control-sm edit-mode d-none" id="editCategory"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Status</td>
+                                <td>
+                                    <span class="view-mode" id="viewStatus"></span>
+                                    <select class="form-select form-select-sm edit-mode d-none" id="editStatus"
+                                            style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                        <option value="active">Active</option>
+                                        <option value="consumed">Consumed</option>
+                                        <option value="expired">Expired</option>
+                                        <option value="discarded">Discarded</option>
+                                    </select>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Storage Location</td>
+                                <td>
+                                    <span class="view-mode" id="viewLocation"></span>
+                                    <select class="form-select form-select-sm edit-mode d-none" id="editLocation"
+                                            style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                        <option value="fridge">Fridge</option>
+                                        <option value="freezer">Freezer</option>
+                                        <option value="pantry">Pantry</option>
+                                        <option value="counter">Counter</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Right Column -->
+                <div class="col-md-6">
+                    <table class="table table-borderless mb-0" style="color: var(--ga-text-primary);">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted small" style="width: 140px;">Quantity</td>
+                                <td>
+                                    <span class="view-mode" id="viewQuantity"></span>
+                                    <div class="edit-mode d-none d-flex gap-2">
+                                        <input type="number" class="form-control form-control-sm" id="editQuantity" step="0.01" min="0"
+                                               style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary); max-width: 100px;">
+                                        <input type="text" class="form-control form-control-sm" id="editUnit" placeholder="unit"
+                                               style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary); max-width: 100px;">
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Expiry Date</td>
+                                <td>
+                                    <span class="view-mode" id="viewExpiry"></span>
+                                    <input type="date" class="form-control form-control-sm edit-mode d-none" id="editExpiry"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Purchase Date</td>
+                                <td>
+                                    <span class="view-mode" id="viewPurchaseDate"></span>
+                                    <input type="date" class="form-control form-control-sm edit-mode d-none" id="editPurchaseDate"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Price</td>
+                                <td>
+                                    <span class="view-mode" id="viewPrice"></span>
+                                    <input type="number" class="form-control form-control-sm edit-mode d-none" id="editPrice" step="0.01" min="0"
+                                           style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Needs Review</td>
+                                <td>
+                                    <span class="view-mode" id="viewNeedsReview"></span>
+                                    <div class="form-check edit-mode d-none">
+                                        <input class="form-check-input" type="checkbox" id="editNeedsReview">
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Created</td>
+                                <td><span id="viewCreated" style="color: var(--ga-text-secondary);"></span></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Updated</td>
+                                <td><span id="viewUpdated" style="color: var(--ga-text-secondary);"></span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/inventory.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const targetUid = "{{ target_uid }}";
+        const itemId = "{{ item_id }}";
+        if (targetUid && itemId) {
+            loadItemDetail(targetUid, itemId);
+        }
+    });
+</script>
+{% endblock %}

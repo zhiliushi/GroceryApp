@@ -1,0 +1,336 @@
+# GroceryApp — Project Rules
+
+## Project Overview
+
+GroceryApp is a React Native grocery management app with barcode scanning, inventory tracking, shopping lists, and cloud sync. Freemium model: free (local-only) + premium (Firebase sync, AI features).
+
+**Documentation index:** `docs/` — see section references below.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | React Native 0.83.1 (CLI, not Expo) |
+| Language | TypeScript (strict mode) |
+| Local DB | WatermelonDB (SQLite) — schema v5 |
+| Cloud DB | Firebase Firestore |
+| Auth | Firebase Auth (email/password, Google, Apple) |
+| State | Zustand (5 stores, persisted to AsyncStorage) |
+| Navigation | React Navigation v6 (bottom tabs + nested stacks) |
+| UI | react-native-paper (Material Design) |
+| Validation | Zod |
+| HTTP | Axios |
+| Notifications | @notifee/react-native |
+| Camera | react-native-vision-camera |
+| Backend | FastAPI on Render.com |
+
+**Docs:** `docs/PROJECT_CONTEXT.md` — full tech stack, architecture, business model, development phases.
+
+---
+
+## Project Structure
+
+```
+GroceryApp/
+├── mobile-app/src/
+│   ├── config/           # constants.ts, firebase.ts, api.ts
+│   ├── database/
+│   │   ├── schema.ts     # 10-table schema (v5)
+│   │   ├── seed.ts       # 9 default categories, 14 default units
+│   │   ├── migrations/   # migration_v1.ts (v1→v5)
+│   │   ├── models/       # 10 WatermelonDB model classes
+│   │   └── repositories/ # 9 repository classes
+│   ├── services/         # barcode/, firebase/, notifications/, sync/
+│   ├── hooks/            # useAuth, useDatabase, useBarcode, useSync, useNotifications
+│   ├── screens/          # 19 screens (see Pages Reference below)
+│   ├── components/       # common/, grocery/, scanner/
+│   ├── navigation/       # Root, Auth, Main navigators
+│   ├── store/            # 5 Zustand stores
+│   ├── types/            # index.ts, database.ts, api.ts
+│   └── utils/            # dateUtils, validators, helpers, errors
+├── backend/              # FastAPI (barcode lookup, analytics, AI)
+└── docs/                 # All project documentation
+```
+
+**Docs:** `docs/MOBILE_APP.md` — source structure, dependencies, testing, building.
+
+---
+
+## Navigation Structure
+
+```
+RootNavigator (auth gate)
+├── Onboarding (first-time only)
+├── Main (bottom tabs)
+│   ├── HomeTab (HomeStack)
+│   │   ├── Home (dashboard)
+│   │   ├── InventoryDetail
+│   │   ├── Restock
+│   │   ├── AddMethod → ContextScanner → AddItem
+│   │   └── PastItems → InventoryDetail
+│   │
+│   ├── ScanTab (ScannerStack)
+│   │   ├── BarcodeScanner (full-screen camera)
+│   │   ├── AddItem
+│   │   ├── ListPicker → AddListItem
+│   │   └── AddListItem
+│   │
+│   ├── InventoryTab (InventoryStack)
+│   │   ├── Inventory (list/grid with location groups)
+│   │   ├── InventoryDetail
+│   │   ├── AddMethod → ContextScanner → AddItem
+│   │   └── PastItems → InventoryDetail
+│   │
+│   ├── ShoppingTab (ShoppingStack)
+│   │   ├── ShoppingLists
+│   │   ├── ListDetail
+│   │   ├── AddMethod → ContextScanner → AddListItem
+│   │   ├── EditListItem
+│   │   ├── ShoppingCheckout → AddItem
+│   │   └── AddItem
+│   │
+│   └── SettingsTab → SettingsScreen (no nested stack)
+│
+├── Login (modal)
+└── Register (modal)
+```
+
+---
+
+## Pages Reference
+
+Complete per-page documentation is in `docs/pages/`. Each file contains: Objective, User View tables, Functions & Processes, Filters.
+
+**Index:** `docs/pages/PAGES_INDEX.md`
+
+| # | Page | Doc | Source |
+|---|------|-----|--------|
+| 1 | HomeScreen | `docs/pages/home-screen.md` | `screens/home/HomeScreen.tsx` |
+| 2 | InventoryScreen | `docs/pages/inventory-screen.md` | `screens/inventory/InventoryScreen.tsx` |
+| 3 | InventoryDetailScreen | `docs/pages/inventory-detail-screen.md` | `screens/inventory/InventoryDetailScreen.tsx` |
+| 4 | AddInventoryItemScreen | `docs/pages/add-inventory-item-screen.md` | `screens/inventory/AddInventoryItemScreen.tsx` |
+| 5 | RestockScreen | `docs/pages/restock-screen.md` | `screens/inventory/RestockScreen.tsx` |
+| 6 | PastItemsScreen | `docs/pages/past-items-screen.md` | `screens/inventory/PastItemsScreen.tsx` |
+| 7 | ShoppingListsScreen | `docs/pages/shopping-lists-screen.md` | `screens/lists/ShoppingListsScreen.tsx` |
+| 8 | ListDetailScreen | `docs/pages/list-detail-screen.md` | `screens/lists/ListDetailScreen.tsx` |
+| 9 | AddListItemScreen | `docs/pages/add-list-item-screen.md` | `screens/lists/AddListItemScreen.tsx` |
+| 10 | EditListItemScreen | `docs/pages/edit-list-item-screen.md` | `screens/lists/EditListItemScreen.tsx` |
+| 11 | ShoppingCheckoutScreen | `docs/pages/shopping-checkout-screen.md` | `screens/lists/ShoppingCheckoutScreen.tsx` |
+| 12 | ListPickerScreen | `docs/pages/list-picker-screen.md` | `screens/lists/ListPickerScreen.tsx` |
+| 13 | BarcodeScannerScreen | `docs/pages/barcode-scanner-screen.md` | `screens/scanner/BarcodeScannerScreen.tsx` |
+| 14 | ContextScannerScreen | `docs/pages/context-scanner-screen.md` | `screens/common/ContextScannerScreen.tsx` |
+| 15 | AddMethodScreen | `docs/pages/add-method-screen.md` | `screens/common/AddMethodScreen.tsx` |
+| 16 | SettingsScreen | `docs/pages/settings-screen.md` | `screens/settings/SettingsScreen.tsx` |
+| 17 | LoginScreen | `docs/pages/login-screen.md` | `screens/auth/LoginScreen.tsx` |
+| 18 | RegisterScreen | `docs/pages/register-screen.md` | `screens/auth/RegisterScreen.tsx` |
+| 19 | OnboardingScreen | `docs/pages/onboarding-screen.md` | `screens/auth/OnboardingScreen.tsx` |
+
+---
+
+## Database Schema (v5)
+
+10 WatermelonDB tables. Schema defined in `mobile-app/src/database/schema.ts`.
+
+**Docs:** `docs/DATABASE.md` — full column definitions, Firestore structure, sync strategy, security rules.
+
+### Tables
+
+| Table | Purpose | Version |
+|-------|---------|---------|
+| categories | Item categories (9 defaults) | v1 |
+| units | Measurement units (14 defaults) | v1 |
+| scanned_items | Stage 1: temporary barcode scans (24h TTL) | v1 |
+| inventory_items | Stage 2+3: active + consumed/expired/discarded items | v1 (+v4 restock columns) |
+| shopping_lists | Shopping list metadata | v1 (+v5 checkout columns) |
+| list_items | Items in shopping lists | v1 (+v5 product columns) |
+| analytics_events | Tracked user events (21 types) | v1 |
+| stores | Physical store locations | v2 |
+| cart_items | Temporary shopping cart (deprecated — merged into lists at v5) | v2 (+v3 TTL) |
+| price_history | Historical price records | v2 |
+
+### Migration History
+
+| Version | Changes |
+|---------|---------|
+| 1 | Initial 7 tables |
+| 2 | +stores, +cart_items, +price_history |
+| 3 | cart_items.expires_at (TTL) |
+| 4 | inventory_items: is_important, restock_threshold, expiry_confirmed |
+| 5 | list_items: barcode, brand, price, weight, weight_unit, image_url, notes; shopping_lists: is_checked_out, checkout_date, store_id, total_price |
+
+### Item Lifecycle (3-Stage)
+
+```
+Stage 1 (Scan)              Stage 2 (Active)             Stage 3 (Past)
+┌──────────────┐  promote  ┌──────────────┐  consume   ┌──────────────┐
+│ scanned_items│ ────────→ │inventory_items│ ────────→  │inventory_items│
+│ TTL: 24h     │           │ status=active │            │ status=consumed│
+│ No sync      │           │ Cloud sync    │            │   /expired    │
+└──────────────┘           └──────────────┘            │   /discarded  │
+      ↑                           ↑                     └──────────────┘
+ Barcode scan             Manual add (skips Stage 1)
+```
+
+- Stage 1 → Stage 2: `promoteFromScan()` — creates inventory_items row from scanned_items
+- Stage 2 → Stage 3: Status change on same row (`markConsumed()`) — not a copy/move
+- Stage 3 → Stage 2: `restoreToActive()` — resets status back to active
+- Stage 3 items viewable on dedicated PastItemsScreen
+
+---
+
+## State Management
+
+5 Zustand stores persisted to AsyncStorage:
+
+| Store | File | Key State |
+|-------|------|-----------|
+| authStore | `store/authStore.ts` | user, token, tier, isAuthenticated |
+| inventoryStore | `store/inventoryStore.ts` | sortBy, filterBy, viewMode |
+| scanStore | `store/scanStore.ts` | lastScan, scanResult |
+| settingsStore | `store/settingsStore.ts` | theme, quickActions, storageLocations, expiryAlertDays, notificationPrefs |
+| syncStore | `store/syncStore.ts` | status, lastSyncAt, isOnline, lastResult |
+
+---
+
+## Key Patterns & Conventions
+
+### Architecture
+- **Repository pattern**: All DB operations go through repository classes, never direct model queries
+- **useDatabase() hook**: Returns all repositories — `const {inventory, shoppingList, category, unit, ...} = useDatabase()`
+- **useSync() hook**: Returns `{status, lastSyncAt, syncNow}` where status is `'idle'|'syncing'|'success'|'error'`
+- **Screen → hook → repository → model**: Standard data flow
+- **Focus listeners**: Screens reload data on navigation focus (e.g. returning from detail screens)
+
+### Storage Locations
+- User-configurable — stored as `string` type (not a union type)
+- Defaults: fridge, pantry, freezer
+- Custom locations added via Settings
+- Must update BOTH `config/constants.ts` AND `database/models/InventoryItem.ts` if changing the type
+
+### Quantity Math
+- No `Math.ceil()` for fractional quantities — use `+(value * fraction).toFixed(2)`
+- Clamp with `Math.max(0, Math.round(newQty * 100) / 100)` for 2 decimal precision
+- "Used Quarter" subtracts 25% of initial qty; "Used Half" subtracts 50%
+- Zero-quantity triggers "Transfer to Past Items?" popup
+
+### Shopping Flow
+- Shopping lists have checkout flow: tick items → set prices → select store → checkout to inventory
+- `list_items` have product columns (barcode, brand, price, weight) since v5
+- `shopping_lists` have checkout columns (is_checked_out, checkout_date, store_id, total_price) since v5
+- ContextScanner with `shopping_list` context: auto-matches barcode to existing list item
+
+### Quick Actions
+- Configurable in Settings via `QUICK_ACTION_OPTIONS`
+- Stored in settingsStore `quickActions` array
+- Default: `['add_inventory', 'add_shopping_list', 'restock_settings', 'past_items']`
+- Rendered as vertical cards on HomeScreen
+
+---
+
+## Development Rules
+
+**Docs:** `docs/DEVELOPMENT_RULES.md` — full coding standards, testing, git workflow, security, deployment.
+
+### Critical Rules
+- **Update documentation after every change** — all related docs must be current
+- **Log every change** — append to `docs/changes_record.md` (append-only)
+- **TypeScript strict mode** — no `any`, explicit return types, interfaces over types
+- **Functional components only** — hooks for state/effects, max 200 lines per component
+- **No inline styles** — use `StyleSheet.create()`
+- **All DB operations async** — wrapped in try-catch, use transactions for multi-step writes
+- **Schema migrations versioned** — bump `DB_VERSION` in constants.ts, add migration block
+
+### Git
+- Branch naming: `feature/`, `fix/`, `refactor/`, `docs/`, `test/`
+- Commit format: `type(scope): description` (Conventional Commits)
+- No force pushes, review required before merge
+
+### Testing
+- Co-located test files (`*.test.ts`)
+- Jest with mocked native modules (15 mocks in jest.setup.js)
+- Coverage target: 70%
+
+---
+
+## Build & Run
+
+### Android Debug (USB connected)
+```bash
+export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot"
+cd mobile-app/android
+./gradlew.bat app:installDebug
+```
+
+### Android Release APK (standalone, no USB needed)
+```bash
+export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot"
+cd mobile-app/android
+./gradlew.bat assembleRelease
+# → android/app/build/outputs/apk/release/app-release.apk
+```
+
+### Android AAB (Play Store upload)
+```bash
+export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot"
+cd mobile-app/android
+./gradlew.bat bundleRelease
+# → android/app/build/outputs/bundle/release/app-release.aab
+```
+
+### Release Signing
+- Keystore: `mobile-app/android/app/groceryapp-release.keystore`
+- Alias: `groceryapp-key` / Password: `groceryapp2024`
+- Credentials in `android/gradle.properties` (gitignored)
+- **CRITICAL:** Never lose the keystore — required for all Play Store updates
+- See `docs/CREDENTIALS.md` for full details
+
+### Metro Bundler
+```bash
+cd mobile-app
+npx react-native start
+```
+
+### Test Device
+Samsung Galaxy Note 9 (SM-N960F), Android 10
+
+### Environment
+- Shell: Git Bash on Windows
+- Use `export VAR=value` (not `set` or `cmd /c`)
+- JDK 21 (Eclipse Adoptium)
+
+---
+
+## Firestore Structure
+
+```
+users/{userId}/
+  grocery_items/{itemId}         # Synced inventory items
+  shopping_lists/{listId}/
+    items/{itemId}               # List items (subcollection)
+  analytics/{eventId}            # Analytics events
+
+products/{barcode}               # Cached Open Food Facts data
+contributed_products/{barcode}   # User-contributed product info
+```
+
+### Sync
+- Bidirectional, last-write-wins with timestamps
+- Background fetch every 6 hours + manual trigger
+- Analytics: all users; Inventory + Lists: premium only
+- Firestore batch limit: 500 docs (auto-chunked)
+
+---
+
+## External APIs
+
+### Open Food Facts
+- **Usage**: Read-only barcode lookup
+- **Data returned**: product_name, brands, categories, image_url, quantity, nutriments, nutriscore_grade
+- **Lookup chain**: Local cache → Firebase → Backend API → Direct OFF API (fallback)
+
+### Backend (FastAPI)
+- Hosted on Render.com
+- Barcode scanning intermediary, analytics aggregation, AI features (premium)
+- Firebase Admin SDK for server-side operations

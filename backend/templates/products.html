@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Products — GroceryApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div class="d-flex align-items-center">
+            <h4 class="mb-0" style="color: var(--ga-text-primary);">
+                <i class="bi bi-database me-2"></i>Product Database
+            </h4>
+            <span id="productCount" class="badge ms-2" style="background-color: var(--ga-accent);">0</span>
+        </div>
+        <a href="/products/new" class="btn btn-accent btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Add Product
+        </a>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="card mb-3" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-body py-2">
+            <div class="input-group">
+                <span class="input-group-text" style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-secondary);">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" id="searchInput" class="form-control" placeholder="Search by barcode, name, or brand..."
+                       style="background-color: var(--ga-bg-primary); border-color: var(--ga-border); color: var(--ga-text-primary);">
+                <button id="searchBtn" class="btn btn-outline-secondary" type="button">Search</button>
+                <button id="clearBtn" class="btn btn-outline-secondary d-none" type="button">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Products Card -->
+    <div class="card" style="background-color: var(--ga-bg-card); border-color: var(--ga-border);">
+        <div class="card-body p-0">
+            <!-- Loading Spinner -->
+            <div id="loadingSpinner" class="text-center py-5">
+                <div class="spinner-border text-success" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="text-muted mt-2 small">Loading products...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="text-center py-5 d-none">
+                <i class="bi bi-inbox fs-1 text-muted"></i>
+                <p class="text-muted mt-2">No products found.</p>
+            </div>
+
+            <!-- Results Table -->
+            <div id="tableWrapper" class="table-responsive d-none">
+                <table class="table table-hover align-middle mb-0" style="color: var(--ga-text-primary);">
+                    <thead>
+                        <tr style="border-color: var(--ga-border);">
+                            <th class="small text-muted">Image</th>
+                            <th class="small text-muted">Barcode</th>
+                            <th class="small text-muted">Name</th>
+                            <th class="small text-muted">Brand</th>
+                            <th class="small text-muted">Categories</th>
+                            <th class="small text-muted">Source</th>
+                            <th class="small text-muted">Cached</th>
+                            <th class="small text-muted">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/products.js"></script>
+{% endblock %}
