@@ -18,6 +18,7 @@ from app.services import (
     contributed_product_service,
     product_service,
     price_record_service,
+    config_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,95 @@ async def update_user_role(uid: str, body: UserRoleUpdateRequest, admin: UserInf
         raise HTTPException(status_code=400, detail="Role must be 'admin' or 'user'")
     user_service.update_user_role(uid, body.role)
     return {"success": True, "message": f"User {uid} role set to {body.role}"}
+
+
+# ---------------------------------------------------------------------------
+# User Management (Enhanced)
+# ---------------------------------------------------------------------------
+
+@router.put("/users/{uid}/tier")
+async def update_user_tier(uid: str, body: dict, admin: UserInfo = Depends(require_admin)):
+    """Change a user's subscription tier."""
+    tier = body.get("tier")
+    if tier not in ("free", "plus", "pro"):
+        raise HTTPException(status_code=400, detail="Tier must be 'free', 'plus', or 'pro'")
+    success = user_service.update_user_tier(uid, tier, admin.uid)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"success": True, "message": f"User {uid} tier set to {tier}"}
+
+
+@router.put("/users/{uid}/status")
+async def update_user_status(uid: str, body: dict, admin: UserInfo = Depends(require_admin)):
+    """Enable or disable a user."""
+    status = body.get("status")
+    reason = body.get("reason", "")
+    if status not in ("active", "disabled"):
+        raise HTTPException(status_code=400, detail="Status must be 'active' or 'disabled'")
+    success = user_service.update_user_status(uid, status, reason)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"success": True, "message": f"User {uid} status set to {status}"}
+
+
+@router.put("/users/{uid}/approve")
+async def approve_user(uid: str, admin: UserInfo = Depends(require_admin)):
+    """Approve a pending user."""
+    success = user_service.approve_user(uid, admin.uid)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"success": True, "message": f"User {uid} approved"}
+
+
+@router.delete("/users/{uid}")
+async def delete_user(uid: str, admin: UserInfo = Depends(require_admin)):
+    """Delete a user completely (Firestore + Firebase Auth)."""
+    success = user_service.delete_user(uid)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+    return {"success": True, "message": f"User {uid} deleted"}
+
+
+@router.put("/users/{uid}/tools")
+async def update_user_tools(uid: str, body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update a Smart Cart user's selected tools."""
+    tools = body.get("selected_tools", [])
+    if not isinstance(tools, list):
+        raise HTTPException(status_code=400, detail="selected_tools must be a list")
+    success = user_service.update_user_tools(uid, tools)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"success": True, "message": f"User {uid} tools updated"}
+
+
+# ---------------------------------------------------------------------------
+# App Configuration (Visibility + Tiers)
+# ---------------------------------------------------------------------------
+
+@router.get("/config/visibility")
+async def get_visibility(admin: UserInfo = Depends(require_admin)):
+    """Get page visibility configuration."""
+    return config_service.get_visibility()
+
+
+@router.put("/config/visibility")
+async def update_visibility(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update page visibility configuration."""
+    config_service.update_visibility(body, admin.uid)
+    return {"success": True, "message": "Visibility config updated"}
+
+
+@router.get("/config/tiers")
+async def get_tiers(admin: UserInfo = Depends(require_admin)):
+    """Get tier definitions."""
+    return config_service.get_tiers()
+
+
+@router.put("/config/tiers")
+async def update_tiers(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update tier definitions."""
+    config_service.update_tiers(body)
+    return {"success": True, "message": "Tier config updated"}
 
 
 # ---------------------------------------------------------------------------

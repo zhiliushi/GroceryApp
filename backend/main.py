@@ -148,13 +148,36 @@ async def get_current_user_info(request: Request):
     user = await get_optional_user(request)
     if not user:
         return {"authenticated": False}
+    # Enrich with Firestore profile data (tier, status, tools, country)
+    from app.services import user_service
+    profile = user_service.get_user(user.uid) or {}
     return {
         "authenticated": True,
         "uid": user.uid,
         "email": user.email,
         "role": user.role,
         "display_name": user.display_name,
+        "tier": profile.get("tier", "free"),
+        "status": profile.get("status", "active"),
+        "selected_tools": profile.get("selected_tools", []),
+        "country": profile.get("country"),
+        "currency": profile.get("currency"),
     }
+
+
+@app.get("/api/config")
+async def get_public_config():
+    """Public app config — visibility rules + tier definitions.
+    No auth required. Used by mobile app and web SPA on startup."""
+    from app.services import config_service
+    return config_service.get_public_config()
+
+
+@app.get("/api/exchange-rates")
+async def get_exchange_rates():
+    """Public exchange rates. No auth required."""
+    from app.services import exchange_rate_service
+    return exchange_rate_service.get_rates()
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ Currently runs:
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from app.services import foodbank_service
+from app.services import foodbank_service, exchange_rate_service
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,16 @@ def start():
         minutes=10,
         id="foodbank_scrape",
         name="Foodbank scrape & update",
+        replace_existing=True,
+    )
+
+    # Exchange rate refresh daily
+    _scheduler.add_job(
+        exchange_rate_service.fetch_and_cache_rates,
+        "interval",
+        hours=24,
+        id="exchange_rate_update",
+        name="Exchange rate daily update",
         replace_existing=True,
     )
 

@@ -5,6 +5,7 @@ import { lazy, Suspense } from 'react';
 const AppLayout = lazy(() => import('@/components/layout/AppLayout'));
 const ProtectedRoute = lazy(() => import('@/components/layout/ProtectedRoute'));
 const AdminRoute = lazy(() => import('@/components/layout/AdminRoute'));
+const TierRoute = lazy(() => import('@/components/layout/TierRoute'));
 
 // Pages
 const LoginPage = lazy(() => import('@/pages/login/LoginPage'));
@@ -24,6 +25,7 @@ const UserDetailPage = lazy(() => import('@/pages/users/UserDetailPage'));
 const ContributedPage = lazy(() => import('@/pages/contributed/ContributedPage'));
 const NeedsReviewPage = lazy(() => import('@/pages/needs-review/NeedsReviewPage'));
 const PriceRecordsPage = lazy(() => import('@/pages/price-records/PriceRecordsPage'));
+const AdminSettingsPage = lazy(() => import('@/pages/admin-settings/AdminSettingsPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -36,6 +38,17 @@ function SuspenseWrapper({ children }: { children: React.ReactNode }) {
     >
       {children}
     </Suspense>
+  );
+}
+
+// TierRoute wraps user-facing pages to enforce tier-based access.
+// Admin users bypass all tier checks (handled inside useVisibility).
+// If user's tier is below the page's minTier, shows UpgradeBanner.
+function TierGated({ page, children }: { page: string; children: React.ReactNode }) {
+  return (
+    <SuspenseWrapper>
+      <TierRoute page={page}>{children}</TierRoute>
+    </SuspenseWrapper>
   );
 }
 
@@ -58,15 +71,24 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Navigate to="/dashboard" replace /> },
-      { path: 'dashboard', element: <SuspenseWrapper><DashboardPage /></SuspenseWrapper> },
-      { path: 'inventory', element: <SuspenseWrapper><InventoryListPage /></SuspenseWrapper> },
-      { path: 'inventory/:uid/:itemId', element: <SuspenseWrapper><InventoryDetailPage /></SuspenseWrapper> },
-      { path: 'shopping-lists', element: <SuspenseWrapper><ShoppingListsPage /></SuspenseWrapper> },
-      { path: 'shopping-lists/:uid/:listId', element: <SuspenseWrapper><ShoppingListDetailPage /></SuspenseWrapper> },
-      { path: 'foodbanks', element: <SuspenseWrapper><FoodbanksListPage /></SuspenseWrapper> },
-      { path: 'analytics', element: <SuspenseWrapper><AnalyticsPage /></SuspenseWrapper> },
-      { path: 'settings', element: <SuspenseWrapper><SettingsPage /></SuspenseWrapper> },
-      // Admin-only routes
+
+      // ── User-facing pages (tier-gated) ──────────────────────
+      // Dashboard: free tier (all users)
+      { path: 'dashboard', element: <TierGated page="dashboard"><DashboardPage /></TierGated> },
+      // Inventory: free tier (all users see it, sections gated inside)
+      { path: 'inventory', element: <TierGated page="inventory"><InventoryListPage /></TierGated> },
+      { path: 'inventory/:uid/:itemId', element: <TierGated page="inventory"><InventoryDetailPage /></TierGated> },
+      // Shopping Lists: free tier
+      { path: 'shopping-lists', element: <TierGated page="shopping_lists"><ShoppingListsPage /></TierGated> },
+      { path: 'shopping-lists/:uid/:listId', element: <TierGated page="shopping_lists"><ShoppingListDetailPage /></TierGated> },
+      // Foodbanks: always free
+      { path: 'foodbanks', element: <TierGated page="foodbanks"><FoodbanksListPage /></TierGated> },
+      // Analytics: plus tier (free users see UpgradeBanner)
+      { path: 'analytics', element: <TierGated page="analytics"><AnalyticsPage /></TierGated> },
+      // Settings: free tier
+      { path: 'settings', element: <TierGated page="settings"><SettingsPage /></TierGated> },
+
+      // ── Admin-only pages (role-gated, no tier check needed) ──
       {
         element: (
           <SuspenseWrapper>
@@ -84,6 +106,7 @@ export const router = createBrowserRouter([
           { path: 'contributed-products', element: <SuspenseWrapper><ContributedPage /></SuspenseWrapper> },
           { path: 'needs-review', element: <SuspenseWrapper><NeedsReviewPage /></SuspenseWrapper> },
           { path: 'price-records', element: <SuspenseWrapper><PriceRecordsPage /></SuspenseWrapper> },
+          { path: 'admin-settings', element: <SuspenseWrapper><AdminSettingsPage /></SuspenseWrapper> },
           { path: 'foodbanks/new', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },
           { path: 'foodbanks/:foodbankId/edit', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },
         ],

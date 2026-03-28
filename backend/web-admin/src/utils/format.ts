@@ -63,3 +63,32 @@ export function formatExpiry(expiryMs: number | null | undefined): ExpiryDisplay
   if (diffDays <= 14) return { text: `${diffDays}d left`, className: 'text-yellow-400' };
   return { text: formatDate(expiryMs), className: 'text-ga-text-secondary' };
 }
+
+// === Currency ===
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  MYR: 'RM', SGD: 'S$', USD: '$', IDR: 'Rp',
+  PHP: '₱', THB: '฿', GBP: '£', EUR: '€', AUD: 'A$',
+};
+
+export function getCurrencySymbol(currency: string): string {
+  return CURRENCY_SYMBOLS[currency] || currency;
+}
+
+export function formatCurrencyWithSymbol(amount: number | null | undefined, currency: string): string {
+  if (amount == null) return '—';
+  return `${getCurrencySymbol(currency)} ${amount.toFixed(2)}`;
+}
+
+export function convertCurrency(
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rates: Record<string, number>,
+): number | null {
+  if (fromCurrency === toCurrency) return amount;
+  const fromRate = rates[fromCurrency];
+  const toRate = rates[toCurrency];
+  if (!fromRate || !toRate) return null;
+  return Math.round(amount * (toRate / fromRate) * 100) / 100;
+}

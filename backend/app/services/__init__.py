@@ -1,7 +1,9 @@
 from . import (
     analytics_service,
     barcode_service,
+    config_service,
     contributed_product_service,
+    exchange_rate_service,
     foodbank_service,
     foodbank_sources,
     insights_service,

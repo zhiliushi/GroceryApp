@@ -39,4 +39,17 @@ export const API = {
   FOODBANK_SOURCE_FETCH: (id: string) => `/api/foodbanks/sources/${id}/fetch`,
   FOODBANK_SOURCE_RESET: (id: string) => `/api/foodbanks/sources/${id}/reset`,
   FOODBANK_SOURCE_TOGGLE: (id: string) => `/api/foodbanks/sources/${id}/toggle`,
+
+  // Config
+  CONFIG_PUBLIC: '/api/config',
+  CONFIG_VISIBILITY: '/api/admin/config/visibility',
+  CONFIG_TIERS: '/api/admin/config/tiers',
+  EXCHANGE_RATES: '/api/exchange-rates',
+
+  // User Management (enhanced)
+  USER_TIER: (uid: string) => `/api/admin/users/${uid}/tier`,
+  USER_STATUS: (uid: string) => `/api/admin/users/${uid}/status`,
+  USER_APPROVE: (uid: string) => `/api/admin/users/${uid}/approve`,
+  USER_DELETE: (uid: string) => `/api/admin/users/${uid}`,
+  USER_TOOLS: (uid: string) => `/api/admin/users/${uid}/tools`,
 } as const;

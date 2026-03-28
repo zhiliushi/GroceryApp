@@ -5,6 +5,11 @@ export interface AuthUser {
   email: string;
   role: 'admin' | 'user';
   display_name: string;
+  tier: string;
+  status: string;
+  selected_tools: string[];
+  country: string | null;
+  currency: string | null;
 }
 
 // === Dashboard ===
@@ -25,6 +30,19 @@ export interface User {
   displayName: string | null;
   tier: string;
   role: string;
+  status?: string;
+  approved?: boolean;
+  approved_at?: number | null;
+  approved_by?: string | null;
+  disabled_at?: number | null;
+  disabled_reason?: string | null;
+  selected_tools?: string[];
+  tools_locked_until?: number | null;
+  tools_changed_at?: number | null;
+  tier_changed_at?: number | null;
+  tier_changed_by?: string | null;
+  country?: string;
+  currency?: string;
   createdAt: number | null;
   updatedAt: number | null;
 }
@@ -228,4 +246,74 @@ export interface MutationResponse {
 export interface BatchDeleteResponse {
   success: boolean;
   deleted: number;
+}
+
+// === App Config (Visibility + Tiers) ===
+
+export type TierKey = 'free' | 'plus' | 'pro';
+export type TierOrAdmin = TierKey | 'admin';
+
+export interface SectionVisibility {
+  enabled: boolean;
+  minTier: TierOrAdmin;
+}
+
+export interface PageVisibility {
+  enabled: boolean;
+  minTier: TierOrAdmin;
+  alwaysFree?: boolean;
+  sections: Record<string, SectionVisibility>;
+}
+
+export interface VisibilityConfig {
+  pages: Record<string, PageVisibility>;
+  updated_at: number | null;
+  updated_by: string | null;
+}
+
+export interface TierLimits {
+  max_items: number;
+  max_lists: number;
+  data_retention_days: number;
+  max_scans_per_day: number;
+}
+
+export interface TierDefinition {
+  key: string;
+  name: string;
+  price: number;
+  currency: string;
+  billing: string | null;
+  limits: TierLimits;
+  features: string[];
+  selectable_tools: number;
+  tool_menu?: string[];
+  description: string;
+}
+
+export interface AddonDefinition {
+  name: string;
+  price: number | null;
+  features: string[];
+  note?: string;
+}
+
+export interface TiersConfig {
+  tiers: Record<string, TierDefinition>;
+  always_free: string[];
+  admin_only: string[];
+  separate_addons: Record<string, AddonDefinition>;
+  updated_at: number | null;
+}
+
+export interface PublicConfig {
+  visibility: VisibilityConfig;
+  tiers: TiersConfig;
+}
+
+export interface ExchangeRates {
+  base: string;
+  rates: Record<string, number>;
+  updated_at: number | null;
+  source: string;
 }

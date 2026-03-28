@@ -25,6 +25,7 @@ const adminNav: NavItem[] = [
   { path: '/contributed-products', label: 'Contributed', icon: '📥' },
   { path: '/needs-review', label: 'Needs Review', icon: '⚠️' },
   { path: '/price-records', label: 'Price Records', icon: '💰' },
+  { path: '/admin-settings', label: 'Admin Settings', icon: '🔧' },
 ];
 
 function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
