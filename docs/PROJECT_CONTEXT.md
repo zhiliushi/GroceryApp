@@ -45,16 +45,29 @@ GroceryApp is a comprehensive grocery management mobile application built with R
 
 ### Backend (Python FastAPI)
 - **Framework**: FastAPI
-- **Deployment**: Render.com
+- **Deployment**: Render.com (Docker)
 - **Database**: Firebase Firestore (cloud database)
 - **External APIs**:
   - Open Food Facts API (product information)
   - Firebase Admin SDK
+  - Google Maps/Places API (reverse geocoding)
 - **Purpose**:
   - Barcode scanning workflow intermediary
   - Analytics data aggregation
   - AI feature processing (paid tier)
   - Firebase integration
+
+### Web Admin (React SPA)
+- **Framework**: React 19 + TypeScript
+- **Build**: Vite 6, output to `backend/static/spa/`
+- **Styling**: Tailwind CSS v4 (dark theme)
+- **Data**: TanStack Query v5 (reactive cache invalidation)
+- **Forms**: React Hook Form v7
+- **State**: Zustand v5 (auth + UI)
+- **Charts**: Chart.js 4 + react-chartjs-2
+- **Auth**: Firebase client SDK (same auth as mobile app)
+- **Dev**: `cd backend/web-admin && npm run dev` (proxies API to FastAPI :8000)
+- **17 pages**: Dashboard, Products, Users, Contributed, Needs Review, Inventory, Shopping Lists, Price Records, Foodbanks, Analytics, Settings + detail/form pages
 
 ### Infrastructure
 - **Cloud Database**: Firebase Firestore

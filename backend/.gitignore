@@ -12,3 +12,8 @@ build/
 venv/
 .idea/
 .vscode/
+
+# Web Admin SPA
+web-admin/node_modules/
+web-admin/.env
+static/spa/

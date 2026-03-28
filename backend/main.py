@@ -26,9 +26,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 
-from app.api.routes import barcode, analytics, foodbank, admin, web
+from app.api.routes import barcode, analytics, foodbank, admin
 from app.core.config import settings
 from app.services import scheduler
 
@@ -82,8 +82,13 @@ app = FastAPI(
     version="2.2.0",
 )
 
-# Static files
+# Static files (legacy templates + SPA assets)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# SPA assets (Vite build output)
+_spa_dir = os.path.join(os.path.dirname(__file__), "static", "spa")
+if os.path.isdir(os.path.join(_spa_dir, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(_spa_dir, "assets")), name="spa-assets")
 
 # CORS
 app.add_middleware(
@@ -100,8 +105,8 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"]
 app.include_router(foodbank.router, prefix="/api/foodbanks", tags=["foodbanks"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
-# Web UI Router (must be last — catches page routes)
-app.include_router(web.router, tags=["web"])
+# SPA catch-all (serves React app for all non-API routes)
+# Replaces the old Jinja2 web.router
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +114,8 @@ app.include_router(web.router, tags=["web"])
 # ---------------------------------------------------------------------------
 
 @app.exception_handler(HTTPException)
-async def auth_redirect_handler(request: Request, exc: HTTPException):
-    """Redirect to /login for 401/403 on web page routes (non-API)."""
-    path = request.url.path
-    is_api = path.startswith("/api/") or path == "/health"
-    if not is_api and exc.status_code in (401, 403):
-        return RedirectResponse("/login", status_code=302)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Return JSON for all HTTP exceptions (SPA handles auth redirects client-side)."""
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
@@ -132,11 +133,6 @@ async def on_startup():
 async def on_shutdown():
     scheduler.stop()
     logger.info("Background scheduler stopped")
-
-
-@app.get("/")
-async def root():
-    return RedirectResponse("/dashboard", status_code=302)
 
 
 @app.get("/health")
@@ -159,6 +155,36 @@ async def get_current_user_info(request: Request):
         "role": user.role,
         "display_name": user.display_name,
     }
+
+
+# ---------------------------------------------------------------------------
+# SPA fallback — middleware serves index.html for non-API 404s
+# This runs AFTER all API routes have been tried, so /api/* is never caught
+# ---------------------------------------------------------------------------
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+
+
+class SPAFallbackMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> StarletteResponse:
+        response = await call_next(request)
+        path = request.url.path
+        # Only serve SPA for non-API GET requests that would 404
+        if (
+            response.status_code == 404
+            and request.method == "GET"
+            and not path.startswith("/api/")
+            and not path.startswith("/static/")
+            and path != "/health"
+        ):
+            index_path = os.path.join(_spa_dir, "index.html")
+            if os.path.isfile(index_path):
+                return FileResponse(index_path)
+        return response
+
+
+app.add_middleware(SPAFallbackMiddleware)
 
 
 # ---------------------------------------------------------------------------

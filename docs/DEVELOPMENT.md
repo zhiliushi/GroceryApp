@@ -30,6 +30,12 @@ python -m venv venv
 venv\Scripts\activate             # Windows
 python -m pip install -r requirements.txt
 cp .env.example .env
+
+# Web Admin (React SPA)
+cd web-admin
+npm install
+cp .env.example .env              # Set VITE_FIREBASE_* vars
+npm run build                     # Build SPA to ../static/spa/
 ```
 
 ## Development Workflow
@@ -45,7 +51,12 @@ npx react-native start
 cd backend
 python main.py
 
-# Terminal 3: Android/iOS
+# Terminal 3: Web Admin (React SPA dev server)
+cd backend/web-admin
+npm install   # first time only
+npm run dev   # starts Vite at :5173, proxies /api to :8000
+
+# Terminal 4: Android/iOS
 cd mobile-app
 npx react-native run-android
 # or: npx react-native run-ios
