@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     # Admin bootstrap — Firebase UIDs that are always admin
     ADMIN_UIDS: List[str] = []
 
+    # Email — Invitation delivery (cascading providers)
+    RESEND_API_KEY: str = ""
+    SENDGRID_API_KEY: str = ""
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = "GroceryApp <noreply@groceryapp.com>"
+
+    # OCR — Receipt scanning providers
+    GOOGLE_VISION_API_KEY: str = ""  # or use Firebase service account (Vision API must be enabled)
+    MINDEE_API_KEY: str = ""  # from mindee.com dashboard
+
     # Environment
     ENVIRONMENT: str = "development"
 

@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 
-from app.api.routes import barcode, analytics, foodbank, admin
+from app.api.routes import barcode, analytics, foodbank, admin, receipt, household
 from app.core.config import settings
 from app.services import scheduler
 
@@ -104,6 +104,8 @@ app.include_router(barcode.router, prefix="/api/barcode", tags=["barcode"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(foodbank.router, prefix="/api/foodbanks", tags=["foodbanks"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(receipt.router, prefix="/api/receipt", tags=["receipt"])
+app.include_router(household.router, prefix="/api/household", tags=["household"])
 
 # SPA catch-all (serves React app for all non-API routes)
 # Replaces the old Jinja2 web.router
@@ -149,8 +151,16 @@ async def get_current_user_info(request: Request):
     if not user:
         return {"authenticated": False}
     # Enrich with Firestore profile data (tier, status, tools, country)
-    from app.services import user_service
-    profile = user_service.get_user(user.uid) or {}
+    from app.services import user_service, config_service
+    profile = user_service.get_user(user.uid)
+
+    # New user check: if no profile exists and registration is closed, block
+    if not profile:
+        allowed, reason = config_service.check_registration_allowed()
+        if not allowed:
+            return {"authenticated": True, "uid": user.uid, "registration_blocked": True, "reason": reason}
+
+    profile = profile or {}
     return {
         "authenticated": True,
         "uid": user.uid,
@@ -171,6 +181,13 @@ async def get_public_config():
     No auth required. Used by mobile app and web SPA on startup."""
     from app.services import config_service
     return config_service.get_public_config()
+
+
+@app.get("/api/config/locations")
+async def get_locations():
+    """Public storage locations config. No auth required."""
+    from app.services import location_service
+    return {"locations": location_service.get_locations()}
 
 
 @app.get("/api/exchange-rates")

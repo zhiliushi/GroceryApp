@@ -8,20 +8,46 @@ The GroceryApp backend is a Python FastAPI application that provides barcode sca
 
 ```
 backend/
-├── main.py                        # App entry, Firebase init, CORS, routers
+├── main.py                        # App entry, Firebase init, CORS, SPA fallback, routers
 ├── app/
 │   ├── core/
-│   │   └── config.py              # Pydantic settings from environment
+│   │   ├── config.py              # Pydantic settings from environment
+│   │   └── auth.py                # Firebase token verification, UserInfo, role management
 │   ├── schemas/
 │   │   ├── barcode.py             # Barcode request/response models
-│   │   └── analytics.py           # Analytics + insights models
+│   │   ├── analytics.py           # Analytics + insights models
+│   │   ├── foodbank.py            # Foodbank models, responses
+│   │   ├── auth.py                # UserRoleUpdateRequest
+│   │   └── web.py                 # Dashboard schemas
 │   ├── services/
 │   │   ├── barcode_service.py     # Firebase + OFF lookup, contribute
 │   │   ├── analytics_service.py   # Batch sync, stats aggregation
-│   │   └── insights_service.py    # AI + rule-based insights engine
+│   │   ├── insights_service.py    # AI + rule-based insights engine
+│   │   ├── foodbank_service.py    # CRUD + Malaysia seeding
+│   │   ├── foodbank_sources.py    # Multi-source web scraping
+│   │   ├── user_service.py        # User management, roles, tiers
+│   │   ├── inventory_service.py   # Cross-user inventory queries
+│   │   ├── shopping_list_service.py # Shopping lists across users
+│   │   ├── product_service.py     # Product database management
+│   │   ├── price_record_service.py # Price history queries
+│   │   ├── config_service.py      # Page visibility, tier definitions
+│   │   ├── exchange_rate_service.py # Currency conversion
+│   │   ├── contributed_product_service.py # Review queue for user contributions
+│   │   └── scheduler.py           # APScheduler for background tasks
+│   ├── fsm/                       # Finite state machines
+│   │   ├── engine.py              # Generic StateMachine with guards, actions, audit
+│   │   ├── item_lifecycle.py      # scanned → active → consumed/expired/discarded
+│   │   ├── foodbank_pipeline.py   # Foodbank data pipeline states
+│   │   └── review_workflow.py     # Contributed product review states
 │   └── api/routes/
 │       ├── barcode.py             # /api/barcode/* endpoints
-│       └── analytics.py           # /api/analytics/* endpoints
+│       ├── analytics.py           # /api/analytics/* endpoints
+│       ├── foodbank.py            # /api/foodbanks/* endpoints
+│       ├── admin.py               # /api/admin/* endpoints (requires admin role)
+│       └── web.py                 # Legacy Jinja2 routes (being replaced by SPA)
+├── web-admin/                     # React SPA admin panel (Vite + React 19 + Tailwind 4)
+├── static/                        # SPA build output served by FastAPI
+├── templates/                     # Legacy Jinja2 templates (deprecating)
 ├── scripts/
 │   ├── setup.bat                  # Windows local dev setup
 │   └── setup.sh                   # macOS/Linux local dev setup
@@ -80,27 +106,40 @@ All settings are loaded from environment variables (or `.env` file) via Pydantic
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FIREBASE_CREDENTIALS_PATH` | `""` | Path to Firebase service account JSON |
+| `FIREBASE_CREDENTIALS_JSON` | `""` | JSON string of Firebase credentials (Priority 1, for cloud deployment) |
+| `FIREBASE_CREDENTIALS_PATH` | `""` | Path to Firebase service account JSON (Priority 2, for local dev) |
 | `FIREBASE_DATABASE_URL` | `""` | Firestore database URL |
+| `FIREBASE_WEB_API_KEY` | `""` | Firebase web API key (for web SPA) |
+| `FIREBASE_WEB_AUTH_DOMAIN` | `""` | Firebase web auth domain |
+| `FIREBASE_WEB_PROJECT_ID` | `""` | Firebase project ID |
 | `OPEN_FOOD_FACTS_API` | `https://world.openfoodfacts.org/api/v2` | OFF API base URL |
 | `AI_SERVICE_URL` | `None` | Ollama or OpenAI-compatible endpoint |
 | `AI_MODEL_NAME` | `llama3.2` | Model name for AI insights |
+| `ADMIN_UIDS` | `""` | Comma-separated Firebase UIDs for bootstrap admin access |
 | `ALLOWED_ORIGINS` | `["*"]` | CORS allowed origins |
 | `ENVIRONMENT` | `development` | `development` or `production` |
+| `GOOGLE_MAPS_API_KEY` | `""` | Google Maps API key (for foodbank locations) |
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | API info (name + version) |
-| `GET` | `/health` | Health check |
-| `POST` | `/api/barcode/scan` | Barcode lookup (multi-source) |
-| `GET` | `/api/barcode/product/{barcode}` | Direct product lookup |
-| `POST` | `/api/barcode/contribute` | User-contributed product |
-| `POST` | `/api/analytics/batch` | Batch event sync to Firestore |
-| `POST` | `/api/analytics/sync` | Legacy sync (backward compat) |
-| `GET` | `/api/analytics/stats/{user_id}` | Aggregated user statistics |
-| `GET` | `/api/analytics/insights/{user_id}` | AI-powered insights |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/health` | — | Health check |
+| `GET` | `/api/me` | Token | Current user info + Firestore profile |
+| `GET` | `/api/config` | — | Public app config (visibility rules, tiers) |
+| `GET` | `/api/exchange-rates` | — | Currency conversion rates |
+| `POST` | `/api/barcode/scan` | — | Barcode lookup (multi-source) |
+| `GET` | `/api/barcode/product/{barcode}` | — | Direct product lookup |
+| `POST` | `/api/barcode/contribute` | — | User-contributed product |
+| `POST` | `/api/analytics/batch` | — | Batch event sync to Firestore |
+| `POST` | `/api/analytics/sync` | — | Legacy sync (backward compat) |
+| `GET` | `/api/analytics/stats/{uid}` | Token | Aggregated user statistics |
+| `GET` | `/api/analytics/insights/{uid}` | Token | AI-powered insights |
+| `GET` | `/api/foodbanks` | — | List foodbanks (optional `?country=`) |
+| `GET` | `/api/foodbanks/{id}` | — | Get single foodbank |
+| `POST` | `/api/foodbanks/seed` | Admin | Seed Malaysia data |
+| `POST` | `/api/foodbanks/refresh` | Admin | Manual refresh |
+| `GET/POST/PUT/DELETE` | `/api/admin/*` | Admin | Dashboard, users, inventory, products, pricing, contributed products |
 
 See [API.md](API.md) for complete request/response documentation.
 
@@ -162,6 +201,8 @@ httpx==0.28.1
 gunicorn==24.1.1
 python-multipart==0.0.20
 python-dotenv==1.0.1
+jinja2==3.1.4
+apscheduler==3.10.4
 ```
 
 ## Deployment
@@ -202,18 +243,34 @@ docker run -p 8000:8000 --env-file .env groceryapp-api
 
 The backend initializes Firebase Admin SDK in `main.py`:
 
-1. If `FIREBASE_CREDENTIALS_PATH` points to a valid file → uses Certificate auth
-2. Otherwise → falls back to Application Default Credentials (for Render/Cloud Run)
+1. **Priority 1**: `FIREBASE_CREDENTIALS_JSON` env var → parses JSON string → Certificate auth (for cloud deployment on Render)
+2. **Priority 2**: `FIREBASE_CREDENTIALS_PATH` file path → Certificate auth (for local development)
+3. **Fallback**: Application Default Credentials (for GCP environments)
 
 Firestore collections used by the backend:
 
 ```
 products/{barcode}                    # Cached OFF product data
-contributed_products/{barcode}        # User-submitted product info
-users/{userId}/
+contributed_products/{barcode}        # User-submitted product info (with review status)
+foodbanks/{id}                        # Global foodbank locations
+users/{userId}                        # User profiles (email, tier, role, preferences)
   analytics/{eventId}                 # Analytics events
-  grocery_items/{itemId}              # Inventory items (for stats)
+  grocery_items/{itemId}              # Inventory items (for stats + admin queries)
+  shopping_lists/{listId}             # Shopping list metadata
+    items/{itemId}                    # List items (nested subcollection)
 ```
+
+## Authentication
+
+Token-based authentication via Firebase ID tokens:
+
+- **Token sources**: Cookie (`__session`) or `Authorization: Bearer <token>` header
+- **Role determination** (priority order):
+  1. Firebase custom claims
+  2. Firestore user document
+  3. Config `ADMIN_UIDS` list
+- **Auth dependencies**: `get_optional_user()`, `get_current_user()`, `require_admin()`
+- **Roles**: `user` (default), `admin`
 
 ## Troubleshooting
 

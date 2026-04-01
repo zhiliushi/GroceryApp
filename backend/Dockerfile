@@ -6,6 +6,11 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# System packages — Tesseract OCR for receipt scanning (English + Malay)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

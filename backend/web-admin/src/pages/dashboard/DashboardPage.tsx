@@ -4,12 +4,16 @@ import { useMe } from '@/api/queries/useMe';
 import PageHeader from '@/components/shared/PageHeader';
 import StatsCard from '@/components/shared/StatsCard';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { formatDate, formatExpiry, truncateUid } from '@/utils/format';
+import ExpiringSoonList from '@/components/inventory/ExpiringSoonList';
+import LocationSummary from '@/components/inventory/LocationSummary';
+import ScanReceiptButton from '@/components/receipt/ScanReceiptButton';
+import ScanBarcodeButton from '@/components/barcode/ScanBarcodeButton';
+import { truncateUid } from '@/utils/format';
 
 export default function DashboardPage() {
   const { data: me } = useMe();
   const { data: stats, isLoading: statsLoading } = useDashboard();
-  const { data: inventory, isLoading: invLoading } = useRecentInventory(10);
+  const { data: inventory } = useRecentInventory(200); // fetch more for grouping
 
   const today = new Date().toLocaleDateString('en-MY', {
     weekday: 'long',
@@ -17,6 +21,9 @@ export default function DashboardPage() {
     month: 'long',
     year: 'numeric',
   });
+
+  const allItems = inventory?.items ?? [];
+  const hasItems = allItems.length > 0;
 
   return (
     <div className="p-6">
@@ -55,78 +62,61 @@ export default function DashboardPage() {
         <StatsCard icon="📍" label="Foodbanks" value={stats?.total_foodbanks} loading={statsLoading} />
       </div>
 
-      {/* Two-column section */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-ga-bg-card border border-ga-border rounded-lg">
-          <div className="px-4 py-3 border-b border-ga-border flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ga-text-primary">Recent Activity</h2>
-            <Link to="/inventory" className="text-xs text-ga-accent hover:underline">
-              View All →
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            {invLoading ? (
-              <div className="p-8 text-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ga-accent mx-auto" />
-              </div>
-            ) : !inventory?.items?.length ? (
-              <div className="p-8 text-center text-ga-text-secondary text-sm">No recent items</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-ga-border">
-                    <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ga-text-secondary">Item</th>
-                    <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ga-text-secondary">Status</th>
-                    <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ga-text-secondary">Expiry</th>
-                    <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ga-text-secondary">Added</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventory.items.map((item, i) => {
-                    const expiry = formatExpiry(item.expiryDate || item.expiry_date);
-                    return (
-                      <tr key={i} className="border-b border-ga-border/50 hover:bg-ga-bg-hover transition-colors">
-                        <td className="px-4 py-2.5">
-                          <span className="font-medium">{item.name}</span>
-                          {item.brand && <span className="text-ga-text-secondary ml-2">{item.brand}</span>}
-                        </td>
-                        <td className="px-4 py-2.5"><StatusBadge status={item.status} /></td>
-                        <td className="px-4 py-2.5"><span className={expiry.className}>{expiry.text}</span></td>
-                        <td className="px-4 py-2.5 text-ga-text-secondary">{formatDate(item.addedDate)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+      {/* Main content */}
+      {!hasItems ? (
+        /* Empty inventory hero */
+        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-12 text-center mb-6">
+          <div className="text-5xl mb-4">📦</div>
+          <h2 className="text-xl font-semibold text-ga-text-primary mb-2">Your inventory is empty</h2>
+          <p className="text-ga-text-secondary mb-6">Start by scanning a barcode or receipt to add your first items.</p>
+          <div className="flex gap-3 justify-center">
+            <ScanBarcodeButton />
+            <ScanReceiptButton destination="inventory" pageKey="dashboard" />
           </div>
         </div>
-
-        {/* Quick Actions */}
-        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-ga-text-primary mb-4">Quick Actions</h2>
-          <div className="space-y-2">
-            <Link to="/users" className="block text-sm text-ga-accent hover:underline">Manage Users →</Link>
-            <Link to="/needs-review" className="block text-sm text-ga-accent hover:underline">
-              Review Items →
-              {(stats?.needs_review_count ?? 0) > 0 && (
-                <span className="ml-2 bg-yellow-500 text-black text-xs rounded-full px-1.5 py-0.5">
-                  {stats!.needs_review_count}
-                </span>
-              )}
-            </Link>
-            <Link to="/contributed-products" className="block text-sm text-ga-accent hover:underline">
-              Contributed Products →
-              {(stats?.contributed_pending ?? 0) > 0 && (
-                <span className="ml-2 bg-yellow-500 text-black text-xs rounded-full px-1.5 py-0.5">
-                  {stats!.contributed_pending}
-                </span>
-              )}
-            </Link>
-            <Link to="/products" className="block text-sm text-ga-accent hover:underline">Product Database →</Link>
-            <Link to="/foodbanks" className="block text-sm text-ga-accent hover:underline">Manage Foodbanks →</Link>
+      ) : (
+        <div className="grid lg:grid-cols-3 gap-4 mb-6">
+          {/* Expiring Soon — 2/3 width */}
+          <div className="lg:col-span-2">
+            <ExpiringSoonList items={allItems} />
           </div>
+
+          {/* Location Summary — 1/3 width */}
+          <div>
+            <LocationSummary items={allItems} />
+          </div>
+        </div>
+      )}
+
+      {/* Quick Actions */}
+      <div className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-ga-text-primary mb-4">Quick Actions</h2>
+        <div className="space-y-2">
+          <Link to="/users" className="block text-sm text-ga-accent hover:underline">Manage Users →</Link>
+          <Link to="/needs-review" className="block text-sm text-ga-accent hover:underline">
+            Review Items →
+            {(stats?.needs_review_count ?? 0) > 0 && (
+              <span className="ml-2 bg-yellow-500 text-black text-xs rounded-full px-1.5 py-0.5">
+                {stats!.needs_review_count}
+              </span>
+            )}
+          </Link>
+          <Link to="/contributed-products" className="block text-sm text-ga-accent hover:underline">
+            Contributed Products →
+            {(stats?.contributed_pending ?? 0) > 0 && (
+              <span className="ml-2 bg-yellow-500 text-black text-xs rounded-full px-1.5 py-0.5">
+                {stats!.contributed_pending}
+              </span>
+            )}
+          </Link>
+          <Link to="/products" className="block text-sm text-ga-accent hover:underline">Product Database →</Link>
+          <Link to="/foodbanks" className="block text-sm text-ga-accent hover:underline">Manage Foodbanks →</Link>
+          {hasItems && (
+            <div className="pt-1 flex gap-2">
+              <ScanBarcodeButton />
+              <ScanReceiptButton destination="inventory" pageKey="dashboard" />
+            </div>
+          )}
         </div>
       </div>
     </div>

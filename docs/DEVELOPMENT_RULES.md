@@ -64,7 +64,7 @@ Multiple inventory rows can share the same barcode (e.g. same product bought on 
 
 ### State Management
 - **Local state**: useState for component-local state
-- **Shared state**: Redux Toolkit or Zustand for app-wide state
+- **Shared state**: Zustand for app-wide state (persisted to AsyncStorage)
 - **Server state**: React Query for API data caching
 - **Form state**: React Hook Form for complex forms
 

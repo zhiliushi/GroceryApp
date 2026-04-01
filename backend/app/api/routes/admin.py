@@ -19,6 +19,11 @@ from app.services import (
     product_service,
     price_record_service,
     config_service,
+    ocr_config_service,
+    receipt_log_service,
+    location_service,
+    dispute_service,
+    email_config_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -397,3 +402,247 @@ async def batch_delete_price_records(body: dict, admin: UserInfo = Depends(requi
         raise HTTPException(status_code=400, detail="No records specified")
     deleted = price_record_service.delete_records_batch(records)
     return {"success": True, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Storage Locations
+# ---------------------------------------------------------------------------
+
+@router.get("/config/locations")
+async def get_locations(admin: UserInfo = Depends(require_admin)):
+    """Get all storage locations."""
+    return {"locations": location_service.get_locations()}
+
+
+@router.put("/config/locations")
+async def update_locations(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update locations (reorder, rename, add/remove)."""
+    locations = body.get("locations", [])
+    location_service.update_locations(locations, admin.uid)
+    return {"success": True, "message": "Locations updated"}
+
+
+@router.post("/config/locations")
+async def add_location(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Add a new storage location."""
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "Location name is required")
+    icon = body.get("icon", "📍")
+    color = body.get("color", "#6B7280")
+    try:
+        loc = location_service.add_location(name, icon, color)
+        return {"success": True, "location": loc}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/config/locations/{key}")
+async def delete_location(key: str, admin: UserInfo = Depends(require_admin)):
+    """Delete a storage location (blocked if items exist there)."""
+    count = location_service.count_items_at_location(key)
+    if count > 0:
+        raise HTTPException(
+            400,
+            f"Cannot delete: {count} items are stored in this location. Move them first.",
+        )
+    if not location_service.remove_location(key):
+        raise HTTPException(404, "Location not found")
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Product Disputes
+# ---------------------------------------------------------------------------
+
+@router.get("/disputes")
+async def list_disputes(
+    status: Optional[str] = Query(None),
+    barcode: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    admin: UserInfo = Depends(require_admin),
+):
+    """List product disputes with optional filters."""
+    disputes = dispute_service.list_disputes(status=status, barcode=barcode, limit=limit)
+    counts = dispute_service.count_disputes_by_status()
+    return {"count": len(disputes), "disputes": disputes, "counts": counts}
+
+
+@router.put("/disputes/{dispute_id}")
+async def resolve_dispute(
+    dispute_id: str,
+    body: dict,
+    admin: UserInfo = Depends(require_admin),
+):
+    """Resolve a dispute (accept or dismiss)."""
+    action = body.get("action", "")
+    if action not in ("accept", "dismiss"):
+        raise HTTPException(400, "Action must be 'accept' or 'dismiss'")
+    note = body.get("resolution_note", "")
+    if not dispute_service.resolve_dispute(dispute_id, action, admin.uid, note):
+        raise HTTPException(404, "Dispute not found")
+    return {"success": True, "message": f"Dispute {action}ed"}
+
+
+# ---------------------------------------------------------------------------
+# Product Re-check OFF
+# ---------------------------------------------------------------------------
+
+@router.post("/products/{barcode}/recheck")
+async def recheck_product_off(barcode: str, admin: UserInfo = Depends(require_admin)):
+    """Re-check a product on Open Food Facts and update if found."""
+    import time
+    from app.services import product_service
+
+    # Check rate limit (1 hour cooldown)
+    existing = product_service.get_product(barcode)
+    if existing:
+        last_check = existing.get("last_checked_off", 0)
+        if last_check and (time.time() * 1000 - last_check) < 3600000:  # 1 hour
+            return {"success": False, "found": False, "message": "Re-checked less than 1 hour ago. Try later."}
+
+    # Lookup on OFF
+    off_data = await product_service.lookup_openfoodfacts(barcode)
+
+    if off_data:
+        # Update product with OFF data
+        product_service.create_product(barcode, {
+            **off_data,
+            "source": "openfoodfacts",
+            "last_checked_off": int(time.time() * 1000),
+        })
+        return {"success": True, "found": True, "message": "Found on Open Food Facts!", "product": off_data}
+    else:
+        # Record the check attempt
+        from firebase_admin import firestore
+        db = firestore.client()
+        db.collection("products").document(barcode).set(
+            {"last_checked_off": int(time.time() * 1000)},
+            merge=True,
+        )
+        return {"success": True, "found": False, "message": "Still not found on Open Food Facts."}
+
+
+# ---------------------------------------------------------------------------
+# OCR Configuration
+# ---------------------------------------------------------------------------
+
+@router.get("/config/ocr")
+async def get_ocr_config(admin: UserInfo = Depends(require_admin)):
+    """Get OCR provider config with usage stats merged in."""
+    try:
+        ocr_config_service.sync_api_key_status()
+    except Exception as e:
+        logger.warning("sync_api_key_status failed (non-fatal): %s", e)
+    try:
+        return ocr_config_service.get_usage_with_config()
+    except Exception as e:
+        logger.exception("Failed to get OCR config")
+        raise HTTPException(status_code=500, detail=f"Failed to load OCR config: {e}")
+
+
+@router.put("/config/ocr")
+async def update_ocr_config(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update OCR provider configuration (order, enabled, limits)."""
+    try:
+        ocr_config_service.update_ocr_config(body, admin.uid)
+        return {"success": True, "message": "OCR config updated"}
+    except Exception as e:
+        logger.exception("Failed to update OCR config")
+        raise HTTPException(status_code=500, detail=f"Failed to update OCR config: {e}")
+
+
+@router.get("/config/ocr/requirements")
+async def get_ocr_requirements(admin: UserInfo = Depends(require_admin)):
+    """Check provider requirements — what's configured, what's missing."""
+    try:
+        return ocr_config_service.check_all_requirements()
+    except Exception as e:
+        logger.exception("Failed to check OCR requirements")
+        raise HTTPException(status_code=500, detail=f"Failed to check requirements: {e}")
+
+
+@router.post("/config/ocr/test/{provider_key}")
+async def test_ocr_provider(provider_key: str, admin: UserInfo = Depends(require_admin)):
+    """Test a single OCR provider with a synthetic image."""
+    try:
+        return await ocr_config_service.test_provider(provider_key)
+    except Exception as e:
+        logger.exception("Failed to test provider %s", provider_key)
+        return {"success": False, "provider": provider_key, "duration_ms": 0,
+                "error_type": type(e).__name__, "error_message": str(e),
+                "message": f"Test failed: {e}"}
+
+
+# ---------------------------------------------------------------------------
+# System Configuration (user limits, registration)
+# ---------------------------------------------------------------------------
+
+@router.get("/config/system")
+async def get_system_config(admin: UserInfo = Depends(require_admin)):
+    """Get system config with active user count and capacity."""
+    return config_service.get_system_status()
+
+
+@router.put("/config/system")
+async def update_system_config(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update system config (max_active_users, registration_open)."""
+    config_service.update_system_config(body, admin.uid)
+    return {"success": True, "message": "System config updated"}
+
+
+# ---------------------------------------------------------------------------
+# Email Configuration
+# ---------------------------------------------------------------------------
+
+@router.get("/config/email")
+async def get_email_config(admin: UserInfo = Depends(require_admin)):
+    """Get email provider config with usage stats."""
+    try:
+        email_config_service.sync_api_key_status()
+    except Exception as e:
+        logger.warning("Email sync_api_key_status failed: %s", e)
+    return email_config_service.get_config_with_usage()
+
+
+@router.put("/config/email")
+async def update_email_config(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update email provider config."""
+    email_config_service.update_email_config(body, admin.uid)
+    return {"success": True, "message": "Email config updated"}
+
+
+@router.post("/config/email/test")
+async def test_email(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Send a test email to verify provider."""
+    to = body.get("to") or admin.email
+    if not to:
+        raise HTTPException(400, "Email address required")
+    from app.services import email_service
+    result = await email_service.send_test_email(to)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Receipt Scans (Admin view)
+# ---------------------------------------------------------------------------
+
+@router.get("/receipt-scans")
+async def list_receipt_scans(
+    limit: int = Query(50, ge=1, le=200),
+    admin: UserInfo = Depends(require_admin),
+):
+    """List recent receipt scans across all users."""
+    scans = receipt_log_service.get_all_recent_scans(limit=limit)
+    stats = receipt_log_service.get_scan_stats()
+    return {"count": len(scans), "scans": scans, "stats": stats}
+
+
+@router.get("/receipt-scans/errors")
+async def list_receipt_errors(
+    limit: int = Query(20, ge=1, le=100),
+    admin: UserInfo = Depends(require_admin),
+):
+    """List recent receipt scan errors for debugging."""
+    errors = receipt_log_service.get_recent_errors(limit=limit)
+    return {"count": len(errors), "errors": errors}

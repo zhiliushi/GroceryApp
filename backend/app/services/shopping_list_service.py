@@ -34,6 +34,51 @@ def get_user_lists(uid: str) -> List[Dict[str, Any]]:
     return results
 
 
+def get_household_lists(uid: str) -> List[Dict[str, Any]]:
+    """Get shopping lists for a user AND their household members.
+
+    Merges all members' lists. Each list includes member attribution.
+    Falls back to get_user_lists() if user has no household.
+    """
+    from app.services import household_service
+
+    household = household_service.get_user_household(uid)
+    if not household:
+        return get_user_lists(uid)
+
+    member_uids = household_service.get_household_member_uids(household["id"])
+    if not member_uids:
+        return get_user_lists(uid)
+
+    member_map = {}
+    for m in household.get("members", []):
+        member_map[m["uid"]] = {
+            "display_name": m.get("display_name", ""),
+            "display_role": m.get("display_role", ""),
+            "role_icon": m.get("role_icon", ""),
+        }
+
+    db = _get_db()
+    all_lists: List[Dict[str, Any]] = []
+
+    for member_uid in member_uids:
+        try:
+            for doc in db.collection("users").document(member_uid).collection("shopping_lists").stream():
+                data = doc.to_dict()
+                data["id"] = doc.id
+                data["user_id"] = member_uid
+                info = member_map.get(member_uid, {})
+                data["_member_name"] = info.get("display_name", "")
+                data["_member_role"] = info.get("display_role", "")
+                data["_member_icon"] = info.get("role_icon", "")
+                all_lists.append(data)
+        except Exception as e:
+            logger.warning("Failed to query lists for member %s: %s", member_uid, e)
+
+    all_lists.sort(key=lambda x: x.get("createdDate", 0), reverse=True)
+    return all_lists
+
+
 def get_list_items(uid: str, list_id: str) -> List[Dict[str, Any]]:
     """Get items in a specific shopping list."""
     db = _get_db()

@@ -14,8 +14,8 @@ All enums and controlled vocabularies are defined in `src/config/constants.ts`:
 ### Storage Locations
 ```typescript
 export const STORAGE_LOCATIONS = ['fridge', 'pantry', 'freezer'] as const;
-export type StorageLocation = (typeof STORAGE_LOCATIONS)[number];
-export const DEFAULT_STORAGE_LOCATION: StorageLocation = 'fridge';
+export type StorageLocation = string; // string (not union) — users can add custom locations via settingsStore
+export const DEFAULT_STORAGE_LOCATION = 'fridge';
 ```
 
 ### Inventory Status (Lifecycle)
@@ -44,9 +44,9 @@ type UnitType = 'weight' | 'volume' | 'count';
 
 ### Schema Version
 
-Current version: **2** (defined in `src/config/constants.ts` as `DB_VERSION`)
+Current version: **8** (defined in `src/config/constants.ts` as `DB_VERSION`)
 
-### Tables (10 Total)
+### Tables (11 Total)
 
 #### categories
 Normalized lookup table for item categories. Seeded with 9 defaults on first launch.
@@ -61,7 +61,7 @@ Normalized lookup table for item categories. Seeded with 9 defaults on first lau
 | created_at | number | | |
 | updated_at | number | | |
 
-**Seed data**: Dairy (#FFC107), Produce (#4CAF50), Meat (#F44336), Bakery (#FF9800), Beverages (#2196F3), Frozen (#00BCD4), Snacks (#9C27B0), Household (#607D8B), Other (#9E9E9E)
+**Seed data**: Dairy (#D4A843, cheese), Produce (#5A9E5E, food-apple), Meat (#C45454, food-steak), Bakery (#C4873B, bread-slice), Beverages (#4A80C4, cup-water), Frozen (#4A9EA8, snowflake), Snacks (#8A5A96, cookie), Household (#6B7D87, home), Other (#8A8A8A, dots-horizontal)
 
 #### units
 Normalized lookup table for measurement units. Seeded with 14 defaults.
@@ -117,32 +117,48 @@ Main data table. Holds active inventory (status=`active`) and consumed/used item
 | quantity_remaining | number | | yes | Amount left when consumed |
 | user_id | string | yes | | Owner user ID |
 | synced_to_cloud | boolean | | | Cloud sync status |
+| is_important | boolean | | | Restock tracking (v4) |
+| restock_threshold | number | | | Quantity threshold for restock alerts (v4) |
+| expiry_confirmed | boolean | | | False until user sets expiry or confirms "no expiry" (v4) |
+| needs_review | boolean | | | True when item data needs manual review in Firebase (v6) |
 | created_at | number | | | |
 | updated_at | number | | | |
 
 #### shopping_lists
 
-| Column | Type | Indexed | Notes |
-|--------|------|---------|-------|
-| name | string | | List name |
-| created_date | number | | When created |
-| is_completed | boolean | yes | Completion status |
-| user_id | string | yes | Owner user ID |
-| created_at | number | | |
-| updated_at | number | | |
+| Column | Type | Indexed | Optional | Notes |
+|--------|------|---------|----------|-------|
+| name | string | | | List name |
+| created_date | number | | | When created |
+| is_completed | boolean | yes | | Completion status |
+| user_id | string | yes | | Owner user ID |
+| is_checked_out | boolean | | | Purchase record tracking (v5) |
+| checkout_date | number | | yes | When checkout was completed (v5) |
+| store_id | string | | yes | FK → stores (v5) |
+| total_price | number | | yes | Total purchase amount (v5) |
+| notes | string | | yes | Per-list notes/instructions (v8) |
+| created_at | number | | | |
+| updated_at | number | | | |
 
 #### list_items
 
-| Column | Type | Indexed | Notes |
-|--------|------|---------|-------|
-| list_id | string | yes | FK → shopping_lists |
-| item_name | string | | Item name |
-| quantity | number | | Amount needed |
-| unit_id | string | yes | FK → units |
-| is_purchased | boolean | yes | Checked off |
-| category_id | string | yes | FK → categories |
-| created_at | number | | |
-| updated_at | number | | |
+| Column | Type | Indexed | Optional | Notes |
+|--------|------|---------|----------|-------|
+| list_id | string | yes | | FK → shopping_lists |
+| item_name | string | | | Item name |
+| quantity | number | | | Amount needed |
+| unit_id | string | yes | | FK → units |
+| is_purchased | boolean | yes | | Checked off |
+| category_id | string | yes | | FK → categories |
+| barcode | string | yes | yes | Product barcode (v5, from cart merge) |
+| brand | string | | yes | Brand name (v5) |
+| price | number | | yes | Item price (v5) |
+| weight | number | | yes | Weight for price comparison (v5) |
+| weight_unit | string | | yes | `g`, `kg`, `oz`, or `lb` (v5) |
+| image_url | string | | yes | Product image (v5) |
+| notes | string | | yes | Item notes (v5) |
+| created_at | number | | | |
+| updated_at | number | | | |
 
 #### analytics_events
 
@@ -182,6 +198,7 @@ Temporary shopping cart before checkout.
 | weight_unit | string | | yes | `g`, `kg`, `oz`, or `lb` |
 | image_url | string | | yes | Product image |
 | notes | string | | yes | User notes |
+| expires_at | number | yes | | TTL auto-delete, 24h (v3) |
 | user_id | string | yes | | Owner user ID |
 | created_at | number | | | |
 | updated_at | number | | | |
@@ -204,6 +221,26 @@ Historical price records for comparison across stores and dates.
 | created_at | number | | | |
 | updated_at | number | | | |
 
+#### foodbanks (v7)
+Global food bank locations synced from backend Firestore. Not per-user — shared globally.
+
+| Column | Type | Indexed | Optional | Notes |
+|--------|------|---------|----------|-------|
+| name | string | | | Food bank name |
+| description | string | | yes | Description |
+| country | string | yes | | Country code (e.g. "MY") |
+| state | string | yes | yes | State/region |
+| location_name | string | | yes | Location display name |
+| location_address | string | | yes | Physical address |
+| location_link | string | | yes | Map/directions URL |
+| latitude | number | | yes | GPS coordinates |
+| longitude | number | | yes | GPS coordinates |
+| source_url | string | | yes | Data source URL |
+| source_name | string | | yes | Data source name |
+| is_active | boolean | | | Active status |
+| created_at | number | | | |
+| updated_at | number | | | |
+
 ### Event Types (21)
 
 `barcode_scan`, `item_added`, `item_removed`, `list_created`, `list_completed`, `purchase_recorded`, `item_scanned`, `scan_promoted`, `scan_discarded`, `item_consumed`, `sync_completed`, `app_opened`, `category_changed`, `settings_changed`, `search_performed`, `item_shared`, `item_deleted`, `item_expired_wasted`, `recipe_viewed`, `screen_view`, `feature_used`
@@ -220,7 +257,7 @@ Each table has a corresponding WatermelonDB Model class with:
 
 ## Repositories
 
-Nine repository classes providing typed CRUD operations:
+Ten repository classes providing typed CRUD operations:
 
 | Repository | Table | Key Operations |
 |-----------|-------|----------------|
@@ -233,15 +270,16 @@ Nine repository classes providing typed CRUD operations:
 | `StoreRepository` | stores | CRUD, getByUserId, getOrCreate, search |
 | `CartRepository` | cart_items | add, update, remove, clear, incrementQuantity, decrementQuantity, checkout |
 | `PriceHistoryRepository` | price_history | getByBarcode, getByBarcodeAndStore, comparePricesAcrossStores, getPriceTrend, findBestDeal |
+| `FoodbankRepository` | foodbanks | getAll, getByCountry, getByState, upsertFromBackend |
 
 ## Database Initialization
 
 In `useDatabase.ts`:
 
 1. Create WatermelonDB database with SQLite adapter
-2. Register all 10 models
+2. Register all 11 models
 3. Run schema migrations
-4. Instantiate 9 repositories
+4. Instantiate 10 repositories
 5. Call `seedDatabase()` — inserts default categories and units if tables are empty
 6. Call `deleteExpired()` — purges Stage 1 scanned items past their TTL
 
@@ -265,7 +303,7 @@ contributed_products/{barcode}         # User-contributed product info
 - **Direction**: Bidirectional (mobile ↔ Firestore)
 - **Conflict resolution**: Last-write-wins using `updatedAt` timestamps
 - **Batch limits**: Firestore max 500 documents per batch (auto-chunked)
-- **Frequency**: Every 6 hours via background fetch + manual trigger
+- **Frequency**: Every 15 minutes (foreground) / 30 minutes (background fetch) + manual trigger
 - **Scope**: Analytics (all users), inventory + lists (paid tier only)
 
 ### Security Rules
@@ -319,5 +357,11 @@ Schema migrations are defined in `src/database/migrations/migration_v1.ts`. Wate
 
 | Version | Changes |
 |---------|---------|
-| 1 | Initial schema (7 tables) |
+| 1 | Initial schema (7 tables: categories, units, scanned_items, inventory_items, shopping_lists, list_items, analytics_events) |
 | 2 | Added `stores`, `cart_items`, `price_history` tables |
+| 3 | Added `expires_at` to cart_items for TTL auto-cleanup |
+| 4 | Added `is_important`, `restock_threshold`, `expiry_confirmed` to inventory_items |
+| 5 | Added checkout fields to shopping_lists (`is_checked_out`, `checkout_date`, `store_id`, `total_price`); added product fields to list_items (`barcode`, `brand`, `price`, `weight`, `weight_unit`, `image_url`, `notes`) |
+| 6 | Added `needs_review` to inventory_items |
+| 7 | Added `foodbanks` table (global, synced from backend) |
+| 8 | Added `notes` to shopping_lists |

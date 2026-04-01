@@ -25,6 +25,7 @@ _DEFAULT_VISIBILITY = {
                 "stats_cards": {"enabled": True, "minTier": "free"},
                 "recent_activity": {"enabled": True, "minTier": "free"},
                 "quick_actions": {"enabled": True, "minTier": "free"},
+                "receipt_scanning": {"enabled": True, "minTier": "plus"},
             },
         },
         "inventory": {
@@ -32,6 +33,7 @@ _DEFAULT_VISIBILITY = {
             "sections": {
                 "filters": {"enabled": True, "minTier": "free"},
                 "bulk_actions": {"enabled": True, "minTier": "plus"},
+                "receipt_scanning": {"enabled": True, "minTier": "plus"},
                 "export": {"enabled": False, "minTier": "pro"},
             },
         },
@@ -40,6 +42,7 @@ _DEFAULT_VISIBILITY = {
             "sections": {
                 "checkout_flow": {"enabled": True, "minTier": "plus"},
                 "trip_notes": {"enabled": True, "minTier": "plus"},
+                "receipt_scanning": {"enabled": True, "minTier": "plus"},
             },
         },
         "foodbanks": {
@@ -172,6 +175,90 @@ def get_public_config() -> Dict[str, Any]:
     return {
         "visibility": get_visibility(),
         "tiers": get_tiers(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# System config (user limits, registration)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_SYSTEM = {
+    "max_active_users": 50,
+    "registration_open": True,
+    "updated_at": None,
+    "updated_by": None,
+}
+
+
+def get_system_config() -> Dict[str, Any]:
+    """Get system config. Seeds defaults if not exists."""
+    db = _get_db()
+    doc = db.collection("app_config").document("system").get()
+    if doc.exists:
+        return doc.to_dict()
+    db.collection("app_config").document("system").set(_DEFAULT_SYSTEM)
+    return _DEFAULT_SYSTEM.copy()
+
+
+def update_system_config(config: Dict[str, Any], admin_uid: str) -> None:
+    """Update system config (max users, registration toggle)."""
+    db = _get_db()
+    config["updated_at"] = int(time.time() * 1000)
+    config["updated_by"] = admin_uid
+    db.collection("app_config").document("system").set(config, merge=True)
+    logger.info("System config updated by %s", admin_uid)
+
+
+def get_active_user_count() -> int:
+    """Count active users (status != disabled)."""
+    db = _get_db()
+    count = 0
+    try:
+        for doc in db.collection("users").stream():
+            data = doc.to_dict()
+            if data.get("status", "active") != "disabled":
+                count += 1
+    except Exception as e:
+        logger.warning("Failed to count active users: %s", e)
+    return count
+
+
+def check_registration_allowed() -> tuple[bool, str]:
+    """Check if new user registration is allowed.
+
+    Returns (allowed, reason).
+    """
+    config = get_system_config()
+
+    if not config.get("registration_open", True):
+        return False, "Registration is currently closed. Contact admin."
+
+    max_users = config.get("max_active_users", 50)
+    if max_users > 0:
+        current = get_active_user_count()
+        if current >= max_users:
+            return False, f"User limit reached ({current}/{max_users}). Contact admin."
+
+    return True, ""
+
+
+def get_system_status() -> Dict[str, Any]:
+    """Get system status for admin dashboard."""
+    config = get_system_config()
+    active_count = get_active_user_count()
+    max_users = config.get("max_active_users", 50)
+
+    percent = (active_count / max_users * 100) if max_users > 0 else 0
+
+    return {
+        **config,
+        "active_users": active_count,
+        "capacity_percent": round(percent, 1),
+        "capacity_level": (
+            "critical" if percent >= 90
+            else "warning" if percent >= 80
+            else "normal"
+        ),
     }
 
 

@@ -4,11 +4,17 @@ import { cn } from '@/utils/cn';
 import PageManagementTab from './PageManagementTab';
 import TierPlansTab from './TierPlansTab';
 import UserApprovalTab from './UserApprovalTab';
+import OcrSettingsTab from './OcrSettingsTab';
+import EmailSettingsTab from './EmailSettingsTab';
+import SystemSettingsTab from './SystemSettingsTab';
 
 const TABS = [
   { key: 'pages', label: 'Page Management', icon: '📄' },
   { key: 'tiers', label: 'Tier Plans', icon: '💎' },
   { key: 'users', label: 'User Approval', icon: '👥' },
+  { key: 'ocr', label: 'OCR Settings', icon: '🧾' },
+  { key: 'email', label: 'Email', icon: '📧' },
+  { key: 'system', label: 'System', icon: '🖥️' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -43,6 +49,9 @@ export default function AdminSettingsPage() {
       {activeTab === 'pages' && <PageManagementTab />}
       {activeTab === 'tiers' && <TierPlansTab />}
       {activeTab === 'users' && <UserApprovalTab />}
+      {activeTab === 'ocr' && <OcrSettingsTab />}
+      {activeTab === 'email' && <EmailSettingsTab />}
+      {activeTab === 'system' && <SystemSettingsTab />}
     </div>
   );
 }

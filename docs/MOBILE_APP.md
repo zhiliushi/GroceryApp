@@ -54,11 +54,11 @@ src/
 │   ├── api.ts            # Axios client with Bearer token + error classification
 │   └── constants.ts      # App constants, feature flags, DB version
 ├── database/             # WatermelonDB local database
-│   ├── schema.ts         # 7-table schema definition
+│   ├── schema.ts         # 11-table schema definition (v8)
 │   ├── seed.ts           # Default categories (9) and units (14)
 │   ├── migrations/       # Schema migration scripts
-│   ├── models/           # 7 WatermelonDB model classes
-│   └── repositories/     # 6 repository classes with typed CRUD
+│   ├── models/           # 11 WatermelonDB model classes
+│   └── repositories/     # 10 repository classes with typed CRUD
 ├── services/             # Business logic layer
 │   ├── barcode/          # BarcodeService (7-step lookup), BarcodeApiService
 │   ├── firebase/         # AuthService, FirestoreService, AnalyticsService, ImageUploadService
@@ -70,19 +70,27 @@ src/
 │   ├── useDatabase.ts    # DB initialization, model + repository registration
 │   ├── useBarcode.ts     # Barcode scanning with Stage 1 integration
 │   ├── useSync.ts        # Sync orchestration + network monitoring
-│   └── useNotifications.ts # Notification scheduling + permission handling
+│   ├── useNotifications.ts # Notification scheduling + permission handling
+│   ├── useGeolocation.ts # GPS for store location
+│   └── useAppTheme.ts    # Theme (light/dark/system)
 ├── screens/              # Screen components
-│   ├── auth/             # LoginScreen, RegisterScreen
+│   ├── auth/             # LoginScreen, RegisterScreen, OnboardingScreen
 │   ├── home/             # HomeScreen (dashboard)
-│   ├── inventory/        # InventoryScreen, InventoryDetailScreen
+│   ├── inventory/        # InventoryScreen, InventoryDetailScreen, AddInventoryItemScreen,
+│   │                     # RestockScreen, PastItemsScreen
 │   ├── scanner/          # BarcodeScannerScreen
-│   ├── lists/            # ShoppingListsScreen, ListDetailScreen, AddListItemScreen
+│   ├── lists/            # ShoppingListsScreen, ListDetailScreen, AddListItemScreen,
+│   │                     # EditListItemScreen, ShoppingCheckoutScreen, ListPickerScreen
+│   ├── common/           # AddMethodScreen, ContextScannerScreen
 │   └── settings/         # SettingsScreen
 ├── components/           # Reusable UI components
 │   ├── common/           # Button, Card, Input, Loading*, Error*, EmptyState,
 │   │                     # Toast, SyncStatusBar, OfflineIndicator, ErrorBoundary
 │   ├── grocery/          # InventoryItemCard, CategoryFilter
-│   └── scanner/          # BarcodeOverlay, ContributeProductModal
+│   ├── scanner/          # BarcodeOverlay, ContributeProductModal, RecordPriceCard,
+│   │                     # PriceHistoryPreview
+│   ├── cart/             # CartItemCard
+│   └── prices/           # PriceComparisonChart
 ├── navigation/           # React Navigation setup
 │   ├── RootNavigator.tsx # Auth gate: authenticated → Main, else → Auth
 │   ├── AuthNavigator.tsx # Login + Register stack
@@ -107,22 +115,41 @@ src/
 ## Navigation Structure
 
 ```
-RootNavigator (auth gate)
-├── AuthNavigator (unauthenticated)
-│   ├── Login
-│   └── Register
-└── MainNavigator (authenticated — bottom tabs)
-    ├── HomeTab → HomeScreen
-    ├── InventoryTab
-    │   ├── InventoryScreen (list/grid)
-    │   └── InventoryDetailScreen
-    ├── ScanTab → BarcodeScannerScreen
-    ├── ListsTab
-    │   ├── ShoppingListsScreen
-    │   ├── ListDetailScreen
-    │   └── AddListItemScreen
-    └── SettingsTab → SettingsScreen
+RootNavigator
+├── Onboarding (shown before first login, checks @user_name in AsyncStorage)
+├── Main → MainNavigator (bottom tabs)
+│   ├── HomeTab (stack)
+│   │   ├── Home (dashboard)
+│   │   ├── InventoryDetail
+│   │   ├── Restock
+│   │   ├── AddMethod → ContextScanner or AddItem
+│   │   ├── AddItem (AddInventoryItemScreen)
+│   │   └── PastItems
+│   ├── ScanTab (stack)
+│   │   ├── Scanner (BarcodeScannerScreen)
+│   │   ├── AddItem
+│   │   ├── ListPicker
+│   │   └── AddListItem
+│   ├── InventoryTab (stack)
+│   │   ├── Inventory (list/grid view)
+│   │   ├── InventoryDetail
+│   │   ├── AddMethod → ContextScanner or AddItem
+│   │   ├── AddItem
+│   │   └── PastItems
+│   ├── ShoppingTab (stack)
+│   │   ├── ShoppingLists
+│   │   ├── ListDetail
+│   │   ├── AddMethod → ContextScanner or AddListItem
+│   │   ├── AddListItem
+│   │   ├── EditListItem
+│   │   ├── ShoppingCheckout
+│   │   └── AddItem (for post-checkout inventory add)
+│   └── SettingsTab → SettingsScreen
+└── Login (modal presentation)
+    └── Register (modal presentation)
 ```
+
+Login and Register are presented as modals from the root stack, not a separate AuthNavigator.
 
 ## State Management
 
@@ -167,7 +194,7 @@ ErrorBoundary
 | `@react-native-firebase/*` | Auth, Firestore, Analytics, Crashlytics, Storage |
 | `react-native-vision-camera` | Camera for barcode scanning |
 | `@notifee/react-native` | Local notifications with channels and triggers |
-| `react-native-background-fetch` | Background sync every 6 hours |
+| `react-native-background-fetch` | Background sync every 30 minutes |
 | `@tanstack/react-query` | Server state management with caching |
 | `zustand` | Lightweight state management |
 | `react-native-paper` | Material Design UI components |

@@ -82,10 +82,10 @@ RootNavigator checks Firebase onAuthStateChanged
 
 ## Sync Workflow
 
-### Background Sync (6-hour interval)
+### Sync (15-min foreground / 30-min background)
 
 ```
-react-native-background-fetch triggers
+react-native-background-fetch triggers (every 30 min) or foreground timer (every 15 min)
     │
     ▼
 SyncService.sync(userId, isPaid)

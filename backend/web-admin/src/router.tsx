@@ -26,6 +26,7 @@ const ContributedPage = lazy(() => import('@/pages/contributed/ContributedPage')
 const NeedsReviewPage = lazy(() => import('@/pages/needs-review/NeedsReviewPage'));
 const PriceRecordsPage = lazy(() => import('@/pages/price-records/PriceRecordsPage'));
 const AdminSettingsPage = lazy(() => import('@/pages/admin-settings/AdminSettingsPage'));
+const JoinPage = lazy(() => import('@/pages/join/JoinPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -58,6 +59,14 @@ export const router = createBrowserRouter([
     element: (
       <SuspenseWrapper>
         <LoginPage />
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/join/:code',
+    element: (
+      <SuspenseWrapper>
+        <JoinPage />
       </SuspenseWrapper>
     ),
   },

@@ -100,6 +100,82 @@ async def contribute_product(request: BarcodeContributeRequest):
 
 
 # ---------------------------------------------------------------------------
+# Dispute (user-facing)
+# ---------------------------------------------------------------------------
+
+@router.post("/dispute")
+async def submit_dispute(body: dict):
+    """Submit a product dispute (any authenticated user)."""
+    from app.services import dispute_service
+
+    barcode = body.get("barcode", "").strip()
+    dispute_type = body.get("type", "").strip()
+    current_value = body.get("current_value", "")
+    suggested_value = body.get("suggested_value", "").strip()
+    notes = body.get("notes", "")
+    submitted_by = body.get("submitted_by", "anonymous")
+
+    if not barcode:
+        raise HTTPException(400, "barcode is required")
+    if not dispute_type:
+        raise HTTPException(400, "type is required (wrong_name, wrong_brand, wrong_category, other)")
+    if not suggested_value:
+        raise HTTPException(400, "suggested_value is required")
+
+    try:
+        result = dispute_service.submit_dispute(
+            barcode=barcode,
+            dispute_type=dispute_type,
+            current_value=current_value,
+            suggested_value=suggested_value,
+            notes=notes,
+            submitted_by=submitted_by,
+        )
+        is_update = "updated_at" in result and result.get("submitted_at") != result.get("updated_at")
+        return {
+            "success": True,
+            "message": "Report updated" if is_update else "Dispute submitted for admin review",
+            "dispute": result,
+        }
+    except Exception as e:
+        logger.error("Dispute submission failed: %s", e)
+        raise HTTPException(500, f"Failed to submit dispute: {e}")
+
+
+@router.get("/dispute/{barcode}")
+async def get_my_dispute(barcode: str, user_id: str = ""):
+    """Get the user's existing dispute for a barcode (for edit mode)."""
+    from app.services import dispute_service
+
+    if not user_id:
+        return {"dispute": None}
+
+    existing = dispute_service.get_user_dispute(barcode, user_id)
+    return {"dispute": existing}
+
+
+# ---------------------------------------------------------------------------
+# Price Summary
+# ---------------------------------------------------------------------------
+
+@router.get("/{barcode}/prices")
+async def get_price_summary(barcode: str):
+    """Get aggregated price data for a barcode.
+
+    Returns own prices (free tier) or all prices (paid tier).
+    Filtered by user's country.
+    """
+    from app.services import price_record_service
+
+    try:
+        summary = price_record_service.get_price_summary(barcode)
+        return summary
+    except Exception as e:
+        logger.error("Price summary failed for %s: %s", barcode, e)
+        raise HTTPException(500, f"Failed to get price summary: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Reverse Geocoding
 # ---------------------------------------------------------------------------
 

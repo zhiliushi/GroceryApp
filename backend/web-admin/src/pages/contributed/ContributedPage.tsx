@@ -7,7 +7,6 @@ import {
   useBulkDeleteContributed,
 } from '@/api/mutations/useContributedMutations';
 import { useSelection } from '@/hooks/useSelection';
-import { usePagination } from '@/hooks/usePagination';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useRejectModal } from '@/hooks/useRejectModal';
 import DataTable, { type Column } from '@/components/shared/DataTable';
@@ -19,7 +18,7 @@ import BulkActionBar from '@/components/shared/BulkActionBar';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import RejectReasonModal from './RejectReasonModal';
 import { formatRelativeDate, formatDateTime, truncateUid } from '@/utils/format';
-import { isPending, isReviewed } from '@/utils/constants';
+import { isPending, isReviewed, PAGE_LIMIT } from '@/utils/constants';
 import { cn } from '@/utils/cn';
 import type { ContributedProduct } from '@/types/api';
 
@@ -40,15 +39,19 @@ const BADGE_STYLES: Record<string, string> = {
 export default function ContributedPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const pagination = usePagination(0);
   const selection = useSelection<ContributedProduct>((p) => p.barcode);
   const dialog = useConfirmDialog();
   const rejectModal = useRejectModal();
 
+  // Fetch first page to get total, then usePagination manages the rest.
+  // We use a local page state as the source of truth for the query,
+  // since usePagination(total) needs data to know total.
+  const [queryPage, setQueryPage] = useState(0);
+
   const { data, isLoading } = useContributed({
     search,
     status: statusFilter,
-    page: pagination.page,
+    page: queryPage,
   });
 
   const approveMutation = useApproveContributed();
@@ -58,24 +61,36 @@ export default function ContributedPage() {
 
   const counts = data?.counts;
   const total = data?.total ?? 0;
-  const pg = usePagination(total);
+
+  // Derive pagination display from total (showing text, hasNext/hasPrev)
+  const hasNext = useMemo(() => (queryPage + 1) * PAGE_LIMIT < total, [queryPage, total]);
+  const hasPrev = queryPage > 0;
+  const showing = useMemo(() => {
+    if (total === 0) return '';
+    const start = queryPage * PAGE_LIMIT + 1;
+    const end = Math.min(start + PAGE_LIMIT - 1, total);
+    return `Showing ${start}–${end} of ${total}`;
+  }, [queryPage, total]);
+
+  // Destructure stable callbacks (defined with useCallback(fn, []) in their hooks)
+  const clearSelection = selection.clear;
 
   const handleSearch = useCallback(
     (v: string) => {
       setSearch(v);
-      pagination.reset();
-      selection.clear();
+      setQueryPage(0);
+      clearSelection();
     },
-    [pagination, selection],
+    [clearSelection],
   );
 
   const handleStatusFilter = useCallback(
     (status: string) => {
       setStatusFilter(status);
-      pagination.reset();
-      selection.clear();
+      setQueryPage(0);
+      clearSelection();
     },
-    [pagination, selection],
+    [clearSelection],
   );
 
   const handleBulkApprove = async () => {
@@ -299,11 +314,11 @@ export default function ContributedPage() {
         onToggleAll={() => selection.toggleAll(data?.records ?? [])}
         isAllSelected={selection.isAllSelected(data?.records ?? [])}
         pagination={{
-          showing: pg.showing,
-          hasNext: pg.hasNext,
-          hasPrev: pg.hasPrev,
-          nextPage: () => { pg.nextPage(); selection.clear(); },
-          prevPage: () => { pg.prevPage(); selection.clear(); },
+          showing,
+          hasNext,
+          hasPrev,
+          nextPage: () => { setQueryPage((p) => p + 1); selection.clear(); },
+          prevPage: () => { setQueryPage((p) => Math.max(0, p - 1)); selection.clear(); },
         }}
       />
 

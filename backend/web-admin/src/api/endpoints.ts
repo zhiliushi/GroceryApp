@@ -40,7 +40,23 @@ export const API = {
   FOODBANK_SOURCE_RESET: (id: string) => `/api/foodbanks/sources/${id}/reset`,
   FOODBANK_SOURCE_TOGGLE: (id: string) => `/api/foodbanks/sources/${id}/toggle`,
 
+  // Household
+  HOUSEHOLD_MY: '/api/household/my',
+  HOUSEHOLD_CREATE: '/api/household/create',
+  HOUSEHOLD_RENAME: '/api/household/rename',
+  HOUSEHOLD_DISSOLVE: '/api/household/dissolve',
+  HOUSEHOLD_LEAVE: '/api/household/leave',
+  HOUSEHOLD_REMOVE: (uid: string) => `/api/household/remove/${uid}`,
+  HOUSEHOLD_TRANSFER: (uid: string) => `/api/household/transfer/${uid}`,
+  HOUSEHOLD_ROLE: '/api/household/role',
+  HOUSEHOLD_INVITE: '/api/household/invite',
+  HOUSEHOLD_REVOKE: (code: string) => `/api/household/invite/${code}/revoke`,
+  HOUSEHOLD_JOIN_INFO: (code: string) => `/api/household/join/${code}`,
+  HOUSEHOLD_JOIN: (code: string) => `/api/household/join/${code}`,
+
   // Config
+  CONFIG_LOCATIONS: '/api/config/locations',
+  CONFIG_LOCATIONS_ADMIN: '/api/admin/config/locations',
   CONFIG_PUBLIC: '/api/config',
   CONFIG_VISIBILITY: '/api/admin/config/visibility',
   CONFIG_TIERS: '/api/admin/config/tiers',
@@ -52,4 +68,22 @@ export const API = {
   USER_APPROVE: (uid: string) => `/api/admin/users/${uid}/approve`,
   USER_DELETE: (uid: string) => `/api/admin/users/${uid}`,
   USER_TOOLS: (uid: string) => `/api/admin/users/${uid}/tools`,
+
+  // Product Disputes
+  DISPUTES_ADMIN: '/api/admin/disputes',
+  DISPUTE_RESOLVE: (id: string) => `/api/admin/disputes/${id}`,
+  DISPUTE_SUBMIT: '/api/barcode/dispute',
+  DISPUTE_MY: (barcode: string) => `/api/barcode/dispute/${barcode}`,
+  PRODUCT_RECHECK: (barcode: string) => `/api/admin/products/${barcode}/recheck`,
+  BARCODE_PRICES: (barcode: string) => `/api/barcode/${barcode}/prices`,
+
+  // Receipt OCR
+  RECEIPT_SCAN: '/api/receipt/scan',
+  RECEIPT_CONFIRM: '/api/receipt/confirm',
+  RECEIPT_HISTORY: '/api/receipt/history',
+  CONFIG_OCR: '/api/admin/config/ocr',
+  CONFIG_OCR_REQUIREMENTS: '/api/admin/config/ocr/requirements',
+  CONFIG_OCR_TEST: (provider: string) => `/api/admin/config/ocr/test/${provider}`,
+  ADMIN_RECEIPT_SCANS: '/api/admin/receipt-scans',
+  ADMIN_RECEIPT_ERRORS: '/api/admin/receipt-scans/errors',
 } as const;

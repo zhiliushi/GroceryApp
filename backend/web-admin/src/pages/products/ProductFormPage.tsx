@@ -5,6 +5,8 @@ import { useProduct } from '@/api/queries/useProducts';
 import { useCreateProduct, useUpdateProduct, useLookupBarcode } from '@/api/mutations/useProductMutations';
 import FormField from '@/components/shared/FormField';
 import ImagePreview from '@/components/shared/ImagePreview';
+import ProductStateBanner from '@/components/products/ProductStateBanner';
+import PriceHistorySection from '@/components/products/PriceHistorySection';
 
 interface ProductFormData {
   barcode: string;
@@ -87,6 +89,11 @@ export default function ProductFormPage() {
           {isEdit ? `Edit "${existing?.product_name || barcode}"` : 'Add Product'}
         </span>
       </div>
+
+      {/* State banner (edit mode only) */}
+      {isEdit && existing && (
+        <ProductStateBanner product={existing as import('@/types/api').Product} />
+      )}
 
       <div className="bg-ga-bg-card border border-ga-border rounded-lg p-6 max-w-2xl">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -180,6 +187,13 @@ export default function ProductFormPage() {
           </div>
         </form>
       </div>
+
+      {/* Price history (edit mode only, when barcode exists) */}
+      {isEdit && barcode && (
+        <div className="max-w-2xl">
+          <PriceHistorySection barcode={barcode} />
+        </div>
+      )}
     </div>
   );
 }

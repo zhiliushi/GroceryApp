@@ -7,140 +7,156 @@ service cloud.firestore {
     // Helper functions
     // -----------------------------------------------------------------------
 
-    // The requesting user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // The requesting user owns this user document
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // The incoming data has a required string field
+    // Check if requesting user is in the same household as the document owner.
+    function isHouseholdMember(userId) {
+      let requesterProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let ownerProfile = get(/databases/$(database)/documents/users/$(userId)).data;
+      return requesterProfile.household_id != null
+          && requesterProfile.household_id == ownerProfile.household_id;
+    }
+
+    // Owner OR household member
+    function canAccess(userId) {
+      return isOwner(userId) || (isAuthenticated() && isHouseholdMember(userId));
+    }
+
     function hasString(field) {
       return field in request.resource.data
           && request.resource.data[field] is string
           && request.resource.data[field].size() > 0;
     }
 
-    // The incoming data has a required number field
     function hasNumber(field) {
       return field in request.resource.data
           && request.resource.data[field] is number;
     }
 
     // -----------------------------------------------------------------------
-    // User profile: /users/{userId}
+    // User profile
     // -----------------------------------------------------------------------
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
-                    && hasString('email')
-                    && hasString('tier')
-                    && request.resource.data.tier in ['free', 'paid'];
-      allow update: if isOwner(userId)
-                    && (!('tier' in request.resource.data)
-                        || request.resource.data.tier in ['free', 'paid']);
+      allow read: if isOwner(userId) || (isAuthenticated() && isHouseholdMember(userId));
+      allow create: if isOwner(userId) && hasString('email');
+      allow update: if isOwner(userId);
       allow delete: if isOwner(userId);
 
-      // ---------------------------------------------------------------------
-      // Inventory items: /users/{userId}/grocery_items/{itemId}
-      // ---------------------------------------------------------------------
-
+      // Inventory items — household members can read + update (shared editing)
       match /grocery_items/{itemId} {
-        allow read: if isOwner(userId);
-        allow create: if isOwner(userId)
-                      && hasString('name')
-                      && hasString('categoryId')
-                      && hasNumber('quantity')
-                      && hasString('unitId')
-                      && hasString('location')
-                      && hasString('status')
-                      && request.resource.data.status in ['active', 'consumed', 'expired', 'discarded']
-                      && request.resource.data.location in ['fridge', 'pantry', 'freezer'];
-        allow update: if isOwner(userId)
+        allow read: if canAccess(userId);
+        allow create: if isOwner(userId) && hasString('name') && hasString('status')
+                      && request.resource.data.status in ['active', 'consumed', 'expired', 'discarded'];
+        allow update: if canAccess(userId)
                       && (!('status' in request.resource.data)
-                          || request.resource.data.status in ['active', 'consumed', 'expired', 'discarded'])
-                      && (!('location' in request.resource.data)
-                          || request.resource.data.location in ['fridge', 'pantry', 'freezer']);
+                          || request.resource.data.status in ['active', 'consumed', 'expired', 'discarded']);
         allow delete: if isOwner(userId);
       }
 
-      // ---------------------------------------------------------------------
-      // Shopping lists: /users/{userId}/shopping_lists/{listId}
-      // ---------------------------------------------------------------------
-
+      // Shopping lists — household shared
       match /shopping_lists/{listId} {
-        allow read: if isOwner(userId);
-        allow create: if isOwner(userId)
-                      && hasString('name')
-                      && 'isCompleted' in request.resource.data
-                      && request.resource.data.isCompleted is bool;
-        allow update: if isOwner(userId);
+        allow read: if canAccess(userId);
+        allow create: if isOwner(userId) && hasString('name');
+        allow update: if canAccess(userId);
         allow delete: if isOwner(userId);
 
-        // -----------------------------------------------------------------
-        // List items: /users/{userId}/shopping_lists/{listId}/items/{itemId}
-        // -----------------------------------------------------------------
-
         match /items/{itemId} {
-          allow read: if isOwner(userId);
-          allow create: if isOwner(userId)
-                        && hasString('itemName')
-                        && hasNumber('quantity')
-                        && hasString('unitId')
-                        && hasString('categoryId')
-                        && 'isPurchased' in request.resource.data
-                        && request.resource.data.isPurchased is bool;
-          allow update: if isOwner(userId);
-          allow delete: if isOwner(userId);
+          allow read: if canAccess(userId);
+          allow create: if canAccess(userId);
+          allow update: if canAccess(userId);
+          allow delete: if canAccess(userId);
         }
       }
 
-      // ---------------------------------------------------------------------
-      // Analytics: /users/{userId}/analytics/{eventId}
-      // ---------------------------------------------------------------------
-
+      // Analytics — personal only
       match /analytics/{eventId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId)
-                      && hasString('eventType')
-                      && hasNumber('timestamp');
-        // Analytics events are immutable — no updates allowed
+        allow create: if isOwner(userId);
         allow update: if false;
         allow delete: if isOwner(userId);
       }
 
-      // ---------------------------------------------------------------------
-      // Price records: /users/{userId}/price_records/{recordId}
-      // ---------------------------------------------------------------------
-
+      // Price records — household can read (shared comparison)
       match /price_records/{recordId} {
-        allow read: if isOwner(userId);
-        allow create: if isOwner(userId)
-                      && hasString('barcode')
-                      && hasNumber('price')
-                      && hasString('store_name')
-                      && hasNumber('created_at');
-        allow update: if false;  // Price records are immutable
+        allow read: if canAccess(userId);
+        allow create: if isOwner(userId) && hasString('barcode') && hasNumber('price');
+        allow update: if false;
         allow delete: if isOwner(userId);
       }
 
-      // ---------------------------------------------------------------------
-      // Sync metadata: /users/{userId}/sync_meta/{docId}
-      // ---------------------------------------------------------------------
+      // Receipt scans — personal
+      match /receipt_scans/{scanId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if false;
+      }
+
+      // Stores — household shared
+      match /stores/{storeId} {
+        allow read: if canAccess(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
 
       match /sync_meta/{docId} {
         allow read, write: if isOwner(userId);
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Default: deny all access to any other paths
-    // -----------------------------------------------------------------------
+    // Households — members can read, backend manages writes
+    match /households/{householdId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
 
+    // Invitations — authenticated read, backend writes
+    match /invitations/{code} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // App config — public read
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Products — authenticated read
+    match /products/{barcode} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // Contributed products
+    match /contributed_products/{barcode} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Product disputes
+    match /product_disputes/{disputeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Foodbanks — public read
+    match /foodbanks/{foodbankId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }

@@ -256,6 +256,311 @@ AI-powered insights with rule-based fallback.
 
 ---
 
+## Authentication
+
+### Token Sources
+
+The backend accepts Firebase ID tokens from two sources (checked in order):
+1. Cookie: `__session`
+2. Header: `Authorization: Bearer <token>`
+
+### Auth Dependencies
+
+| Dependency | Effect |
+|-----------|--------|
+| `get_optional_user()` | Returns `UserInfo` if token present, `None` otherwise |
+| `get_current_user()` | Returns `UserInfo`, raises 401 if not authenticated |
+| `require_admin()` | Returns `UserInfo` with admin role, raises 403 otherwise |
+
+### Role Determination (priority order)
+
+1. Firebase custom claims (`admin` claim)
+2. Firestore `users/{uid}` document `role` field
+3. `ADMIN_UIDS` env var (comma-separated bootstrap list)
+
+---
+
+## App Config & Utility Endpoints
+
+### GET /api/me
+
+Returns the current authenticated user's info merged with Firestore profile.
+
+**Auth:** Optional (returns `{authenticated: false}` if no token)
+
+**Response (authenticated):**
+```json
+{
+  "authenticated": true,
+  "uid": "firebase-uid-123",
+  "email": "user@example.com",
+  "role": "admin",
+  "display_name": "John",
+  "tier": "plus",
+  "status": "active",
+  "selected_tools": ["cloud_sync", "price_tracking"],
+  "country": "MY",
+  "currency": "MYR"
+}
+```
+
+### GET /api/config
+
+Public app configuration — visibility rules and tier definitions. No auth required.
+
+**Response:**
+```json
+{
+  "visibility": { ... },
+  "tiers": { ... }
+}
+```
+
+### GET /api/exchange-rates
+
+Public exchange rates for currency conversion. No auth required.
+
+---
+
+## Foodbank Endpoints
+
+### GET /api/foodbanks
+
+List all active foodbanks, optionally filtered by country.
+
+**Parameters:**
+- `country` (query, optional) — ISO country code (e.g. `MY`, `US`)
+
+**Response:**
+```json
+{
+  "count": 15,
+  "foodbanks": [
+    {
+      "id": "abc123",
+      "name": "Food Aid Foundation",
+      "country": "MY",
+      "state": "Selangor",
+      "location_name": "Shah Alam HQ",
+      "location_address": "...",
+      "latitude": 3.07,
+      "longitude": 101.5,
+      "is_active": true
+    }
+  ]
+}
+```
+
+### GET /api/foodbanks/sources
+
+List all foodbank data sources with their current status.
+
+### POST /api/foodbanks/sources/{source_id}/fetch
+
+Manually trigger a fetch from a single source. **Requires admin.**
+
+### POST /api/foodbanks/sources/{source_id}/reset
+
+Reset a source's cooldown. **Requires admin.**
+
+### POST /api/foodbanks/sources/{source_id}/toggle
+
+Enable or disable a foodbank source. **Requires admin.**
+
+### GET /api/foodbanks/{id}
+
+Get a single foodbank by ID.
+
+### POST /api/foodbanks
+
+Create a new foodbank. **Requires admin.**
+
+### PUT /api/foodbanks/{id}
+
+Update a foodbank. **Requires admin.**
+
+### DELETE /api/foodbanks/{id}
+
+Delete a foodbank permanently. **Requires admin.**
+
+### PATCH /api/foodbanks/{id}/toggle
+
+Toggle a foodbank's active status. **Requires admin.**
+
+### POST /api/foodbanks/{id}/refresh
+
+Re-fetch and update a single foodbank entry. **Requires admin.**
+
+### POST /api/foodbanks/seed
+
+Seed Malaysian foodbank data. Safe to call multiple times (deduplicates).
+
+### POST /api/foodbanks/refresh
+
+Trigger a manual refresh (scrape sources for new entries).
+
+---
+
+## Admin Endpoints
+
+All admin endpoints require admin role (`/api/admin/*`).
+
+### Dashboard
+
+#### GET /api/admin/dashboard
+
+Aggregate stats for the admin dashboard.
+
+### Users
+
+#### GET /api/admin/users
+
+List all users. **Params:** `limit` (1-200, default 50), `offset` (default 0).
+
+#### GET /api/admin/users/{uid}
+
+Get a single user profile.
+
+#### PUT /api/admin/users/{uid}/role
+
+Set a user's role. **Body:** `{"role": "admin"|"user"}`
+
+#### PUT /api/admin/users/{uid}/tier
+
+Change subscription tier. **Body:** `{"tier": "free"|"plus"|"pro"}`
+
+#### PUT /api/admin/users/{uid}/status
+
+Enable or disable a user. **Body:** `{"status": "active"|"disabled", "reason": "..."}`
+
+#### PUT /api/admin/users/{uid}/approve
+
+Approve a pending user.
+
+#### DELETE /api/admin/users/{uid}
+
+Delete a user completely (Firestore + Firebase Auth).
+
+#### PUT /api/admin/users/{uid}/tools
+
+Update a Smart Cart user's selected tools. **Body:** `{"selected_tools": [...]}`
+
+### App Configuration
+
+#### GET /api/admin/config/visibility
+
+Get page visibility configuration.
+
+#### PUT /api/admin/config/visibility
+
+Update page visibility configuration.
+
+#### GET /api/admin/config/tiers
+
+Get tier definitions.
+
+#### PUT /api/admin/config/tiers
+
+Update tier definitions.
+
+### Inventory
+
+#### GET /api/admin/inventory
+
+List inventory items across all users. **Params:** `limit`, `offset`, `status`, `needs_review`, `location`.
+
+#### GET /api/admin/inventory/{uid}/{item_id}
+
+Get a single inventory item.
+
+#### PUT /api/admin/inventory/{uid}/{item_id}
+
+Update an inventory item.
+
+### Shopping Lists
+
+#### GET /api/admin/shopping-lists
+
+List shopping lists across all users. **Params:** `limit`.
+
+#### GET /api/admin/shopping-lists/{uid}/{list_id}
+
+Get a shopping list with its items.
+
+### Contributed Products (Review Queue)
+
+#### GET /api/admin/contributed
+
+List contributed products. **Params:** `limit`, `offset`, `search`, `status`.
+
+#### GET /api/admin/contributed/counts
+
+Get contributed product counts by status.
+
+#### POST /api/admin/contributed/{barcode}/approve
+
+Approve a contributed product.
+
+#### POST /api/admin/contributed/{barcode}/reject
+
+Reject a contributed product. **Params:** `reason` (query string).
+
+#### DELETE /api/admin/contributed/{barcode}
+
+Delete a single contributed product.
+
+#### POST /api/admin/contributed/batch-delete
+
+Batch delete. **Body:** `{"barcodes": [...]}`
+
+### Needs Review
+
+#### GET /api/admin/needs-review
+
+Get inventory items flagged for review. **Params:** `limit`.
+
+### Products (Database Management)
+
+#### GET /api/admin/products/lookup/{barcode}
+
+Lookup a barcode on Open Food Facts for pre-filling the form.
+
+#### GET /api/admin/products
+
+List all products. **Params:** `limit`, `offset`, `search`.
+
+#### GET /api/admin/products/{barcode}
+
+Get a single product.
+
+#### POST /api/admin/products
+
+Create a new product. **Body:** `{"barcode": "...", "name": "...", ...}`
+
+#### PUT /api/admin/products/{barcode}
+
+Update an existing product.
+
+#### DELETE /api/admin/products/{barcode}
+
+Delete a product.
+
+### Price Records
+
+#### GET /api/admin/price-records
+
+List price records across all users. **Params:** `limit`, `offset`, `search`, `barcode`.
+
+#### DELETE /api/admin/price-records/{user_id}/{record_id}
+
+Delete a single price record.
+
+#### POST /api/admin/price-records/batch-delete
+
+Batch delete. **Body:** `{"records": [{"user_id": "...", "record_id": "..."}, ...]}`
+
+---
+
 ## Error Responses
 
 All endpoints return standard error responses:

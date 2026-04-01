@@ -56,6 +56,63 @@ def get_all_items(
     return results[offset:offset + limit]
 
 
+def get_household_items(
+    uid: str,
+    limit: int = 200,
+    offset: int = 0,
+    status: Optional[str] = None,
+    location: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Get items for a user AND their household members.
+
+    If the user is in a household, queries all members' grocery_items
+    and merges. If solo, falls back to get_user_items().
+    Each item includes _member_name/_member_role/_member_icon for attribution.
+    """
+    from app.services import household_service
+
+    household = household_service.get_user_household(uid)
+    if not household:
+        return get_user_items(uid, limit=limit, offset=offset, status=status)
+
+    member_uids = household_service.get_household_member_uids(household["id"])
+    if not member_uids:
+        return get_user_items(uid, limit=limit, offset=offset, status=status)
+
+    # Member lookup for role attribution
+    member_map = {}
+    for m in household.get("members", []):
+        member_map[m["uid"]] = {
+            "display_name": m.get("display_name", ""),
+            "display_role": m.get("display_role", ""),
+            "role_icon": m.get("role_icon", ""),
+        }
+
+    db = _get_db()
+    all_items: List[Dict[str, Any]] = []
+
+    for member_uid in member_uids:
+        try:
+            for doc in db.collection("users").document(member_uid).collection("grocery_items").stream():
+                data = doc.to_dict()
+                if status and data.get("status") != status:
+                    continue
+                if location and data.get("location") != location:
+                    continue
+                data["id"] = doc.id
+                data["user_id"] = member_uid
+                info = member_map.get(member_uid, {})
+                data["_member_name"] = info.get("display_name", "")
+                data["_member_role"] = info.get("display_role", "")
+                data["_member_icon"] = info.get("role_icon", "")
+                all_items.append(data)
+        except Exception as e:
+            logger.warning("Failed to query items for member %s: %s", member_uid, e)
+
+    all_items.sort(key=lambda x: x.get("updatedAt", 0), reverse=True)
+    return all_items[offset:offset + limit]
+
+
 def get_user_items(
     uid: str,
     limit: int = 50,

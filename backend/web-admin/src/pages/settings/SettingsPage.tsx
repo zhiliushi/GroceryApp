@@ -2,6 +2,8 @@ import { useMe } from '@/api/queries/useMe';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import HouseholdSection from '@/components/settings/HouseholdSection';
+import SecuritySection from '@/components/settings/SecuritySection';
 
 const FSM_DATA = [
   {
@@ -49,6 +51,12 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {/* Household */}
+        <HouseholdSection />
+
+        {/* Security */}
+        <SecuritySection />
 
         {/* Application card */}
         <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">

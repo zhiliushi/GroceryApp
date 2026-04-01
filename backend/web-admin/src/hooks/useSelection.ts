@@ -43,7 +43,7 @@ export function useSelection<T>(getKey: (item: T) => string): UseSelectionReturn
     [getKey],
   );
 
-  const clear = useCallback(() => setSelectedKeys(new Set()), []);
+  const clear = useCallback(() => setSelectedKeys((prev) => (prev.size === 0 ? prev : new Set())), []);
 
   const isAllSelected = useCallback(
     (items: T[]) => items.length > 0 && items.every((item) => selectedKeys.has(getKey(item))),

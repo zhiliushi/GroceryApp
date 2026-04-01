@@ -5,7 +5,6 @@ import {
   useBulkDeletePriceRecords,
 } from '@/api/mutations/usePriceRecordMutations';
 import { useSelection } from '@/hooks/useSelection';
-import { usePagination } from '@/hooks/usePagination';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import DataTable, { type Column } from '@/components/shared/DataTable';
 import PageHeader from '@/components/shared/PageHeader';
@@ -13,36 +12,46 @@ import SearchBar from '@/components/shared/SearchBar';
 import BulkActionBar from '@/components/shared/BulkActionBar';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import { formatRelativeDate, formatCurrency, truncateUid } from '@/utils/format';
+import { PAGE_LIMIT } from '@/utils/constants';
 import type { PriceRecord } from '@/types/api';
 
 export default function PriceRecordsPage() {
   const [search, setSearch] = useState('');
+  const [queryPage, setQueryPage] = useState(0);
   const selection = useSelection<PriceRecord>((r) => `${r.user_id}:${r.id}`);
   const dialog = useConfirmDialog();
 
-  // Need a first pass to get total, then pagination uses it
-  const { data } = usePriceRecords({ search, page: 0 });
-  const total = data?.total ?? 0;
-  const pg = usePagination(total);
-
-  // Actual paginated query
   const { data: pageData, isLoading: pageLoading } = usePriceRecords({
     search,
-    page: pg.page,
+    page: queryPage,
   });
 
   const records = pageData?.records ?? [];
+  const total = pageData?.total ?? 0;
+
+  // Derive pagination display
+  const hasNext = useMemo(() => (queryPage + 1) * PAGE_LIMIT < total, [queryPage, total]);
+  const hasPrev = queryPage > 0;
+  const showing = useMemo(() => {
+    if (total === 0) return '';
+    const start = queryPage * PAGE_LIMIT + 1;
+    const end = Math.min(start + PAGE_LIMIT - 1, total);
+    return `Showing ${start}–${end} of ${total}`;
+  }, [queryPage, total]);
 
   const deleteMutation = useDeletePriceRecord();
   const bulkDeleteMutation = useBulkDeletePriceRecords();
 
+  // Destructure stable callback (defined with useCallback(fn, []) in the hook)
+  const clearSelection = selection.clear;
+
   const handleSearch = useCallback(
     (v: string) => {
       setSearch(v);
-      pg.reset();
-      selection.clear();
+      setQueryPage(0);
+      clearSelection();
     },
-    [pg, selection],
+    [clearSelection],
   );
 
   const handleBulkDelete = () => {
@@ -178,11 +187,11 @@ export default function PriceRecordsPage() {
         onToggleAll={() => selection.toggleAll(records)}
         isAllSelected={selection.isAllSelected(records)}
         pagination={{
-          showing: pg.showing,
-          hasNext: pg.hasNext,
-          hasPrev: pg.hasPrev,
-          nextPage: () => { pg.nextPage(); selection.clear(); },
-          prevPage: () => { pg.prevPage(); selection.clear(); },
+          showing,
+          hasNext,
+          hasPrev,
+          nextPage: () => { setQueryPage((p) => p + 1); clearSelection(); },
+          prevPage: () => { setQueryPage((p) => Math.max(0, p - 1)); clearSelection(); },
         }}
       />
 

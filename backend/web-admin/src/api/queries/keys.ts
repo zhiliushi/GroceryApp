@@ -33,5 +33,13 @@ export const qk = {
     detail: (id: string) => ['foodbanks', id] as const,
     sources: ['foodbank-sources'] as const,
   },
+  household: ['household'] as const,
+  locations: ['locations'] as const,
   analytics: ['analytics'] as const,
+  ocr: {
+    config: ['ocr', 'config'] as const,
+    scans: (params?: Record<string, unknown>) => ['ocr', 'scans', params] as const,
+    errors: ['ocr', 'errors'] as const,
+    history: ['ocr', 'history'] as const,
+  },
 };

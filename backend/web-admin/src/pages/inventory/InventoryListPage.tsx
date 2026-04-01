@@ -1,167 +1,237 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { useInventory } from '@/api/queries/useInventory';
-import { usePagination } from '@/hooks/usePagination';
-import DataTable, { type Column } from '@/components/shared/DataTable';
+import { useLocations } from '@/api/queries/useLocations';
 import PageHeader from '@/components/shared/PageHeader';
-import FilterBar from '@/components/shared/FilterBar';
-import StatusBadge from '@/components/shared/StatusBadge';
-import { formatExpiry, formatCurrency, truncateUid } from '@/utils/format';
-import { ITEM_STATUSES, STORAGE_LOCATIONS } from '@/utils/constants';
-import type { InventoryItem, InventoryFilters } from '@/types/api';
+import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import LocationGroup from '@/components/inventory/LocationGroup';
+import ScanReceiptButton from '@/components/receipt/ScanReceiptButton';
+import ScanBarcodeButton from '@/components/barcode/ScanBarcodeButton';
+import { cn } from '@/utils/cn';
+import type { InventoryItem } from '@/types/api';
+
+type FilterTab = 'all' | 'active' | 'expiring' | 'expired' | 'incomplete';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getExpiryMs(item: InventoryItem): number | null {
+  const exp = item.expiryDate ?? item.expiry_date;
+  if (!exp) return null;
+  return exp > 1e12 ? exp : exp * 1000;
+}
+
+function isExpiringSoon(item: InventoryItem): boolean {
+  const exp = getExpiryMs(item);
+  if (!exp) return false;
+  const diff = exp - Date.now();
+  return diff > 0 && diff < SEVEN_DAYS_MS;
+}
+
+function isExpiredItem(item: InventoryItem): boolean {
+  const exp = getExpiryMs(item);
+  if (!exp) return false;
+  return exp < Date.now();
+}
+
+function isIncomplete(item: InventoryItem): boolean {
+  const noLocation = !item.location && !item.storage_location;
+  const noExpiry = !item.expiryDate && !item.expiry_date;
+  return item.status === 'active' && (noLocation || noExpiry);
+}
+
+/** Sort items: expired first, then by expiry ascending, no-expiry last */
+function sortByExpiryUrgency(items: InventoryItem[]): InventoryItem[] {
+  return [...items].sort((a, b) => {
+    const aExp = getExpiryMs(a);
+    const bExp = getExpiryMs(b);
+
+    // Expired items first
+    const aExpired = aExp ? aExp < Date.now() : false;
+    const bExpired = bExp ? bExp < Date.now() : false;
+    if (aExpired && !bExpired) return -1;
+    if (!aExpired && bExpired) return 1;
+
+    // Both have expiry → sort ascending (soonest first)
+    if (aExp && bExp) return aExp - bExp;
+
+    // Items with expiry before items without
+    if (aExp && !bExp) return -1;
+    if (!aExp && bExp) return 1;
+
+    // Both no expiry → sort by name
+    return a.name.localeCompare(b.name);
+  });
+}
 
 export default function InventoryListPage() {
-  const [statusFilter, setStatusFilter] = useState('');
-  const [locationFilter, setLocationFilter] = useState('');
-  const [needsReview, setNeedsReview] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState<InventoryFilters>({});
+  const [activeTab, setActiveTab] = useState<FilterTab>('active');
+  const { data, isLoading } = useInventory();
+  const { locations } = useLocations();
 
-  const { data, isLoading } = useInventory(appliedFilters);
-  const pagination = usePagination(data?.count ?? 0);
+  const allItems = data?.items ?? [];
 
-  const applyFilters = () => {
-    const filters: InventoryFilters = {};
-    if (statusFilter) filters.status = statusFilter;
-    if (locationFilter) filters.location = locationFilter;
-    if (needsReview) filters.needs_review = true;
-    setAppliedFilters(filters);
-    pagination.reset();
-  };
+  // Compute tab counts from full dataset
+  const counts = useMemo(() => {
+    const active = allItems.filter((i) => i.status === 'active');
+    return {
+      all: allItems.length,
+      active: active.length,
+      expiring: active.filter(isExpiringSoon).length,
+      expired: allItems.filter((i) => isExpiredItem(i) || i.status === 'expired').length,
+      incomplete: active.filter(isIncomplete).length,
+    };
+  }, [allItems]);
 
-  const statusOptions = [
-    { value: '', label: 'All Statuses' },
-    ...ITEM_STATUSES.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) })),
+  // Filter items by active tab
+  const filteredItems = useMemo(() => {
+    switch (activeTab) {
+      case 'active':
+        return allItems.filter((i) => i.status === 'active');
+      case 'expiring':
+        return allItems.filter((i) => i.status === 'active' && isExpiringSoon(i));
+      case 'expired':
+        return allItems.filter((i) => isExpiredItem(i) || i.status === 'expired');
+      case 'incomplete':
+        return allItems.filter((i) => isIncomplete(i));
+      default:
+        return allItems;
+    }
+  }, [allItems, activeTab]);
+
+  // Group items by location
+  const grouped = useMemo(() => {
+    const groups = new Map<string, InventoryItem[]>();
+
+    // Initialize groups from config (maintains sort order)
+    for (const loc of locations) {
+      groups.set(loc.key, []);
+    }
+    groups.set('__none__', []); // "No Location" group
+
+    for (const item of filteredItems) {
+      const locKey = item.location || item.storage_location || '__none__';
+      if (!groups.has(locKey)) {
+        groups.set(locKey, []); // Unknown location
+      }
+      groups.get(locKey)!.push(item);
+    }
+
+    // Sort items within each group by expiry urgency
+    for (const [key, items] of groups) {
+      groups.set(key, sortByExpiryUrgency(items));
+    }
+
+    return groups;
+  }, [filteredItems, locations]);
+
+  const tabs: { key: FilterTab; label: string; count: number; color: string }[] = [
+    { key: 'all', label: 'All', count: counts.all, color: 'bg-gray-500' },
+    { key: 'active', label: 'Active', count: counts.active, color: 'bg-green-500' },
+    { key: 'expiring', label: 'Expiring', count: counts.expiring, color: counts.expiring > 0 ? 'bg-orange-500 animate-pulse' : 'bg-orange-500' },
+    { key: 'expired', label: 'Expired', count: counts.expired, color: counts.expired > 0 ? 'bg-red-500 animate-pulse' : 'bg-red-500' },
+    { key: 'incomplete', label: 'Incomplete', count: counts.incomplete, color: 'bg-yellow-500' },
   ];
 
-  const locationOptions = [
-    { value: '', label: 'All Locations' },
-    ...STORAGE_LOCATIONS.map((l) => ({ value: l, label: l.charAt(0).toUpperCase() + l.slice(1) })),
-  ];
-
-  const paginatedItems = useMemo(() => {
-    const items = data?.items ?? [];
-    return items.slice(pagination.offset, pagination.offset + pagination.limit);
-  }, [data, pagination.offset, pagination.limit]);
-
-  const columns: Column<InventoryItem>[] = useMemo(
-    () => [
-      {
-        key: 'name',
-        header: 'Name',
-        render: (item) => <span className="font-medium text-ga-text-primary">{item.name}</span>,
-      },
-      {
-        key: 'brand',
-        header: 'Brand',
-        render: (item) => <span className="text-ga-text-secondary">{item.brand || '—'}</span>,
-      },
-      {
-        key: 'status',
-        header: 'Status',
-        render: (item) => <StatusBadge status={item.status} />,
-        headerClassName: 'text-center',
-        className: 'text-center',
-      },
-      {
-        key: 'location',
-        header: 'Location',
-        render: (item) => (
-          <span className="text-ga-text-secondary capitalize">
-            {item.storage_location || item.location || '—'}
-          </span>
-        ),
-      },
-      {
-        key: 'qty',
-        header: 'Qty',
-        render: (item) => (
-          <span className="text-ga-text-secondary">
-            {item.quantity != null ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}
-          </span>
-        ),
-      },
-      {
-        key: 'expiry',
-        header: 'Expiry',
-        render: (item) => {
-          const exp = formatExpiry(item.expiryDate ?? item.expiry_date);
-          return <span className={exp.className}>{exp.text}</span>;
-        },
-      },
-      {
-        key: 'price',
-        header: 'Price',
-        render: (item) => (
-          <span className="text-ga-text-secondary">{formatCurrency(item.price)}</span>
-        ),
-      },
-      {
-        key: 'owner',
-        header: 'Owner',
-        render: (item) => (
-          <code className="text-xs font-mono text-ga-text-secondary">
-            {truncateUid(item.user_id)}
-          </code>
-        ),
-      },
-      {
-        key: 'actions',
-        header: 'Actions',
-        headerClassName: 'text-right',
-        className: 'text-right',
-        render: (item) => (
-          <Link
-            to={`/inventory/${item.user_id}/${item.id}`}
-            className="text-ga-accent hover:underline text-xs"
-            onClick={(e) => e.stopPropagation()}
-          >
-            View
-          </Link>
-        ),
-      },
-    ],
-    [],
-  );
+  if (isLoading) return <LoadingSpinner text="Loading inventory..." />;
 
   return (
     <div className="p-6">
-      <PageHeader title="Inventory" icon="📦" count={data?.count} />
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <PageHeader title="Inventory" icon="📦" count={counts.active} />
+        <div className="flex items-center gap-2">
+          <ScanBarcodeButton />
+          <ScanReceiptButton destination="inventory" pageKey="inventory" />
+        </div>
+      </div>
 
-      <FilterBar onApply={applyFilters} className="mb-4">
-        <FilterBar.Dropdown
-          label="Status"
-          value={statusFilter}
-          options={statusOptions}
-          onChange={setStatusFilter}
-        />
-        <FilterBar.Dropdown
-          label="Location"
-          value={locationFilter}
-          options={locationOptions}
-          onChange={setLocationFilter}
-        />
-        <FilterBar.Checkbox
-          label="Needs Review"
-          checked={needsReview}
-          onChange={setNeedsReview}
-        />
-      </FilterBar>
+      {/* Status Tabs */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              'px-3 py-1.5 text-sm rounded-lg transition-colors inline-flex items-center gap-2',
+              activeTab === tab.key
+                ? 'bg-ga-accent text-white font-medium'
+                : 'border border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+            )}
+          >
+            {tab.label}
+            {tab.count > 0 && (
+              <span className={cn('text-[10px] rounded-full px-1.5 py-0.5 min-w-[18px] text-center font-bold text-white', tab.color)}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      <DataTable
-        data={paginatedItems}
-        columns={columns}
-        isLoading={isLoading}
-        emptyMessage="No inventory items found"
-        emptyIcon="📦"
-        getKey={(item) => `${item.user_id}-${item.id}`}
-        pagination={{
-          showing: pagination.showing,
-          hasNext: pagination.hasNext,
-          hasPrev: pagination.hasPrev,
-          nextPage: pagination.nextPage,
-          prevPage: pagination.prevPage,
-        }}
-      />
+      {/* Empty state */}
+      {filteredItems.length === 0 ? (
+        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-12 text-center">
+          {allItems.length === 0 ? (
+            <>
+              <div className="text-4xl mb-3">📦</div>
+              <h3 className="text-ga-text-primary font-medium text-lg mb-2">Your inventory is empty</h3>
+              <p className="text-ga-text-secondary text-sm mb-4">Start by scanning a barcode or receipt to add items.</p>
+              <div className="flex gap-2 justify-center">
+                <ScanBarcodeButton />
+                <ScanReceiptButton destination="inventory" pageKey="inventory" />
+              </div>
+            </>
+          ) : activeTab === 'expiring' ? (
+            <>
+              <div className="text-4xl mb-3">🎉</div>
+              <h3 className="text-ga-text-primary font-medium">No items expiring soon!</h3>
+              <p className="text-ga-text-secondary text-sm mt-1">All your items are fresh.</p>
+            </>
+          ) : (
+            <>
+              <div className="text-4xl mb-3">🔍</div>
+              <h3 className="text-ga-text-primary font-medium">No items match this filter</h3>
+              <button onClick={() => setActiveTab('all')} className="text-ga-accent text-sm mt-2 hover:underline">
+                Show all items
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        /* Location Groups */
+        <div>
+          {locations.map((loc) => {
+            const items = grouped.get(loc.key) ?? [];
+            return (
+              <LocationGroup
+                key={loc.key}
+                location={loc}
+                items={items}
+                defaultExpanded={items.length > 0}
+              />
+            );
+          })}
+
+          {/* Unknown locations (items with location keys not in config) */}
+          {Array.from(grouped.entries())
+            .filter(([key]) => key !== '__none__' && !locations.some((l) => l.key === key))
+            .map(([key, items]) => (
+              <LocationGroup
+                key={key}
+                location={{ key, name: key, icon: '📍', color: '#6B7280', sort: 99 }}
+                items={items}
+              />
+            ))}
+
+          {/* No Location group */}
+          {(grouped.get('__none__')?.length ?? 0) > 0 && (
+            <LocationGroup
+              location={null}
+              items={grouped.get('__none__') ?? []}
+              defaultExpanded
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
