@@ -11,6 +11,7 @@ from . import (
     household_service,
     invitation_service,
     recipe_service,
+    product_label_service,
     foodbank_sources,
     insights_service,
     inventory_service,

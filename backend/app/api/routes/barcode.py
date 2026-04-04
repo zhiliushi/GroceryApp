@@ -100,6 +100,28 @@ async def contribute_product(request: BarcodeContributeRequest):
 
 
 # ---------------------------------------------------------------------------
+# Item Overview (barcode-level aggregate page)
+# ---------------------------------------------------------------------------
+
+@router.get("/item/{barcode}/overview")
+async def get_item_overview(barcode: str, user_id: str = ""):
+    """Get comprehensive barcode-level overview: stock, history, waste stats.
+
+    Used by /item/:barcode page. Price history and recipes fetched separately.
+    """
+    if not user_id:
+        return {"barcode": barcode, "product": None, "completeness": {"score": 0, "missing": []},
+                "current_stock": {"items": [], "total_in_stock": 0}, "usage_history": [], "waste_stats": None}
+
+    from app.services import inventory_service
+    try:
+        return inventory_service.get_barcode_overview(user_id, barcode)
+    except Exception as e:
+        logger.error("Item overview failed for %s: %s", barcode, e)
+        raise HTTPException(500, f"Failed to load item overview: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Inventory check (for scanner popup: "You Already Have")
 # ---------------------------------------------------------------------------
 

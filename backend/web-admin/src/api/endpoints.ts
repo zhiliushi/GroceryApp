@@ -41,6 +41,12 @@ export const API = {
   FOODBANK_SOURCE_RESET: (id: string) => `/api/foodbanks/sources/${id}/reset`,
   FOODBANK_SOURCE_TOGGLE: (id: string) => `/api/foodbanks/sources/${id}/toggle`,
 
+  // Smart Camera Scan
+  SCAN_PRODUCT_LABEL: '/api/scan/product-label',
+  SCAN_EXPIRY_DATE: '/api/scan/expiry-date',
+  SCAN_SHELF_AUDIT: '/api/scan/shelf-audit',
+  ITEM_OVERVIEW: (barcode: string) => `/api/barcode/item/${barcode}/overview`,
+
   // Meals
   MEALS_RECIPES: '/api/meals/recipes',
   MEALS_RECIPE: (id: string) => `/api/meals/recipes/${id}`,

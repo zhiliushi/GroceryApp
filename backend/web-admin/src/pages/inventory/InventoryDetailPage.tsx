@@ -9,6 +9,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import ExpiryBar from '@/components/inventory/ExpiryBar';
 import ItemActionBar from '@/components/inventory/ItemActionBar';
+import ExpiryScanButton from '@/components/scanner/ExpiryScanButton';
 import { formatDate, formatExpiry, formatCurrency, truncateUid } from '@/utils/format';
 import { ITEM_STATUSES } from '@/utils/constants';
 import { cn } from '@/utils/cn';
@@ -218,7 +219,12 @@ export default function InventoryDetailPage() {
             <Field label="Price" value={formatCurrency(item.price)} />
             <div>
               <span className="block text-xs font-medium text-ga-text-secondary mb-1">Expiry</span>
-              <span className={expiry.className}>{expiry.text}</span>
+              <div className="flex items-center gap-2">
+                <span className={expiry.className}>{expiry.text}</span>
+                <ExpiryScanButton onDateDetected={(d) => {
+                  updateMutation.mutate({ uid: uid!, id: itemId!, data: { expiry_date: new Date(d).getTime(), expiryDate: new Date(d).getTime(), expiry_past: false } });
+                }} />
+              </div>
             </div>
             <Field label="Purchase Date" value={formatDate(item.purchaseDate ?? item.purchase_date)} />
             <Field label="Added" value={formatDate(item.addedDate)} />
@@ -230,6 +236,15 @@ export default function InventoryDetailPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* View full history link */}
+      {item.barcode && (
+        <div className="mt-4">
+          <Link to={`/item/${item.barcode}`} className="text-sm text-ga-accent hover:underline">
+            View full history for this product →
+          </Link>
         </div>
       )}
     </div>

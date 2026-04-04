@@ -29,6 +29,7 @@ const AdminSettingsPage = lazy(() => import('@/pages/admin-settings/AdminSetting
 const JoinPage = lazy(() => import('@/pages/join/JoinPage'));
 const MealsPage = lazy(() => import('@/pages/meals/MealsPage'));
 const RecipeFormPage = lazy(() => import('@/pages/meals/RecipeFormPage'));
+const ItemOverviewPage = lazy(() => import('@/pages/item/ItemOverviewPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -98,6 +99,8 @@ export const router = createBrowserRouter([
       { path: 'analytics', element: <TierGated page="analytics"><AnalyticsPage /></TierGated> },
       // Settings: free tier
       { path: 'settings', element: <TierGated page="settings"><SettingsPage /></TierGated> },
+      // Item overview: barcode-level history page
+      { path: 'item/:barcode', element: <SuspenseWrapper><ItemOverviewPage /></SuspenseWrapper> },
       // Meals: free tier (waste prevention)
       { path: 'meals', element: <SuspenseWrapper><MealsPage /></SuspenseWrapper> },
       { path: 'meals/new', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },

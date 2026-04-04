@@ -405,6 +405,86 @@ export interface HouseholdResponse {
   pending_invites: Invitation[];
 }
 
+// === Smart Camera Scan ===
+
+export interface LabelScanResult {
+  success: boolean;
+  provider: string;
+  fields_extracted: number;
+  parsed: {
+    name: string | null;
+    brand: string | null;
+    weight: number | null;
+    weight_unit: string | null;
+    expiry_date: string | null;
+    barcode: string | null;
+    raw_text: string;
+  };
+  inventory: { barcode: string; items: InventoryItem[]; total_in_stock: number } | null;
+  message: string;
+}
+
+export interface ExpiryScanResult {
+  success: boolean;
+  date: string | null;
+  raw_text: string;
+  message: string;
+}
+
+export interface ShelfAuditMatch {
+  text: string;
+  item_id?: string;
+  item_name?: string;
+  item_location?: string;
+  item_quantity?: number;
+  item_user_id?: string;
+  is_expired?: boolean;
+  is_expiring?: boolean;
+}
+
+export interface ShelfAuditResult {
+  success: boolean;
+  results: {
+    matched: ShelfAuditMatch[];
+    unknown: { text: string }[];
+    ignored: { text: string; reason: string }[];
+    summary: { matched_count: number; unknown_count: number; ignored_count: number };
+  };
+  raw_text: string;
+  message: string;
+}
+
+export interface UsageHistoryEntry {
+  action: string;
+  date: number | null;
+  quantity: number | null;
+  location: string | null;
+  reason: string | null;
+  source: string;
+  member_name: string | null;
+  member_icon: string | null;
+  item_id: string;
+  user_id: string;
+}
+
+export interface ItemOverview {
+  barcode: string;
+  product: Product | null;
+  completeness: { score: number; missing: string[] };
+  current_stock: { items: InventoryItem[]; total_in_stock: number };
+  usage_history: UsageHistoryEntry[];
+  waste_stats: {
+    total_items: number;
+    used: number;
+    wasted: number;
+    expired: number;
+    discarded: number;
+    waste_pct: number;
+    avg_days_in_inventory: number | null;
+    suggestion: string | null;
+  } | null;
+}
+
 // === Recipes / Meals ===
 
 export interface RecipeIngredient {

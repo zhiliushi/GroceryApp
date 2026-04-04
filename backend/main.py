@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 
-from app.api.routes import barcode, analytics, foodbank, admin, receipt, household, meals
+from app.api.routes import barcode, analytics, foodbank, admin, receipt, household, meals, scan
 from app.core.config import settings
 from app.services import scheduler
 
@@ -107,6 +107,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(receipt.router, prefix="/api/receipt", tags=["receipt"])
 app.include_router(household.router, prefix="/api/household", tags=["household"])
 app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
+app.include_router(scan.router, prefix="/api/scan", tags=["scan"])
 
 # SPA catch-all (serves React app for all non-API routes)
 # Replaces the old Jinja2 web.router

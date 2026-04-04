@@ -6,6 +6,7 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import LocationGroup from '@/components/inventory/LocationGroup';
 import ScanReceiptButton from '@/components/receipt/ScanReceiptButton';
 import ScanBarcodeButton from '@/components/barcode/ScanBarcodeButton';
+import ShelfAuditModal from '@/components/scanner/ShelfAuditModal';
 import { cn } from '@/utils/cn';
 import { formatExpiry } from '@/utils/format';
 import { Link } from 'react-router-dom';
@@ -61,6 +62,7 @@ export default function InventoryListPage() {
   const { data, isLoading } = useInventory();
   const { locations, getLocation } = useLocations();
 
+  const [showShelfAudit, setShowShelfAudit] = useState(false);
   const allItems = data?.items ?? [];
 
   // === Derived data ===
@@ -145,6 +147,10 @@ export default function InventoryListPage() {
       <div className="flex items-center justify-between mb-4">
         <PageHeader title="Inventory" icon="📦" count={counts.active} />
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowShelfAudit(true)}
+            className="inline-flex items-center gap-1.5 border border-ga-border text-ga-text-secondary hover:text-ga-text-primary hover:bg-ga-bg-hover text-sm rounded-lg px-3 py-2 transition-colors">
+            📷 Audit Shelf
+          </button>
           <ScanBarcodeButton />
           <ScanReceiptButton destination="inventory" pageKey="inventory" />
         </div>
@@ -339,6 +345,9 @@ export default function InventoryListPage() {
           )}
         </div>
       )}
+
+      {/* Shelf Audit Modal */}
+      {showShelfAudit && <ShelfAuditModal onClose={() => setShowShelfAudit(false)} />}
     </div>
   );
 }

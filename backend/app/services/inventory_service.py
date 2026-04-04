@@ -384,3 +384,177 @@ def flag_expired_items() -> int:
 
     logger.info("flag_expired_items: flagged %d items", flagged)
     return flagged
+
+
+# ---------------------------------------------------------------------------
+# Barcode overview (for /item/:barcode page)
+# ---------------------------------------------------------------------------
+
+
+def get_barcode_overview(uid: str, barcode: str) -> Dict[str, Any]:
+    """Aggregate everything about a barcode for the Item Overview page.
+
+    Returns: product info, current stock, usage history, waste stats.
+    Price history and recipes are fetched separately by the frontend.
+    """
+    from app.services import household_service
+
+    # Get household member UIDs
+    household = household_service.get_user_household(uid)
+    member_uids = [uid]
+    if household:
+        all_uids = household_service.get_household_member_uids(household["id"])
+        if all_uids:
+            member_uids = all_uids
+
+    member_map: Dict[str, Dict] = {}
+    if household:
+        for m in household.get("members", []):
+            member_map[m["uid"]] = {
+                "display_name": m.get("display_name", ""),
+                "display_role": m.get("display_role", ""),
+                "role_icon": m.get("role_icon", ""),
+            }
+
+    db = _get_db()
+
+    # Collect ALL items (active + consumed + expired + discarded) with this barcode
+    all_items: List[Dict[str, Any]] = []
+    active_items: List[Dict[str, Any]] = []
+
+    for m_uid in member_uids:
+        try:
+            for doc in db.collection("users").document(m_uid).collection("grocery_items").stream():
+                data = doc.to_dict()
+                if data.get("barcode") != barcode:
+                    continue
+                data["id"] = doc.id
+                data["user_id"] = m_uid
+                info = member_map.get(m_uid, {"display_name": "You", "display_role": "", "role_icon": ""})
+                data["_member_name"] = info.get("display_name", "")
+                data["_member_icon"] = info.get("role_icon", "")
+                all_items.append(data)
+                if data.get("status") == "active":
+                    active_items.append(data)
+        except Exception as e:
+            logger.warning("get_barcode_overview: failed for member %s: %s", m_uid, e)
+
+    # Sort all items by date (newest first) for usage history
+    all_items.sort(key=lambda x: x.get("updatedAt") or x.get("addedDate") or 0, reverse=True)
+
+    # Build usage history entries
+    usage_history = []
+    for item in all_items[:50]:  # limit to 50
+        status = item.get("status", "active")
+        added = item.get("addedDate") or item.get("added_date")
+        consumed = item.get("consumed_date") or item.get("consumedDate")
+
+        if status == "active":
+            usage_history.append({
+                "action": "added",
+                "date": added,
+                "quantity": item.get("quantity"),
+                "location": item.get("location"),
+                "source": item.get("source", "manual"),
+                "member_name": item.get("_member_name"),
+                "member_icon": item.get("_member_icon"),
+                "item_id": item["id"],
+                "user_id": item["user_id"],
+            })
+        else:
+            usage_history.append({
+                "action": status,  # consumed, expired, discarded
+                "date": consumed or added,
+                "quantity": item.get("quantity"),
+                "location": item.get("location"),
+                "reason": item.get("reason"),
+                "source": item.get("source", "manual"),
+                "member_name": item.get("_member_name"),
+                "member_icon": item.get("_member_icon"),
+                "item_id": item["id"],
+                "user_id": item["user_id"],
+            })
+
+    # Calculate waste stats
+    total_items = len(all_items)
+    consumed_count = sum(1 for i in all_items if i.get("status") == "consumed")
+    expired_count = sum(1 for i in all_items if i.get("status") == "expired")
+    discarded_count = sum(1 for i in all_items if i.get("status") == "discarded")
+    wasted = expired_count + discarded_count
+    used = consumed_count
+    finished = used + wasted  # items that are no longer active
+
+    waste_pct = round((wasted / finished * 100) if finished > 0 else 0, 1)
+
+    # Average days in inventory
+    days_list = []
+    for item in all_items:
+        added_ts = item.get("addedDate") or item.get("added_date") or 0
+        consumed_ts = item.get("consumed_date") or item.get("consumedDate") or item.get("updatedAt") or 0
+        if added_ts and consumed_ts and consumed_ts > added_ts:
+            added_ms = added_ts if added_ts > 1e12 else added_ts * 1000
+            consumed_ms = consumed_ts if consumed_ts > 1e12 else consumed_ts * 1000
+            days = (consumed_ms - added_ms) / (24 * 60 * 60 * 1000)
+            if 0 < days < 365:  # sanity check
+                days_list.append(days)
+
+    avg_days = round(sum(days_list) / len(days_list), 1) if days_list else None
+
+    # Waste suggestion
+    suggestion = None
+    if finished >= 3:
+        if waste_pct > 30:
+            suggestion = "Consider buying smaller quantities or freezing"
+        elif waste_pct > 10:
+            suggestion = "Watch expiry dates more closely"
+        elif waste_pct <= 5:
+            suggestion = "Great job! Minimal waste"
+
+    # Current stock summary
+    total_in_stock = sum((i.get("quantity") or 1) for i in active_items)
+
+    # Data completeness
+    product_data = None
+    try:
+        doc = db.collection("products").document(barcode).get()
+        if doc.exists:
+            product_data = doc.to_dict()
+            product_data["barcode"] = barcode
+    except Exception:
+        pass
+
+    completeness_fields = ["product_name", "brands", "categories", "image_url"]
+    completeness_score = 0
+    missing_fields = []
+    if product_data:
+        for field in completeness_fields:
+            if product_data.get(field):
+                completeness_score += 25
+            else:
+                missing_fields.append(field)
+    else:
+        missing_fields = completeness_fields
+
+    return {
+        "barcode": barcode,
+        "product": product_data,
+        "completeness": {
+            "score": completeness_score,
+            "missing": missing_fields,
+        },
+        "current_stock": {
+            "items": active_items,
+            "total_in_stock": total_in_stock,
+        },
+        "usage_history": usage_history,
+        "waste_stats": {
+            "total_items": total_items,
+            "used": used,
+            "wasted": wasted,
+            "expired": expired_count,
+            "discarded": discarded_count,
+            "waste_pct": waste_pct,
+            "avg_days_in_inventory": avg_days,
+            "suggestion": suggestion,
+        } if finished >= 3 else None,
+    }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useUseOneItem } from '@/api/mutations/useBarcodeMutations';
@@ -194,6 +195,13 @@ export default function ProductResultCard({
         >
           Scan Again
         </button>
+
+        {/* View Full History link */}
+        {product.barcode && (
+          <Link to={`/item/${product.barcode}`} className="text-xs text-ga-accent hover:underline ml-auto">
+            View Full History →
+          </Link>
+        )}
       </div>
     </div>
   );
