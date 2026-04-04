@@ -11,7 +11,7 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import ScanBarcodeButton from '@/components/barcode/ScanBarcodeButton';
 import IdentifyProductModal from '@/components/products/IdentifyProductModal';
 import DisputeProductModal from '@/components/products/DisputeProductModal';
-import { formatRelativeDate, truncateText } from '@/utils/format';
+import { formatRelativeDate } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import type { Product } from '@/types/api';
 

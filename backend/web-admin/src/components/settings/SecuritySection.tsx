@@ -16,8 +16,7 @@ import { toast } from 'sonner';
 import { cn } from '@/utils/cn';
 
 export default function SecuritySection() {
-  const { firebaseUser, user, signOut } = useAuthStore();
-  const auth = getAuth();
+  const { firebaseUser } = useAuthStore();
 
   // Determine sign-in methods
   const providers = firebaseUser?.providerData?.map((p) => p.providerId) ?? [];

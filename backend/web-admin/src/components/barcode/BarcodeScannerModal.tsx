@@ -22,7 +22,7 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
 
   const scanMutation = useScanBarcode();
   const scanner = useScannerEngine();
-  const hintTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Start scanning when modal opens
   useEffect(() => {
@@ -76,7 +76,6 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
     setAddingInventory(true);
     try {
       const { apiClient } = await import('@/api/client');
-      const now = new Date().toISOString();
       await apiClient.post('/api/receipt/confirm', {
         scan_id: `barcode_${Date.now()}`,
         store_name: null,

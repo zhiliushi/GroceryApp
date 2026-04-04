@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useUseOneItem } from '@/api/mutations/useBarcodeMutations';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
-import type { RecipeMatchResult, IngredientMatch } from '@/types/api';
+import type { RecipeMatchResult } from '@/types/api';
 
 interface CookConfirmModalProps {
   recipe: RecipeMatchResult;
@@ -12,7 +11,6 @@ interface CookConfirmModalProps {
 
 export default function CookConfirmModal({ recipe, onClose, onCooked }: CookConfirmModalProps) {
   const user = useAuthStore((s) => s.user);
-  const useOneMutation = useUseOneItem();
 
   const matchedIngredients = useMemo(
     () => recipe.ingredient_matches.filter((i) => i.matched),

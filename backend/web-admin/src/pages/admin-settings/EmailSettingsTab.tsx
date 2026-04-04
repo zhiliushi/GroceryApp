@@ -111,7 +111,7 @@ export default function EmailSettingsTab() {
             </div>
           </div>
 
-          <button onClick={() => testMutation.mutate()} disabled={!p.enabled || !p.api_key_set || testMutation.isPending}
+          <button onClick={() => testMutation.mutate(undefined)} disabled={!p.enabled || !p.api_key_set || testMutation.isPending}
             className="text-xs text-ga-accent hover:underline disabled:opacity-30">
             Test
           </button>

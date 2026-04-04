@@ -23,7 +23,7 @@ export default function LocationGroup({ location, items, defaultExpanded }: Loca
     [items],
   );
 
-  const [expanded, setExpanded] = useState(defaultExpanded ?? (items.length > 0 && hasUrgent) || items.length > 0);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? ((items.length > 0 && hasUrgent) || items.length > 0));
   const [showAll, setShowAll] = useState(false);
 
   const toggleExpanded = useCallback(() => setExpanded((p) => !p), []);

@@ -17,7 +17,7 @@ interface InviteInfo {
 export default function JoinPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const joinMutation = useJoinHousehold();
 
   const [info, setInfo] = useState<InviteInfo | null>(null);
