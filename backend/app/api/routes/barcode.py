@@ -100,6 +100,54 @@ async def contribute_product(request: BarcodeContributeRequest):
 
 
 # ---------------------------------------------------------------------------
+# Inventory check (for scanner popup: "You Already Have")
+# ---------------------------------------------------------------------------
+
+@router.get("/{barcode}/inventory")
+async def get_barcode_inventory(barcode: str, user_id: str = ""):
+    """Check existing inventory items matching this barcode for the user + household.
+
+    Used by scanner popup to show "You Already Have" section.
+    """
+    if not user_id:
+        return {"barcode": barcode, "items": [], "total_in_stock": 0}
+
+    from app.services import inventory_service
+    try:
+        return inventory_service.find_items_by_barcode(user_id, barcode)
+    except Exception as e:
+        logger.error("Inventory check failed for %s: %s", barcode, e)
+        return {"barcode": barcode, "items": [], "total_in_stock": 0}
+
+
+# ---------------------------------------------------------------------------
+# Use One (smart consume via scanner)
+# ---------------------------------------------------------------------------
+
+@router.post("/{barcode}/use-one")
+async def use_one_item(barcode: str, body: dict = {}):
+    """Smart consume: find soonest-expiring item with this barcode and decrement/consume.
+
+    FIFO logic: own items first → soonest expiry → lowest qty → oldest added.
+    """
+    user_id = body.get("user_id", "")
+    qty = body.get("quantity", 1)
+
+    if not user_id:
+        raise HTTPException(400, "user_id is required")
+
+    from app.services import inventory_service
+    try:
+        result = inventory_service.use_one_item(user_id, barcode, qty_to_use=qty)
+        return result
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        logger.error("use-one failed for %s: %s", barcode, e)
+        raise HTTPException(500, f"Failed to consume item: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Dispute (user-facing)
 # ---------------------------------------------------------------------------
 

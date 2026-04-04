@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useUpdateInventoryItem } from '@/api/mutations/useInventoryMutations';
 import { useLocations } from '@/api/queries/useLocations';
 import { cn } from '@/utils/cn';
+import { toast } from 'sonner';
 import type { InventoryItem } from '@/types/api';
 
 interface ItemActionBarProps {
@@ -13,6 +14,8 @@ export default function ItemActionBar({ item, uid }: ItemActionBarProps) {
   const updateMutation = useUpdateInventoryItem();
   const { locations } = useLocations();
   const [showMoveMenu, setShowMoveMenu] = useState(false);
+  const [showExtendExpiry, setShowExtendExpiry] = useState(false);
+  const [newExpiryDate, setNewExpiryDate] = useState('');
 
   const isActive = item.status === 'active';
   const isDone = ['consumed', 'expired', 'discarded'].includes(item.status);
@@ -114,13 +117,50 @@ export default function ItemActionBar({ item, uid }: ItemActionBarProps) {
 
           {/* Discard (more visible when expired) */}
           {isExpired && (
-            <button
-              onClick={() => handleStatusChange('discarded', 'discarded')}
-              disabled={updateMutation.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors disabled:opacity-50"
-            >
-              🗑 Discard
-            </button>
+            <>
+              <button
+                onClick={() => handleStatusChange('discarded', 'discarded')}
+                disabled={updateMutation.isPending}
+                className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors disabled:opacity-50"
+              >
+                🗑 Discard
+              </button>
+              <button
+                onClick={() => setShowExtendExpiry(!showExtendExpiry)}
+                className="border border-ga-border text-ga-text-secondary hover:text-ga-text-primary text-sm rounded-lg px-4 py-2 transition-colors"
+              >
+                📅 Still Good
+              </button>
+            </>
+          )}
+
+          {/* Extend expiry date picker */}
+          {showExtendExpiry && (
+            <div className="w-full flex items-center gap-2 mt-1">
+              <input
+                type="date"
+                value={newExpiryDate}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setNewExpiryDate(e.target.value)}
+                className="bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary"
+              />
+              <button
+                onClick={() => {
+                  if (!newExpiryDate) return;
+                  const newMs = new Date(newExpiryDate).getTime();
+                  if (newMs < Date.now()) { toast.error('Date must be today or later'); return; }
+                  updateMutation.mutate({
+                    uid, id: item.id,
+                    data: { expiry_date: newMs, expiryDate: newMs, expiry_past: false, needsReview: false },
+                  }, { onSuccess: () => { setShowExtendExpiry(false); toast.success('Expiry date extended'); } });
+                }}
+                disabled={!newExpiryDate || updateMutation.isPending}
+                className="bg-ga-accent hover:bg-ga-accent/90 disabled:opacity-50 text-white text-xs font-medium rounded-lg px-3 py-1.5"
+              >
+                Save
+              </button>
+              <button onClick={() => setShowExtendExpiry(false)} className="text-xs text-ga-text-secondary">Cancel</button>
+            </div>
           )}
 
           {/* Move Location */}

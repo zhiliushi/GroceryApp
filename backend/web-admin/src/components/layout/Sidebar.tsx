@@ -14,6 +14,7 @@ const generalNav: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: '📊' },
   { path: '/inventory', label: 'Inventory', icon: '📦' },
   { path: '/shopping-lists', label: 'Shopping Lists', icon: '📋' },
+  { path: '/meals', label: 'Meals', icon: '🍳' },
   { path: '/foodbanks', label: 'Foodbanks', icon: '📍' },
   { path: '/analytics', label: 'Analytics', icon: '📈' },
   { path: '/settings', label: 'Settings', icon: '⚙️' },

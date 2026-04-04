@@ -1,5 +1,6 @@
 export const API = {
   ME: '/api/me',
+  MY_INVENTORY: '/api/inventory/my',
   DASHBOARD: '/api/admin/dashboard',
 
   USERS: '/api/admin/users',
@@ -40,6 +41,12 @@ export const API = {
   FOODBANK_SOURCE_RESET: (id: string) => `/api/foodbanks/sources/${id}/reset`,
   FOODBANK_SOURCE_TOGGLE: (id: string) => `/api/foodbanks/sources/${id}/toggle`,
 
+  // Meals
+  MEALS_RECIPES: '/api/meals/recipes',
+  MEALS_RECIPE: (id: string) => `/api/meals/recipes/${id}`,
+  MEALS_SUGGESTIONS: '/api/meals/suggestions',
+  MEALS_SCAN_RECIPE: '/api/meals/scan-recipe',
+
   // Household
   HOUSEHOLD_MY: '/api/household/my',
   HOUSEHOLD_CREATE: '/api/household/create',
@@ -76,6 +83,8 @@ export const API = {
   DISPUTE_MY: (barcode: string) => `/api/barcode/dispute/${barcode}`,
   PRODUCT_RECHECK: (barcode: string) => `/api/admin/products/${barcode}/recheck`,
   BARCODE_PRICES: (barcode: string) => `/api/barcode/${barcode}/prices`,
+  BARCODE_INVENTORY: (barcode: string) => `/api/barcode/${barcode}/inventory`,
+  BARCODE_USE_ONE: (barcode: string) => `/api/barcode/${barcode}/use-one`,
 
   // Receipt OCR
   RECEIPT_SCAN: '/api/receipt/scan',

@@ -8,7 +8,7 @@ Currently runs:
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from app.services import foodbank_service, exchange_rate_service
+from app.services import foodbank_service, exchange_rate_service, inventory_service
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,17 @@ def start():
         hours=24,
         id="exchange_rate_update",
         name="Exchange rate daily update",
+        replace_existing=True,
+    )
+
+    # Daily expiry check at 9 AM UTC — flag items past their expiry date
+    _scheduler.add_job(
+        inventory_service.flag_expired_items,
+        "cron",
+        hour=9,
+        minute=0,
+        id="expiry_check",
+        name="Daily expiry check",
         replace_existing=True,
     )
 

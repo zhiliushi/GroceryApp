@@ -10,6 +10,7 @@ from . import (
     foodbank_service,
     household_service,
     invitation_service,
+    recipe_service,
     foodbank_sources,
     insights_service,
     inventory_service,

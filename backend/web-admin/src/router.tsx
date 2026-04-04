@@ -27,6 +27,8 @@ const NeedsReviewPage = lazy(() => import('@/pages/needs-review/NeedsReviewPage'
 const PriceRecordsPage = lazy(() => import('@/pages/price-records/PriceRecordsPage'));
 const AdminSettingsPage = lazy(() => import('@/pages/admin-settings/AdminSettingsPage'));
 const JoinPage = lazy(() => import('@/pages/join/JoinPage'));
+const MealsPage = lazy(() => import('@/pages/meals/MealsPage'));
+const RecipeFormPage = lazy(() => import('@/pages/meals/RecipeFormPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -96,6 +98,10 @@ export const router = createBrowserRouter([
       { path: 'analytics', element: <TierGated page="analytics"><AnalyticsPage /></TierGated> },
       // Settings: free tier
       { path: 'settings', element: <TierGated page="settings"><SettingsPage /></TierGated> },
+      // Meals: free tier (waste prevention)
+      { path: 'meals', element: <SuspenseWrapper><MealsPage /></SuspenseWrapper> },
+      { path: 'meals/new', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
+      { path: 'meals/:id/edit', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
 
       // ── Admin-only pages (role-gated, no tier check needed) ──
       {

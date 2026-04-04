@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 
-from app.api.routes import barcode, analytics, foodbank, admin, receipt, household
+from app.api.routes import barcode, analytics, foodbank, admin, receipt, household, meals
 from app.core.config import settings
 from app.services import scheduler
 
@@ -106,6 +106,7 @@ app.include_router(foodbank.router, prefix="/api/foodbanks", tags=["foodbanks"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(receipt.router, prefix="/api/receipt", tags=["receipt"])
 app.include_router(household.router, prefix="/api/household", tags=["household"])
+app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
 
 # SPA catch-all (serves React app for all non-API routes)
 # Replaces the old Jinja2 web.router
@@ -173,6 +174,19 @@ async def get_current_user_info(request: Request):
         "country": profile.get("country"),
         "currency": profile.get("currency"),
     }
+
+
+@app.get("/api/inventory/my")
+async def get_my_inventory(request: Request):
+    """User-facing inventory: returns user's own items + household members' items.
+
+    Household-aware — if user is in a household, merges all members' items
+    with member attribution. Falls back to solo if no household."""
+    from app.core.auth import get_current_user
+    from app.services import inventory_service
+    user = await get_current_user(request)
+    items = inventory_service.get_household_items(user.uid, limit=500)
+    return {"count": len(items), "items": items}
 
 
 @app.get("/api/config")

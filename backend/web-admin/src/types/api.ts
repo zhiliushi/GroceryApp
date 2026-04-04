@@ -405,6 +405,74 @@ export interface HouseholdResponse {
   pending_invites: Invitation[];
 }
 
+// === Recipes / Meals ===
+
+export interface RecipeIngredient {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  category: string;
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  description: string;
+  servings: number;
+  prep_time_min: number;
+  ingredients: RecipeIngredient[];
+  steps: string[];
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IngredientMatch {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  matched: boolean;
+  inventory_item_id?: string;
+  inventory_item_name?: string;
+  inventory_quantity?: number;
+  inventory_location?: string;
+  inventory_user_id?: string;
+  expiring?: boolean;
+  expiry_text?: string | null;
+}
+
+export interface RecipeMatchResult extends Recipe {
+  match_score: number;
+  matched_count: number;
+  total_ingredients: number;
+  expiring_match_count: number;
+  ingredient_matches: IngredientMatch[];
+  missing_ingredients: string[];
+}
+
+export interface RecipesResponse {
+  recipes: Recipe[];
+  count: number;
+  limit: number;
+}
+
+export interface SuggestionsResponse {
+  suggestions: RecipeMatchResult[];
+  count: number;
+}
+
+export interface RecipeScanResult {
+  success: boolean;
+  provider_used?: string;
+  raw_text: string;
+  parsed: {
+    name: string;
+    ingredients: (RecipeIngredient & { matched: boolean; inventory_item_name?: string; inventory_location?: string; inventory_quantity?: number })[];
+    steps: string[];
+  };
+  message?: string;
+}
+
 // === Storage Locations ===
 
 export interface LocationItem {
