@@ -13,7 +13,7 @@ RUN cd web-admin && \
     echo "VITE_FIREBASE_API_KEY=AIzaSyDv9nE_kgel4c43zVhI8n9HzFpWPxQc_FA" > .env && \
     echo "VITE_FIREBASE_AUTH_DOMAIN=groceryapp-b91a7.firebaseapp.com" >> .env && \
     echo "VITE_FIREBASE_PROJECT_ID=groceryapp-b91a7" >> .env && \
-    npm run build
+    npx vite build
 # vite.config.ts: outDir: '../static/spa' → output is at /build/static/spa/
 
 # Stage 2: Python backend
