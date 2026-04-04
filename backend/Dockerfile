@@ -8,6 +8,7 @@ WORKDIR /app
 # System packages — Tesseract OCR for receipt scanning (English + Malay)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-eng tesseract-ocr-msa \
+    libjpeg-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first (layer caching)
