@@ -1,0 +1,1 @@
+var e=[`active`,`consumed`,`expired`,`discarded`],t=[{value:`MY`,label:`Malaysia`},{value:`SG`,label:`Singapore`},{value:`US`,label:`United States`}],n=e=>e===`pending_review`,r=e=>[`approved`,`rejected`].includes(e);export{r as i,e as n,n as r,t};

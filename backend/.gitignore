@@ -16,4 +16,4 @@ venv/
 # Web Admin SPA
 web-admin/node_modules/
 web-admin/.env
-static/spa/
+# static/spa/ — now committed (pre-built locally, simpler than Docker multi-stage)
