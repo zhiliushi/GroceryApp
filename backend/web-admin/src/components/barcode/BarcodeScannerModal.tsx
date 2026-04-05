@@ -23,13 +23,29 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
   const scanMutation = useScanBarcode();
   const scanner = useScannerEngine();
   const hintTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Use ref to avoid stale closure in scanner callback
+  const scanMutationRef = useRef(scanMutation);
+  scanMutationRef.current = scanMutation;
 
-  // Start scanning when modal opens
+  const handleDetected = useCallback(async (barcode: string) => {
+    setScannedBarcode(barcode);
+    setStep('looking_up');
+    setHelpHint(false);
+
+    try {
+      const result = await scanMutationRef.current.mutateAsync(barcode);
+      setProduct(result);
+      setStep(result.found ? 'found' : 'not_found');
+    } catch {
+      setStep('error');
+    }
+  }, []); // stable — no deps, uses ref
+
+  // Start scanning when modal opens (once)
   useEffect(() => {
     if (scanner.engine !== 'manual') {
       scanner.startScanning(handleDetected);
     }
-    // Show help hint after 30 seconds of no detection
     hintTimerRef.current = setTimeout(() => setHelpHint(true), 30_000);
 
     return () => {
@@ -38,20 +54,6 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleDetected = useCallback(async (barcode: string) => {
-    setScannedBarcode(barcode);
-    setStep('looking_up');
-    setHelpHint(false);
-
-    try {
-      const result = await scanMutation.mutateAsync(barcode);
-      setProduct(result);
-      setStep(result.found ? 'found' : 'not_found');
-    } catch {
-      setStep('error');
-    }
-  }, [scanMutation]);
 
   const handleManualLookup = useCallback(() => {
     const barcode = manualInput.trim();
@@ -69,7 +71,8 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
     if (scanner.engine !== 'manual') {
       scanner.startScanning(handleDetected);
     }
-  }, [scanner, handleDetected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanner.engine]);
 
   const handleAddToInventory = useCallback(async (location: string) => {
     if (!product || !product.found) return;

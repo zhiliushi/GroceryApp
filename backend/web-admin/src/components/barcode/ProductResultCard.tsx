@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
@@ -38,24 +38,27 @@ export default function ProductResultCard({
   const [prices, setPrices] = useState<PriceSummary | null>(null);
   const [loadingContext, setLoadingContext] = useState(true);
 
-  const user = useAuthStore((s) => s.user);
+  const uid = useAuthStore((s) => s.user?.uid);
   const { locations } = useLocations();
   const useOneMutation = useUseOneItem();
 
   const hasStock = stock && stock.total_in_stock > 0;
 
-  // Fetch inventory + prices for this barcode (non-blocking)
+  // Fetch inventory + prices for this barcode (non-blocking, runs once per barcode)
+  const barcodeRef = useRef(product.barcode);
   useEffect(() => {
-    if (!product.barcode || !user?.uid) {
-      setLoadingContext(false);
+    // Only fetch once per barcode
+    if (!product.barcode || !uid || product.barcode === barcodeRef.current && stock !== null) {
+      if (!product.barcode || !uid) setLoadingContext(false);
       return;
     }
+    barcodeRef.current = product.barcode;
 
     let cancelled = false;
     setLoadingContext(true);
 
     Promise.allSettled([
-      apiClient.get(API.BARCODE_INVENTORY(product.barcode), { params: { user_id: user.uid } }),
+      apiClient.get(API.BARCODE_INVENTORY(product.barcode), { params: { user_id: uid } }),
       apiClient.get(API.BARCODE_PRICES(product.barcode)),
     ]).then(([stockResult, priceResult]) => {
       if (cancelled) return;
@@ -65,16 +68,16 @@ export default function ProductResultCard({
     });
 
     return () => { cancelled = true; };
-  }, [product.barcode, user?.uid]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.barcode, uid]);
 
   const handleUseOne = () => {
-    if (!user?.uid) return;
+    if (!uid) return;
     useOneMutation.mutate(
-      { barcode: product.barcode, userId: user.uid },
+      { barcode: product.barcode, userId: uid },
       {
         onSuccess: () => {
-          // Refresh stock after consume
-          apiClient.get(API.BARCODE_INVENTORY(product.barcode), { params: { user_id: user.uid } })
+          apiClient.get(API.BARCODE_INVENTORY(product.barcode), { params: { user_id: uid } })
             .then((r) => setStock(r.data))
             .catch(() => {});
         },

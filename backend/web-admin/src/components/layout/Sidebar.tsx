@@ -29,13 +29,14 @@ const adminNav: NavItem[] = [
   { path: '/admin-settings', label: 'Admin Settings', icon: '🔧' },
 ];
 
-function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+function NavLink({ item, collapsed, onClick }: { item: NavItem; collapsed: boolean; onClick?: () => void }) {
   const location = useLocation();
   const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
 
   return (
     <Link
       to={item.path}
+      onClick={onClick}
       title={collapsed ? item.label : undefined}
       className={cn(
         'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
@@ -61,65 +62,62 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 
 export default function Sidebar() {
   const { isAdmin, user, signOut } = useAuthStore();
-  const { sidebarCollapsed, toggleSidebar } = useUiStore();
+  const { sidebarCollapsed, sidebarOpen, toggleSidebar, setSidebarOpen } = useUiStore();
+
+  const handleNavClick = () => setSidebarOpen(false);
 
   return (
-    <aside
-      className={cn(
-        'fixed top-0 left-0 h-screen bg-ga-bg-sidebar border-r border-ga-border flex flex-col transition-all duration-200 z-40',
-        sidebarCollapsed ? 'w-[60px]' : 'w-60',
+    <>
+      {/* Mobile overlay backdrop */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
-    >
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-ga-border">
-        <button onClick={toggleSidebar} className="text-xl flex-shrink-0 hover:scale-110 transition-transform">
-          🛒
-        </button>
-        {!sidebarCollapsed && <span className="font-bold text-ga-text-primary">GroceryApp</span>}
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-        {!sidebarCollapsed && (
-          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ga-text-secondary">
-            General
-          </div>
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          'fixed top-0 left-0 h-screen bg-ga-bg-sidebar border-r border-ga-border flex flex-col transition-all duration-200 z-40',
+          // Desktop: always visible
+          'hidden md:flex',
+          sidebarCollapsed ? 'md:w-[60px]' : 'md:w-60',
+          // Mobile: slide-in overlay when open
+          sidebarOpen && '!flex w-60',
         )}
-        {generalNav.map((item) => (
-          <NavLink key={item.path} item={item} collapsed={sidebarCollapsed} />
-        ))}
+      >
+        <div className="flex items-center gap-2 px-4 py-4 border-b border-ga-border">
+          <button onClick={toggleSidebar} className="text-xl flex-shrink-0 hover:scale-110 transition-transform hidden md:block">🛒</button>
+          <button onClick={() => setSidebarOpen(false)} className="text-xl flex-shrink-0 md:hidden">✕</button>
+          <span className="font-bold text-ga-text-primary">GroceryApp</span>
+        </div>
 
-        {isAdmin && (
-          <>
-            {!sidebarCollapsed && (
-              <div className="px-3 py-1 mt-4 text-[10px] font-semibold uppercase tracking-wider text-ga-text-secondary">
-                Admin
-              </div>
-            )}
-            {adminNav.map((item) => (
-              <NavLink key={item.path} item={item} collapsed={sidebarCollapsed} />
-            ))}
-          </>
-        )}
-      </nav>
-
-      {/* Footer */}
-      <div className="border-t border-ga-border px-3 py-3">
-        {!sidebarCollapsed && (
-          <div className="text-xs text-ga-text-secondary truncate mb-2">
-            {user?.email || '—'}
-          </div>
-        )}
-        <button
-          onClick={signOut}
-          className={cn(
-            'text-red-400 hover:text-red-300 text-xs transition-colors',
-            sidebarCollapsed && 'text-center w-full',
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
+          {!sidebarCollapsed && (
+            <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ga-text-secondary">General</div>
           )}
-        >
-          {sidebarCollapsed ? '🚪' : 'Sign Out'}
-        </button>
-      </div>
-    </aside>
+          {generalNav.map((item) => (
+            <NavLink key={item.path} item={item} collapsed={sidebarCollapsed} onClick={handleNavClick} />
+          ))}
+          {isAdmin && (
+            <>
+              {!sidebarCollapsed && (
+                <div className="px-3 py-1 mt-4 text-[10px] font-semibold uppercase tracking-wider text-ga-text-secondary">Admin</div>
+              )}
+              {adminNav.map((item) => (
+                <NavLink key={item.path} item={item} collapsed={sidebarCollapsed} onClick={handleNavClick} />
+              ))}
+            </>
+          )}
+        </nav>
+
+        <div className="border-t border-ga-border px-3 py-3">
+          {!sidebarCollapsed && (
+            <div className="text-xs text-ga-text-secondary truncate mb-2">{user?.email || '—'}</div>
+          )}
+          <button onClick={signOut} className={cn('text-red-400 hover:text-red-300 text-xs transition-colors', sidebarCollapsed && 'text-center w-full')}>
+            {sidebarCollapsed ? '🚪' : 'Sign Out'}
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
