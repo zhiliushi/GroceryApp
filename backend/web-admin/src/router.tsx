@@ -26,10 +26,13 @@ const ContributedPage = lazy(() => import('@/pages/contributed/ContributedPage')
 const NeedsReviewPage = lazy(() => import('@/pages/needs-review/NeedsReviewPage'));
 const PriceRecordsPage = lazy(() => import('@/pages/price-records/PriceRecordsPage'));
 const AdminSettingsPage = lazy(() => import('@/pages/admin-settings/AdminSettingsPage'));
+const OcrTestScanPage = lazy(() => import('@/pages/admin-settings/OcrTestScanPage'));
+const MapPage = lazy(() => import('@/pages/map/MapPage'));
 const JoinPage = lazy(() => import('@/pages/join/JoinPage'));
 const MealsPage = lazy(() => import('@/pages/meals/MealsPage'));
 const RecipeFormPage = lazy(() => import('@/pages/meals/RecipeFormPage'));
 const ItemOverviewPage = lazy(() => import('@/pages/item/ItemOverviewPage'));
+const StoragePage = lazy(() => import('@/pages/storage/StoragePage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -90,6 +93,8 @@ export const router = createBrowserRouter([
       // Inventory: free tier (all users see it, sections gated inside)
       { path: 'inventory', element: <TierGated page="inventory"><InventoryListPage /></TierGated> },
       { path: 'inventory/:uid/:itemId', element: <TierGated page="inventory"><InventoryDetailPage /></TierGated> },
+      // Storage: all users
+      { path: 'storage', element: <TierGated page="storage"><StoragePage /></TierGated> },
       // Shopping Lists: free tier
       { path: 'shopping-lists', element: <TierGated page="shopping_lists"><ShoppingListsPage /></TierGated> },
       { path: 'shopping-lists/:uid/:listId', element: <TierGated page="shopping_lists"><ShoppingListDetailPage /></TierGated> },
@@ -101,6 +106,8 @@ export const router = createBrowserRouter([
       { path: 'settings', element: <TierGated page="settings"><SettingsPage /></TierGated> },
       // Item overview: barcode-level history page
       { path: 'item/:barcode', element: <SuspenseWrapper><ItemOverviewPage /></SuspenseWrapper> },
+      // Map: experimental + tier-gated
+      { path: 'map', element: <TierGated page="map"><MapPage /></TierGated> },
       // Meals: free tier (waste prevention)
       { path: 'meals', element: <SuspenseWrapper><MealsPage /></SuspenseWrapper> },
       { path: 'meals/new', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
@@ -125,6 +132,7 @@ export const router = createBrowserRouter([
           { path: 'needs-review', element: <SuspenseWrapper><NeedsReviewPage /></SuspenseWrapper> },
           { path: 'price-records', element: <SuspenseWrapper><PriceRecordsPage /></SuspenseWrapper> },
           { path: 'admin-settings', element: <SuspenseWrapper><AdminSettingsPage /></SuspenseWrapper> },
+          { path: 'admin-settings/test-scan', element: <SuspenseWrapper><OcrTestScanPage /></SuspenseWrapper> },
           { path: 'foodbanks/new', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },
           { path: 'foodbanks/:foodbankId/edit', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },
         ],

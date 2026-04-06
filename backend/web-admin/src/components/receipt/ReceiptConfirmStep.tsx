@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useLocations } from '@/api/queries/useLocations';
 import type { ReceiptScanResult, ReceiptConfirmRequest } from '@/types/api';
 
 interface EditableItem {
@@ -25,7 +26,6 @@ interface ReceiptConfirmStepProps {
   confirmError: string | null;
 }
 
-const LOCATIONS = ['fridge', 'pantry', 'freezer'];
 let nextId = 0;
 
 export default function ReceiptConfirmStep({
@@ -37,6 +37,7 @@ export default function ReceiptConfirmStep({
   isConfirming,
   confirmError,
 }: ReceiptConfirmStepProps) {
+  const { locations } = useLocations();
   const [storeName, setStoreName] = useState(scanResult.store.name ?? '');
   const [storeAddress, setStoreAddress] = useState(scanResult.store.address ?? '');
   const [receiptDate, setReceiptDate] = useState(scanResult.date ?? '');
@@ -258,9 +259,9 @@ export default function ReceiptConfirmStep({
                       onChange={(e) => updateItem(item.id, { location: e.target.value })}
                       className="bg-ga-bg-hover border border-ga-border rounded px-2 py-1 text-xs text-ga-text-primary"
                     >
-                      {LOCATIONS.map((loc) => (
-                        <option key={loc} value={loc}>
-                          {loc}
+                      {locations.map((loc) => (
+                        <option key={loc.key} value={loc.key}>
+                          {loc.icon} {loc.name}
                         </option>
                       ))}
                     </select>

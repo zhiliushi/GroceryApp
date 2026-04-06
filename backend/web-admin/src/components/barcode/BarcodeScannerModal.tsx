@@ -1,8 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useScanBarcode } from '@/api/mutations/useBarcodeMutations';
+import { useScanBarcode, useAddToInventory } from '@/api/mutations/useBarcodeMutations';
+import { useAuthStore } from '@/stores/authStore';
 import { useScannerEngine } from './useScannerEngine';
 import ProductResultCard from './ProductResultCard';
 import ContributeProductForm from './ContributeProductForm';
+import { toast } from 'sonner';
 import type { BarcodeProduct } from '@/types/api';
 
 type Step = 'scanning' | 'looking_up' | 'found' | 'not_found' | 'contributing' | 'error';
@@ -18,16 +20,30 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
   const [scannedBarcode, setScannedBarcode] = useState('');
   const [manualInput, setManualInput] = useState('');
   const [helpHint, setHelpHint] = useState(false);
-  const [addingInventory, setAddingInventory] = useState(false);
+  const [imageScanning, setImageScanning] = useState(false);
 
   const scanMutation = useScanBarcode();
+  const addMutation = useAddToInventory();
   const scanner = useScannerEngine();
+  const uid = useAuthStore((s) => s.user?.uid);
+
   const hintTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Use ref to avoid stale closure in scanner callback
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  // Refs to avoid stale closures in scanner callback
   const scanMutationRef = useRef(scanMutation);
   scanMutationRef.current = scanMutation;
+  const scannerRef = useRef(scanner);
+  scannerRef.current = scanner;
+  const stoppingRef = useRef(false);
 
   const handleDetected = useCallback(async (barcode: string) => {
+    // Prevent double-detection race
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+
+    // Stop camera immediately
+    scannerRef.current.stopScanning();
+
     setScannedBarcode(barcode);
     setStep('looking_up');
     setHelpHint(false);
@@ -39,7 +55,7 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
     } catch {
       setStep('error');
     }
-  }, []); // stable — no deps, uses ref
+  }, []); // stable — no deps, uses refs
 
   // Start scanning when modal opens (once)
   useEffect(() => {
@@ -61,11 +77,50 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
     handleDetected(barcode);
   }, [manualInput, handleDetected]);
 
+  // Scan barcode from uploaded image
+  const handleImageFile = useCallback(async (file: File) => {
+    setImageScanning(true);
+    try {
+      const bitmap = await createImageBitmap(file);
+
+      // Try native BarcodeDetector first
+      if ('BarcodeDetector' in window) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detector = new (window as any).BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+        });
+        const results = await detector.detect(bitmap);
+        if (results.length > 0) {
+          handleDetected(results[0].rawValue);
+          return;
+        }
+      }
+
+      // Fallback: html5-qrcode scanFile
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+        const scanner = new Html5Qrcode('__barcode-image-scan');
+        const result = await scanner.scanFileV2(file, /* showImage */ false);
+        if (result?.decodedText) {
+          handleDetected(result.decodedText);
+          return;
+        }
+      } catch { /* scanFileV2 throws on no barcode found */ }
+
+      toast.error('No barcode found in image. Try a clearer photo or enter manually.');
+    } catch {
+      toast.error('Could not read image');
+    } finally {
+      setImageScanning(false);
+    }
+  }, [handleDetected]);
+
   const handleScanAgain = useCallback(() => {
     setProduct(null);
     setScannedBarcode('');
     setStep('scanning');
     setHelpHint(false);
+    stoppingRef.current = false;
     if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
     hintTimerRef.current = setTimeout(() => setHelpHint(true), 30_000);
     if (scanner.engine !== 'manual') {
@@ -75,32 +130,20 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
   }, [scanner.engine]);
 
   const handleAddToInventory = useCallback(async (location: string) => {
-    if (!product || !product.found) return;
-    setAddingInventory(true);
+    if (!product || !product.found || !uid) return;
     try {
-      const { apiClient } = await import('@/api/client');
-      await apiClient.post('/api/receipt/confirm', {
-        scan_id: `barcode_${Date.now()}`,
-        store_name: null,
-        date: null,
-        destination: 'inventory',
-        items: [{
-          name: product.product_name || scannedBarcode,
-          price: 0,
-          quantity: 1,
-          barcode: product.barcode,
-          location,
-        }],
-        total: null,
+      await addMutation.mutateAsync({
+        barcode: product.barcode,
+        userId: uid,
+        name: product.product_name || scannedBarcode,
+        location,
       });
       onAddedToInventory?.();
       onClose();
     } catch {
-      // Keep modal open on error
-    } finally {
-      setAddingInventory(false);
+      // onError toast already shown by mutation
     }
-  }, [product, scannedBarcode, onClose, onAddedToInventory]);
+  }, [product, scannedBarcode, uid, addMutation, onClose, onAddedToInventory]);
 
   const handleContributed = useCallback((name: string) => {
     // After contributing, show as "found" with the contributed name
@@ -167,7 +210,7 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
               <p className="text-sm text-yellow-400 mb-2">{scanner.error}</p>
               <div className="flex gap-2 justify-center">
                 <button
-                  onClick={() => scanner.startScanning(handleDetected)}
+                  onClick={() => { stoppingRef.current = false; scanner.startScanning(handleDetected); }}
                   className="text-xs text-ga-accent hover:underline"
                 >
                   Retry
@@ -191,27 +234,49 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
             </div>
           )}
 
-          {/* Manual entry (always visible during scanning) */}
+          {/* Image upload + Manual entry (visible during scanning) */}
           {(step === 'scanning' || scanner.error || scanner.engine === 'manual') && (
-            <div>
-              <label className="block text-xs text-ga-text-secondary mb-1">
-                {scanner.engine === 'manual' ? 'Enter barcode' : 'Or enter manually'}
-              </label>
+            <div className="space-y-3">
+              {/* Upload image */}
               <div className="flex gap-2">
-                <input
-                  value={manualInput}
-                  onChange={(e) => setManualInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleManualLookup(); }}
-                  placeholder="Type barcode number..."
-                  className="flex-1 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary font-mono"
-                />
                 <button
-                  onClick={handleManualLookup}
-                  disabled={manualInput.trim().length < 4}
-                  className="bg-ga-accent hover:bg-ga-accent/90 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={imageScanning}
+                  className="flex-1 border border-dashed border-ga-border hover:border-ga-accent/50 text-ga-text-secondary hover:text-ga-text-primary text-sm rounded-lg px-3 py-2 transition-colors"
                 >
-                  Look up
+                  {imageScanning ? '⏳ Scanning image...' : '📁 Upload barcode image'}
                 </button>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = ''; }}
+                />
+              </div>
+              {/* Hidden div for html5-qrcode scanFileV2 */}
+              <div id="__barcode-image-scan" className="hidden" />
+              {/* Manual entry */}
+              <div>
+                <label className="block text-xs text-ga-text-secondary mb-1">
+                  {scanner.engine === 'manual' ? 'Enter barcode' : 'Or enter manually'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    value={manualInput}
+                    onChange={(e) => setManualInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleManualLookup(); }}
+                    placeholder="Type barcode number..."
+                    className="flex-1 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary font-mono"
+                  />
+                  <button
+                    onClick={handleManualLookup}
+                    disabled={manualInput.trim().length < 4}
+                    className="bg-ga-accent hover:bg-ga-accent/90 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors"
+                  >
+                    Look up
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -232,7 +297,7 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
               product={product}
               onAddToInventory={handleAddToInventory}
               onScanAgain={handleScanAgain}
-              isAdding={addingInventory}
+              isAdding={addMutation.isPending}
             />
           )}
 
@@ -282,7 +347,7 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
               </p>
               <div className="flex gap-2 justify-center mt-3">
                 <button
-                  onClick={() => handleDetected(scannedBarcode)}
+                  onClick={() => { stoppingRef.current = false; handleDetected(scannedBarcode); }}
                   className="text-sm text-ga-accent hover:underline"
                 >
                   Retry

@@ -5,7 +5,7 @@ All endpoints require admin role.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
 from typing import Optional
 
 from app.core.auth import UserInfo, require_admin
@@ -646,3 +646,381 @@ async def list_receipt_errors(
     """List recent receipt scan errors for debugging."""
     errors = receipt_log_service.get_recent_errors(limit=limit)
     return {"count": len(errors), "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Manual Stores (admin-managed store pins for map)
+# ---------------------------------------------------------------------------
+
+
+def _get_stores_doc():
+    from firebase_admin import firestore
+    return firestore.client().collection("app_config").document("stores")
+
+
+def _get_map_doc():
+    from firebase_admin import firestore
+    return firestore.client().collection("app_config").document("map")
+
+
+@router.get("/stores")
+async def get_stores(admin: UserInfo = Depends(require_admin)):
+    """Get all manually added stores."""
+    doc = _get_stores_doc().get()
+    stores = doc.to_dict().get("stores", []) if doc.exists else []
+    return {"stores": stores}
+
+
+@router.post("/stores")
+async def add_store(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Add a manual store pin."""
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Store name is required")
+
+    from datetime import datetime
+    import uuid
+    store = {
+        "id": f"s_{uuid.uuid4().hex[:8]}",
+        "name": name,
+        "address": (body.get("address") or "").strip(),
+        "lat": float(body.get("lat", 0)),
+        "lng": float(body.get("lng", 0)),
+        "type": body.get("type", "supermarket"),
+        "opening_hours": (body.get("opening_hours") or "").strip(),
+        "notes": (body.get("notes") or "").strip(),
+        "created_at": datetime.utcnow().isoformat(),
+    }
+
+    doc = _get_stores_doc()
+    snap = doc.get()
+    stores = snap.to_dict().get("stores", []) if snap.exists else []
+    stores.append(store)
+    doc.set({"stores": stores, "updated_at": datetime.utcnow().isoformat()})
+    return {"success": True, "store": store}
+
+
+@router.put("/stores/{store_id}")
+async def update_store(store_id: str, body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update a manual store."""
+    from datetime import datetime
+    doc = _get_stores_doc()
+    snap = doc.get()
+    stores = snap.to_dict().get("stores", []) if snap.exists else []
+
+    found = False
+    for i, s in enumerate(stores):
+        if s.get("id") == store_id:
+            stores[i] = {**s, **{k: v for k, v in body.items() if k != "id"}, "id": store_id}
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(404, "Store not found")
+
+    doc.set({"stores": stores, "updated_at": datetime.utcnow().isoformat()})
+    return {"success": True}
+
+
+@router.delete("/stores/{store_id}")
+async def delete_store(store_id: str, admin: UserInfo = Depends(require_admin)):
+    """Delete a manual store."""
+    from datetime import datetime
+    doc = _get_stores_doc()
+    snap = doc.get()
+    stores = snap.to_dict().get("stores", []) if snap.exists else []
+    filtered = [s for s in stores if s.get("id") != store_id]
+    if len(filtered) == len(stores):
+        raise HTTPException(404, "Store not found")
+    doc.set({"stores": filtered, "updated_at": datetime.utcnow().isoformat()})
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Map Config (admin-managed default center)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/config/map")
+async def get_map_config(admin: UserInfo = Depends(require_admin)):
+    """Get map configuration."""
+    doc = _get_map_doc().get()
+    if doc.exists:
+        return doc.to_dict()
+    return {"center_lat": 3.139, "center_lng": 101.687, "default_zoom": 13}
+
+
+@router.put("/config/map")
+async def update_map_config(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update map default center and zoom."""
+    from datetime import datetime
+    _get_map_doc().set({
+        "center_lat": float(body.get("center_lat", 3.139)),
+        "center_lng": float(body.get("center_lng", 101.687)),
+        "default_zoom": int(body.get("default_zoom", 13)),
+        "updated_by": admin.uid,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# OCR Test Scanner (admin tool — visual box-level OCR)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/ocr/test-scan")
+async def ocr_test_scan(
+    image: UploadFile = File(...),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Run Tesseract OCR with bounding box data for visual debugging.
+
+    Returns per-region boxes with coordinates (percentages), text, and confidence.
+    Smart merge groups words into logical text regions.
+    """
+    import io
+    import re
+    import time
+
+    # --- Validate ---
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if image.content_type and image.content_type not in allowed:
+        raise HTTPException(400, f"Unsupported format: {image.content_type}. Use JPEG or PNG.")
+
+    image_bytes = await image.read()
+    if len(image_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(413, f"Image too large ({len(image_bytes) // 1024}KB). Max 5MB.")
+
+    # --- Import and detect Tesseract ---
+    try:
+        import pytesseract
+        from PIL import Image, ImageFilter, ImageOps
+    except ImportError as e:
+        raise HTTPException(500, f"Required package not installed: {e}")
+
+    import shutil, os
+    if not shutil.which("tesseract"):
+        for candidate in [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ]:
+            if os.path.isfile(candidate):
+                pytesseract.pytesseract.tesseract_cmd = candidate
+                break
+
+    # --- Preprocess (same as tesseract_provider.py) ---
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+    except Exception:
+        raise HTTPException(422, "Could not read image.")
+
+    orig_w, orig_h = img.size
+    if orig_w < 100 or orig_h < 100:
+        raise HTTPException(400, f"Image too small ({orig_w}x{orig_h}). Use at least 300px.")
+
+    img = ImageOps.exif_transpose(img) or img
+    orig_w, orig_h = img.size  # update after transpose
+    proc = img.convert("L")
+    proc = ImageOps.autocontrast(proc, cutoff=1)
+    proc = proc.filter(ImageFilter.SHARPEN)
+    proc = proc.point(lambda x: 255 if x > 140 else 0, "1")
+
+    # --- Language detection ---
+    lang = "eng"
+    try:
+        available = pytesseract.get_languages()
+        if "msa" in available:
+            lang = "eng+msa"
+    except Exception:
+        pass
+
+    # --- Run OCR with box data ---
+    start = time.time()
+    try:
+        data = pytesseract.image_to_data(proc, lang=lang, config="--psm 6", output_type=pytesseract.Output.DICT)
+        raw_text = pytesseract.image_to_string(proc, lang=lang, config="--psm 6")
+    except Exception as e:
+        raise HTTPException(500, f"Tesseract failed: {e}")
+    duration_ms = int((time.time() - start) * 1000)
+
+    # --- Smart merge words into logical boxes ---
+    boxes = _merge_ocr_words(data, orig_w, orig_h)
+
+    return {
+        "success": True,
+        "image_width": orig_w,
+        "image_height": orig_h,
+        "boxes": boxes,
+        "raw_text": raw_text[:10000],
+        "duration_ms": duration_ms,
+        "lang": lang,
+    }
+
+
+def _merge_ocr_words(data: dict, img_w: int, img_h: int) -> list[dict]:
+    """Merge Tesseract word-level data into smart text region boxes.
+
+    Pipeline:
+    1. Group words by (block_num, line_num)
+    2. Within each line, split on large horizontal gaps (>3× avg word spacing)
+    3. Merge adjacent lines in same block if close vertically and not standalone data
+    4. Filter garbage (low conf, empty, single char)
+    5. Convert to percentage coordinates
+    """
+    import re
+
+    n = len(data.get("text", []))
+    if n == 0:
+        return []
+
+    # Patterns for standalone data fields (should NOT be merged with neighbors)
+    PRICE_RE = re.compile(r"^(?:RM\s*)?\d+[.,]\d{2}$", re.IGNORECASE)
+    DATE_RE = re.compile(r"\d{1,2}[/\-.]?\d{1,2}[/\-.]?\d{2,4}")
+    BARCODE_RE = re.compile(r"^\d{8,13}$")
+
+    def is_data_field(text: str) -> bool:
+        t = text.strip()
+        return bool(PRICE_RE.match(t) or BARCODE_RE.match(t) or (DATE_RE.match(t) and len(t) >= 6))
+
+    # Step 1: Collect valid words
+    words = []
+    for i in range(n):
+        text = (data["text"][i] or "").strip()
+        conf = float(data["conf"][i]) if data["conf"][i] != "-1" else 0
+        if not text or conf < 20:
+            continue
+        words.append({
+            "text": text,
+            "conf": conf,
+            "left": int(data["left"][i]),
+            "top": int(data["top"][i]),
+            "width": int(data["width"][i]),
+            "height": int(data["height"][i]),
+            "block": int(data["block_num"][i]),
+            "line": int(data["line_num"][i]),
+        })
+
+    if not words:
+        return []
+
+    # Step 2: Group by (block, line)
+    from collections import defaultdict
+    lines: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    for w in words:
+        lines[(w["block"], w["line"])].append(w)
+
+    # Sort words within each line by horizontal position
+    for key in lines:
+        lines[key].sort(key=lambda w: w["left"])
+
+    # Step 3: Within each line, split on large horizontal gaps
+    line_groups: list[dict] = []  # {text, conf, left, top, right, bottom, block, line, word_count}
+
+    for (block, line), line_words in sorted(lines.items()):
+        if len(line_words) == 1:
+            w = line_words[0]
+            line_groups.append({
+                "text": w["text"],
+                "conf": w["conf"],
+                "left": w["left"],
+                "top": w["top"],
+                "right": w["left"] + w["width"],
+                "bottom": w["top"] + w["height"],
+                "block": block,
+                "line": line,
+                "word_count": 1,
+            })
+            continue
+
+        # Calculate inter-word gaps
+        gaps = []
+        for j in range(1, len(line_words)):
+            gap = line_words[j]["left"] - (line_words[j - 1]["left"] + line_words[j - 1]["width"])
+            gaps.append(max(gap, 0))
+
+        avg_gap = sum(gaps) / len(gaps) if gaps else 0
+        split_threshold = max(avg_gap * 3, 40)  # at least 40px gap to split
+
+        # Build sub-groups within the line
+        current_group = [line_words[0]]
+        for j in range(1, len(line_words)):
+            gap = line_words[j]["left"] - (line_words[j - 1]["left"] + line_words[j - 1]["width"])
+            if gap > split_threshold:
+                # Flush current group
+                line_groups.append(_make_group(current_group, block, line))
+                current_group = [line_words[j]]
+            else:
+                current_group.append(line_words[j])
+        if current_group:
+            line_groups.append(_make_group(current_group, block, line))
+
+    # Step 4: Merge adjacent lines in same block (if close and not standalone data)
+    line_groups.sort(key=lambda g: (g["block"], g["line"], g["left"]))
+    merged: list[dict] = []
+    i = 0
+    while i < len(line_groups):
+        current = dict(line_groups[i])  # copy
+        # Try to merge with next groups in same block
+        while i + 1 < len(line_groups):
+            nxt = line_groups[i + 1]
+            if nxt["block"] != current["block"]:
+                break
+            # Check vertical proximity
+            current_h = current["bottom"] - current["top"]
+            gap_v = nxt["top"] - current["bottom"]
+            if gap_v > current_h * 1.5:
+                break  # too far apart
+            # Don't merge if either is a standalone data field
+            if is_data_field(current["text"]) or is_data_field(nxt["text"]):
+                break
+            # Merge
+            current["text"] = current["text"] + " " + nxt["text"]
+            current["conf"] = (current["conf"] + nxt["conf"]) / 2
+            current["left"] = min(current["left"], nxt["left"])
+            current["top"] = min(current["top"], nxt["top"])
+            current["right"] = max(current["right"], nxt["right"])
+            current["bottom"] = max(current["bottom"], nxt["bottom"])
+            current["word_count"] += nxt["word_count"]
+            i += 1
+        merged.append(current)
+        i += 1
+
+    # Step 5: Filter and convert to percentage coordinates
+    boxes = []
+    for idx, g in enumerate(merged):
+        text = g["text"].strip()
+        if len(text) < 2:
+            continue
+        w_pct = (g["right"] - g["left"]) / img_w * 100
+        h_pct = (g["bottom"] - g["top"]) / img_h * 100
+        if w_pct < 0.5 or h_pct < 0.3:
+            continue  # too small
+
+        boxes.append({
+            "id": f"b_{idx}",
+            "text": text,
+            "confidence": round(g["conf"], 1),
+            "x": round(max(0, g["left"] / img_w * 100), 2),
+            "y": round(max(0, g["top"] / img_h * 100), 2),
+            "w": round(min(w_pct, 100), 2),
+            "h": round(min(h_pct, 100), 2),
+            "word_count": g["word_count"],
+        })
+
+    return boxes
+
+
+def _make_group(words: list[dict], block: int, line: int) -> dict:
+    """Create a line group from a list of words."""
+    return {
+        "text": " ".join(w["text"] for w in words),
+        "conf": sum(w["conf"] for w in words) / len(words),
+        "left": min(w["left"] for w in words),
+        "top": min(w["top"] for w in words),
+        "right": max(w["left"] + w["width"] for w in words),
+        "bottom": max(w["top"] + w["height"] for w in words),
+        "block": block,
+        "line": line,
+        "word_count": len(words),
+    }

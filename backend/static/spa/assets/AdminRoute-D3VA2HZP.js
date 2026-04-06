@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-D2guwa18.js";import{n as t}from"./index-Bu4eIPsD.js";import{t as n}from"./authStore-Cwtr70ST.js";var r=e();function i({children:e}){let{isAdmin:i}=n();return i?(0,r.jsx)(r.Fragment,{children:e}):(0,r.jsx)(t,{to:`/dashboard`,replace:!0})}export{i as default};

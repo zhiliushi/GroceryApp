@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { qk } from '@/api/queries/keys';
-import type { ReceiptScanResult, ReceiptConfirmRequest, ReceiptConfirmResponse, OcrConfig, ProviderTestResult } from '@/types/api';
+import type { ReceiptScanResult, ReceiptConfirmRequest, ReceiptConfirmResponse, OcrConfig, ProviderTestResult, OcrTestScanResult } from '@/types/api';
 
 export function useScanReceipt() {
   return useMutation({
@@ -42,6 +42,20 @@ export function useTestOcrProvider() {
         {},
         { timeout: 45_000 },
       );
+      return resp.data;
+    },
+  });
+}
+
+export function useOcrTestScan() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<OcrTestScanResult> => {
+      const formData = new FormData();
+      formData.append('image', file);
+      const resp = await apiClient.post<OcrTestScanResult>(API.ADMIN_OCR_TEST_SCAN, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 45_000,
+      });
       return resp.data;
     },
   });

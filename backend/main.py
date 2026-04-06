@@ -205,6 +205,25 @@ async def get_locations():
     return {"locations": location_service.get_locations()}
 
 
+@app.get("/api/stores")
+async def get_public_stores():
+    """Public manual stores list. No auth required."""
+    from firebase_admin import firestore
+    doc = firestore.client().collection("app_config").document("stores").get()
+    stores = doc.to_dict().get("stores", []) if doc.exists else []
+    return {"stores": stores}
+
+
+@app.get("/api/config/map")
+async def get_map_config():
+    """Public map config (default center). No auth required."""
+    from firebase_admin import firestore
+    doc = firestore.client().collection("app_config").document("map").get()
+    if doc.exists:
+        return doc.to_dict()
+    return {"center_lat": 3.139, "center_lng": 101.687, "default_zoom": 13}
+
+
 @app.get("/api/exchange-rates")
 async def get_exchange_rates():
     """Public exchange rates. No auth required."""

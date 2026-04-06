@@ -40,6 +40,12 @@ export function useScannerEngine(): UseScannerEngineReturn {
   const callbackRef = useRef<((barcode: string) => void) | null>(null);
   const lastBarcodeRef = useRef<string>('');
   const lastTimeRef = useRef<number>(0);
+  // Generation counter — incremented on every cleanup/start. After each async
+  // boundary, we check if the generation still matches. If not, the operation
+  // is stale (cleanup or a new startScanning call happened) and we abort.
+  // This handles: React 18 Strict Mode double-mount, rapid open/close,
+  // and overlapping startScanning calls.
+  const genRef = useRef(0);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -50,6 +56,10 @@ export function useScannerEngine(): UseScannerEngineReturn {
   }, []);
 
   const _cleanup = useCallback(async () => {
+    // Bump generation — any in-flight async ops from startScanning will see
+    // a mismatch and abort, preventing orphaned streams.
+    genRef.current++;
+
     // Stop animation frame
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
@@ -70,22 +80,30 @@ export function useScannerEngine(): UseScannerEngineReturn {
   }, []);
 
   const startScanning = useCallback(async (onDetected: (barcode: string) => void) => {
+    // Stop any previous session first
+    await _cleanup();
+
     callbackRef.current = onDetected;
+    // Claim a new generation for this scan session
+    const gen = ++genRef.current;
     setError(null);
     setStatus('starting');
 
     try {
       if (engine === 'native') {
-        await _startNative(onDetected);
+        await _startNative(onDetected, gen);
       } else if (engine === 'html5-qrcode') {
-        await _startHtml5Qrcode(onDetected);
+        await _startHtml5Qrcode(onDetected, gen);
       } else {
         setStatus('idle');
       }
     } catch (err) {
-      const msg = _classifyCameraError(err);
-      setError(msg);
-      setStatus('error');
+      // Only show error if this generation is still current
+      if (gen === genRef.current) {
+        const msg = _classifyCameraError(err);
+        setError(msg);
+        setStatus('error');
+      }
     }
   }, [engine, _cleanup]);
 
@@ -106,16 +124,29 @@ export function useScannerEngine(): UseScannerEngineReturn {
   }, [_cleanup]);
 
   // --- Native BarcodeDetector ---
-  async function _startNative(onDetected: (barcode: string) => void) {
+  async function _startNative(onDetected: (barcode: string) => void, gen: number) {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
     });
+    // If generation changed (cleanup/restart happened during getUserMedia), kill this stream
+    if (gen !== genRef.current) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
     streamRef.current = stream;
 
     const video = document.createElement('video');
     video.srcObject = stream;
     video.setAttribute('playsinline', 'true');
     await video.play();
+
+    // Check again after video.play()
+    if (gen !== genRef.current) {
+      stream.getTracks().forEach((t) => t.stop());
+      video.srcObject = null;
+      streamRef.current = null;
+      return;
+    }
 
     // Mount video into the viewfinder div
     const container = document.getElementById(VIEWFINDER_ID);
@@ -136,7 +167,7 @@ export function useScannerEngine(): UseScannerEngineReturn {
     setStatus('scanning');
 
     const scan = async () => {
-      if (!streamRef.current?.active) return;
+      if (gen !== genRef.current || !streamRef.current?.active) return;
       try {
         const barcodes = await detector.detect(video);
         if (barcodes.length > 0) {
@@ -146,14 +177,17 @@ export function useScannerEngine(): UseScannerEngineReturn {
           }
         }
       } catch { /* frame not ready */ }
-      animFrameRef.current = requestAnimationFrame(scan);
+      if (gen === genRef.current) {
+        animFrameRef.current = requestAnimationFrame(scan);
+      }
     };
     animFrameRef.current = requestAnimationFrame(scan);
   }
 
   // --- html5-qrcode ---
-  async function _startHtml5Qrcode(onDetected: (barcode: string) => void) {
+  async function _startHtml5Qrcode(onDetected: (barcode: string) => void, gen: number) {
     const { Html5Qrcode } = await import('html5-qrcode');
+    if (gen !== genRef.current) return;
 
     const scanner = new Html5Qrcode(VIEWFINDER_ID);
     scannerRef.current = scanner;
@@ -172,6 +206,14 @@ export function useScannerEngine(): UseScannerEngineReturn {
       },
       () => { /* ignore errors during scanning */ },
     );
+
+    // If generation changed while scanner.start() was running (it calls getUserMedia
+    // internally), stop the scanner immediately — otherwise the stream is orphaned.
+    if (gen !== genRef.current) {
+      try { await scanner.stop(); } catch { /* */ }
+      scannerRef.current = null;
+      return;
+    }
 
     setStatus('scanning');
   }

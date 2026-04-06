@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '@/components/shared/PageHeader';
 import { cn } from '@/utils/cn';
 import PageManagementTab from './PageManagementTab';
@@ -24,7 +25,15 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Admin Settings" icon="⚙️" />
+      <div className="flex items-center justify-between mb-2">
+        <PageHeader title="Admin Settings" icon="⚙️" />
+        <Link
+          to="/admin-settings/test-scan"
+          className="bg-ga-bg-hover border border-ga-border hover:border-ga-accent/50 text-ga-text-primary text-sm rounded-lg px-4 py-2 transition-colors inline-flex items-center gap-2"
+        >
+          🔬 Test Scanner
+        </Link>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-4 border-b border-ga-border pb-3">

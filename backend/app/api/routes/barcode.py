@@ -170,6 +170,53 @@ async def use_one_item(barcode: str, body: dict = {}):
 
 
 # ---------------------------------------------------------------------------
+# Add to Inventory (quick-add from barcode scanner)
+# ---------------------------------------------------------------------------
+
+@router.post("/{barcode}/add-to-inventory")
+async def add_to_inventory(barcode: str, body: dict = {}):
+    """Quick-add item to inventory from barcode scanner.
+
+    Creates a new grocery_item document in the user's collection.
+    Unlike receipt/confirm, this doesn't require a prior scan log.
+    """
+    user_id = body.get("user_id", "")
+    if not user_id:
+        raise HTTPException(400, "user_id is required")
+
+    name = body.get("name", barcode)
+    location = body.get("location", "pantry")
+    quantity = body.get("quantity", 1)
+
+    from firebase_admin import firestore
+    from datetime import datetime
+
+    db = firestore.client()
+    now = datetime.utcnow().isoformat()
+
+    try:
+        doc_ref = db.collection("users").document(user_id).collection("grocery_items").document()
+        doc_ref.set({
+            "name": name,
+            "barcode": barcode,
+            "quantity": quantity,
+            "location": location,
+            "status": "active",
+            "added_date": now,
+            "source": "barcode_scan",
+            "synced_to_cloud": True,
+            "is_important": False,
+            "needs_review": False,
+            "created_at": now,
+            "updated_at": now,
+        })
+        return {"success": True, "item_id": doc_ref.id, "message": f"Added {name} to {location}"}
+    except Exception as e:
+        logger.error("add-to-inventory failed for %s: %s", barcode, e)
+        raise HTTPException(500, f"Failed to add item: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Dispute (user-facing)
 # ---------------------------------------------------------------------------
 

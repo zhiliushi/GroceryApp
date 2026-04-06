@@ -733,3 +733,56 @@ export interface ProviderTestResult {
   error_message?: string;
   message: string;
 }
+
+// === OCR Test Scanner ===
+
+export interface OcrTestBox {
+  id: string;
+  text: string;
+  confidence: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  word_count: number;
+}
+
+export interface OcrTestScanResult {
+  success: boolean;
+  image_width: number;
+  image_height: number;
+  boxes: OcrTestBox[];
+  raw_text: string;
+  duration_ms: number;
+  lang: string;
+  error?: string;
+}
+
+// === Map & Stores ===
+
+export interface ManualStore {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  type: string;
+  opening_hours: string;
+  notes: string;
+  created_at?: string;
+}
+
+export interface MapConfig {
+  center_lat: number;
+  center_lng: number;
+  default_zoom: number;
+  updated_by?: string;
+  updated_at?: string;
+}
+
+export interface OverpassNode {
+  id: number;
+  lat: number;
+  lon: number;
+  tags: Record<string, string>;
+}

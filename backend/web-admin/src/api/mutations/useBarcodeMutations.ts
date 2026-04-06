@@ -24,6 +24,31 @@ export function useContributeProduct() {
   });
 }
 
+export function useAddToInventory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ barcode, userId, name, location }: {
+      barcode: string; userId: string; name: string; location: string;
+    }) => {
+      const resp = await apiClient.post(API.BARCODE_ADD_INVENTORY(barcode), {
+        user_id: userId,
+        name,
+        location,
+        quantity: 1,
+      });
+      return resp.data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Added to inventory');
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error(err?.response?.data?.detail || err.message || 'Failed to add to inventory');
+    },
+  });
+}
+
 export function useUseOneItem() {
   const qc = useQueryClient();
   return useMutation({

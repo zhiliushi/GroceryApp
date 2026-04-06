@@ -91,6 +91,7 @@ export const API = {
   BARCODE_PRICES: (barcode: string) => `/api/barcode/${barcode}/prices`,
   BARCODE_INVENTORY: (barcode: string) => `/api/barcode/${barcode}/inventory`,
   BARCODE_USE_ONE: (barcode: string) => `/api/barcode/${barcode}/use-one`,
+  BARCODE_ADD_INVENTORY: (barcode: string) => `/api/barcode/${barcode}/add-to-inventory`,
 
   // Receipt OCR
   RECEIPT_SCAN: '/api/receipt/scan',
@@ -101,4 +102,12 @@ export const API = {
   CONFIG_OCR_TEST: (provider: string) => `/api/admin/config/ocr/test/${provider}`,
   ADMIN_RECEIPT_SCANS: '/api/admin/receipt-scans',
   ADMIN_RECEIPT_ERRORS: '/api/admin/receipt-scans/errors',
+  ADMIN_OCR_TEST_SCAN: '/api/admin/ocr/test-scan',
+
+  // Map & Stores
+  STORES: '/api/stores',
+  ADMIN_STORES: '/api/admin/stores',
+  ADMIN_STORE: (id: string) => `/api/admin/stores/${id}`,
+  CONFIG_MAP: '/api/config/map',
+  ADMIN_CONFIG_MAP: '/api/admin/config/map',
 } as const;
