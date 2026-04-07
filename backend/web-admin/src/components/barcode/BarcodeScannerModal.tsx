@@ -200,6 +200,17 @@ export default function BarcodeScannerModal({ onClose, onAddedToInventory }: Bar
                   </span>
                 </div>
               )}
+              {/* Torch toggle — only on supported devices */}
+              {scanner.hasTorch && scanner.status === 'scanning' && (
+                <button
+                  onClick={() => scanner.toggleTorch()}
+                  className={`absolute top-2 right-2 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    scanner.torchOn ? 'bg-yellow-400 text-black' : 'bg-black/60 text-white'
+                  }`}
+                >
+                  🔦 {scanner.torchOn ? 'ON' : 'OFF'}
+                </button>
+              )}
             </div>
           )}
 

@@ -778,9 +778,8 @@ async def ocr_test_scan(
 
     Returns per-region boxes with coordinates (percentages), text, and confidence.
     Smart merge groups words into logical text regions.
+    Uses the same improved preprocessing as TesseractProvider.
     """
-    import io
-    import re
     import time
 
     # --- Validate ---
@@ -795,57 +794,44 @@ async def ocr_test_scan(
     # --- Import and detect Tesseract ---
     try:
         import pytesseract
-        from PIL import Image, ImageFilter, ImageOps
+        from PIL import Image, ImageOps
     except ImportError as e:
         raise HTTPException(500, f"Required package not installed: {e}")
 
-    import shutil, os
-    if not shutil.which("tesseract"):
-        for candidate in [
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        ]:
-            if os.path.isfile(candidate):
-                pytesseract.pytesseract.tesseract_cmd = candidate
-                break
+    from app.services.ocr.tesseract_provider import preprocess_for_ocr, detect_tesseract, get_ocr_lang
 
-    # --- Preprocess (same as tesseract_provider.py) ---
+    detect_tesseract()
+
+    # --- Get original dimensions (before preprocessing) ---
+    import io
     try:
-        img = Image.open(io.BytesIO(image_bytes))
+        orig_img = Image.open(io.BytesIO(image_bytes))
     except Exception:
         raise HTTPException(422, "Could not read image.")
+    orig_img = ImageOps.exif_transpose(orig_img) or orig_img
+    orig_w, orig_h = orig_img.size
 
-    orig_w, orig_h = img.size
     if orig_w < 100 or orig_h < 100:
         raise HTTPException(400, f"Image too small ({orig_w}x{orig_h}). Use at least 300px.")
 
-    img = ImageOps.exif_transpose(img) or img
-    orig_w, orig_h = img.size  # update after transpose
-    proc = img.convert("L")
-    proc = ImageOps.autocontrast(proc, cutoff=1)
-    proc = proc.filter(ImageFilter.SHARPEN)
-    proc = proc.point(lambda x: 255 if x > 140 else 0, "1")
-
-    # --- Language detection ---
-    lang = "eng"
-    try:
-        available = pytesseract.get_languages()
-        if "msa" in available:
-            lang = "eng+msa"
-    except Exception:
-        pass
+    # --- Preprocess (shared with TesseractProvider) ---
+    proc = preprocess_for_ocr(image_bytes)
+    lang = get_ocr_lang()
+    ocr_config = "--psm 3 --oem 1 --dpi 300"
 
     # --- Run OCR with box data ---
     start = time.time()
     try:
-        data = pytesseract.image_to_data(proc, lang=lang, config="--psm 6", output_type=pytesseract.Output.DICT)
-        raw_text = pytesseract.image_to_string(proc, lang=lang, config="--psm 6")
+        data = pytesseract.image_to_data(proc, lang=lang, config=ocr_config, output_type=pytesseract.Output.DICT)
+        raw_text = pytesseract.image_to_string(proc, lang=lang, config=ocr_config)
     except Exception as e:
         raise HTTPException(500, f"Tesseract failed: {e}")
     duration_ms = int((time.time() - start) * 1000)
 
     # --- Smart merge words into logical boxes ---
-    boxes = _merge_ocr_words(data, orig_w, orig_h)
+    # Use preprocessed image dimensions for box coordinates (Tesseract returns pixel coords relative to the image it processed)
+    proc_w, proc_h = proc.size
+    boxes = _merge_ocr_words(data, proc_w, proc_h)
 
     return {
         "success": True,
@@ -855,6 +841,93 @@ async def ocr_test_scan(
         "raw_text": raw_text[:10000],
         "duration_ms": duration_ms,
         "lang": lang,
+    }
+
+
+@router.post("/ocr/preview-scan")
+async def ocr_preview_scan(
+    image: UploadFile = File(...),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Quick low-res OCR preview — returns word count + confidence estimate.
+
+    Designed to complete in <1s by using a 500px image with minimal preprocessing.
+    """
+    import io
+    import time
+
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if image.content_type and image.content_type not in allowed:
+        raise HTTPException(400, f"Unsupported format: {image.content_type}")
+
+    image_bytes = await image.read()
+    if len(image_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Image too large (max 5MB)")
+
+    try:
+        import pytesseract
+        from PIL import Image, ImageOps
+    except ImportError as e:
+        raise HTTPException(500, f"Required package not installed: {e}")
+
+    from app.services.ocr.tesseract_provider import detect_tesseract, get_ocr_lang
+    detect_tesseract()
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+    except Exception:
+        raise HTTPException(422, "Could not read image")
+
+    img = ImageOps.exif_transpose(img) or img
+
+    # Lightweight preprocessing: shrink to 500px, grayscale, autocontrast only
+    w, h = img.size
+    if w > 500:
+        scale = 500 / w
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    img = img.convert("L")
+    img = ImageOps.autocontrast(img, cutoff=1)
+
+    lang = get_ocr_lang()
+
+    start = time.time()
+    try:
+        data = pytesseract.image_to_data(
+            img, lang=lang, config="--psm 6 --oem 1",
+            output_type=pytesseract.Output.DICT,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Tesseract failed: {e}")
+    duration_ms = int((time.time() - start) * 1000)
+
+    # Count valid words and compute average confidence
+    words = []
+    for i in range(len(data.get("text", []))):
+        text = (data["text"][i] or "").strip()
+        conf = float(data["conf"][i]) if str(data["conf"][i]) != "-1" else 0
+        if text and conf > 30:
+            words.append({"text": text, "conf": conf})
+
+    word_count = len(words)
+    avg_confidence = round(sum(w["conf"] for w in words) / word_count, 1) if words else 0
+    preview_text = " ".join(w["text"] for w in words[:30])[:200]
+
+    if word_count == 0:
+        quality = "empty"
+    elif avg_confidence > 60 and word_count > 5:
+        quality = "good"
+    elif avg_confidence > 40 or word_count > 2:
+        quality = "fair"
+    else:
+        quality = "poor"
+
+    return {
+        "word_count": word_count,
+        "avg_confidence": avg_confidence,
+        "quality": quality,
+        "preview_text": preview_text,
+        "duration_ms": duration_ms,
     }
 
 

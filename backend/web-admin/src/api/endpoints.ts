@@ -103,6 +103,7 @@ export const API = {
   ADMIN_RECEIPT_SCANS: '/api/admin/receipt-scans',
   ADMIN_RECEIPT_ERRORS: '/api/admin/receipt-scans/errors',
   ADMIN_OCR_TEST_SCAN: '/api/admin/ocr/test-scan',
+  ADMIN_OCR_PREVIEW_SCAN: '/api/admin/ocr/preview-scan',
 
   // Map & Stores
   STORES: '/api/stores',

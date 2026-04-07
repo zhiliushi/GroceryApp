@@ -758,6 +758,14 @@ export interface OcrTestScanResult {
   error?: string;
 }
 
+export interface OcrPreviewResult {
+  word_count: number;
+  avg_confidence: number;
+  quality: 'good' | 'fair' | 'poor' | 'empty';
+  preview_text: string;
+  duration_ms: number;
+}
+
 // === Map & Stores ===
 
 export interface ManualStore {

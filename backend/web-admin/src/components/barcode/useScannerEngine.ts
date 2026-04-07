@@ -23,6 +23,10 @@ interface UseScannerEngineReturn {
   startScanning: (onDetected: (barcode: string) => void) => Promise<void>;
   stopScanning: () => Promise<void>;
   switchEngine: () => void;
+  /** Torch (flashlight LED) controls — only available on native engine + supported devices */
+  hasTorch: boolean;
+  torchOn: boolean;
+  toggleTorch: () => Promise<void>;
 }
 
 const VIEWFINDER_ID = 'barcode-viewfinder';
@@ -33,6 +37,8 @@ export function useScannerEngine(): UseScannerEngineReturn {
   );
   const [status, setStatus] = useState<ScannerStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [hasTorch, setHasTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   const scannerRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -46,6 +52,7 @@ export function useScannerEngine(): UseScannerEngineReturn {
   // This handles: React 18 Strict Mode double-mount, rapid open/close,
   // and overlapping startScanning calls.
   const genRef = useRef(0);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -77,6 +84,10 @@ export function useScannerEngine(): UseScannerEngineReturn {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    // Reset torch
+    videoTrackRef.current = null;
+    setHasTorch(false);
+    setTorchOn(false);
   }, []);
 
   const startScanning = useCallback(async (onDetected: (barcode: string) => void) => {
@@ -134,6 +145,15 @@ export function useScannerEngine(): UseScannerEngineReturn {
       return;
     }
     streamRef.current = stream;
+
+    // Detect torch capability
+    const vTrack = stream.getVideoTracks()[0];
+    videoTrackRef.current = vTrack;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const caps = (vTrack as any).getCapabilities?.();
+      setHasTorch(!!caps?.torch);
+    } catch { setHasTorch(false); }
 
     const video = document.createElement('video');
     video.srcObject = stream;
@@ -229,6 +249,16 @@ export function useScannerEngine(): UseScannerEngineReturn {
     return true;
   }
 
+  const toggleTorch = useCallback(async () => {
+    if (!videoTrackRef.current) return;
+    const newState = !torchOn;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await videoTrackRef.current.applyConstraints({ advanced: [{ torch: newState } as any] });
+      setTorchOn(newState);
+    } catch { /* torch not supported or track stopped */ }
+  }, [torchOn]);
+
   return {
     engine,
     status,
@@ -237,6 +267,9 @@ export function useScannerEngine(): UseScannerEngineReturn {
     startScanning,
     stopScanning,
     switchEngine,
+    hasTorch,
+    torchOn,
+    toggleTorch,
   };
 }
 

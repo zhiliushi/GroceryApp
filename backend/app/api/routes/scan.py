@@ -59,7 +59,11 @@ async def scan_product_label(
         raw_text = await _ocr_tesseract_only(image_bytes)
     except Exception as e:
         logger.warning("Label scan OCR failed: %s", e)
-        return {"success": False, "raw_text": "", "parsed": {}, "message": f"OCR failed: {e}"}
+        return {
+            "success": False, "raw_text": "", "parsed": {}, "provider": "tesseract",
+            "fields_extracted": 0, "inventory": None,
+            "message": "OCR service is temporarily unavailable. Please try again later.",
+        }
 
     parsed = product_label_service.parse_product_label(raw_text)
     fields_extracted = sum(1 for v in [parsed.get("name"), parsed.get("brand"), parsed.get("weight"), parsed.get("expiry_date"), parsed.get("barcode")] if v)
@@ -70,13 +74,21 @@ async def scan_product_label(
         from app.services import inventory_service
         inventory_check = inventory_service.find_items_by_barcode(user.uid, parsed["barcode"])
 
+    if fields_extracted > 0:
+        message = f"Extracted {fields_extracted} field(s)"
+    elif raw_text.strip():
+        preview = raw_text.strip()[:100]
+        message = f"Could not identify product details. The text found was: '{preview}'. Try photographing just the product name and barcode."
+    else:
+        message = "No text could be detected. Tips: Hold the label flat, ensure good lighting, and avoid reflections."
+
     return {
         "success": fields_extracted > 0,
         "provider": "tesseract",
         "fields_extracted": fields_extracted,
-        "parsed": parsed,
+        "parsed": {**parsed, "raw_text": raw_text[:2000]},
         "inventory": inventory_check,
-        "message": f"Extracted {fields_extracted} field(s)" if fields_extracted > 0 else "Could not read the label. Try a clearer photo.",
+        "message": message,
     }
 
 
@@ -96,7 +108,7 @@ async def scan_expiry_date(
         raw_text = await _ocr_tesseract_only(image_bytes)
     except Exception as e:
         logger.warning("Expiry scan OCR failed: %s", e)
-        return {"success": False, "date": None, "raw_text": "", "message": f"OCR failed: {e}"}
+        return {"success": False, "date": None, "raw_text": "", "message": "OCR service is temporarily unavailable. Please try again later."}
 
     expiry = product_label_service.parse_expiry_text(raw_text)
 
@@ -107,12 +119,20 @@ async def scan_expiry_date(
             "raw_text": raw_text[:1000],
             "message": f"Detected expiry date: {expiry}",
         }
-    else:
+    elif raw_text.strip():
+        preview = raw_text.strip()[:100]
         return {
             "success": False,
             "date": None,
             "raw_text": raw_text[:1000],
-            "message": "No expiry date detected. Try pointing the camera directly at the date text.",
+            "message": f"Text was found but no date could be identified. Text: '{preview}'. Try pointing the camera directly at the expiry date.",
+        }
+    else:
+        return {
+            "success": False,
+            "date": None,
+            "raw_text": "",
+            "message": "No text could be detected. Tips: Hold the product closer, ensure good lighting, and point at the date area.",
         }
 
 
@@ -132,14 +152,18 @@ async def scan_shelf_audit(
         raw_text = await _ocr_tesseract_only(image_bytes)
     except Exception as e:
         logger.warning("Shelf audit OCR failed: %s", e)
-        return {"success": False, "results": {}, "raw_text": "", "message": f"OCR failed: {e}"}
+        return {
+            "success": False,
+            "results": {"matched": [], "unknown": [], "ignored": [], "summary": {"matched_count": 0, "unknown_count": 0, "ignored_count": 0}},
+            "raw_text": "", "message": "OCR service is temporarily unavailable. Please try again later.",
+        }
 
     if not raw_text.strip():
         return {
             "success": False,
             "results": {"matched": [], "unknown": [], "ignored": [], "summary": {"matched_count": 0, "unknown_count": 0, "ignored_count": 0}},
             "raw_text": "",
-            "message": "No text detected. Try with better lighting or clearer labels.",
+            "message": "No text detected. Try with better lighting, open the door wider, or ensure product labels are visible.",
         }
 
     # Get user's inventory for matching

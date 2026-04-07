@@ -92,6 +92,12 @@ class OcrManager:
         # Sort by priority
         providers = sorted(providers, key=lambda p: p.get("priority", 99))
 
+        # Items-based cascade: if a provider succeeds but finds 0 items,
+        # store it as fallback and try the next provider. If a later provider
+        # finds items, use it. Otherwise, use the fallback (success with no data)
+        # rather than reporting "all_providers_failed."
+        fallback_attempt: ProviderAttempt | None = None
+
         for provider_config in providers:
             key = provider_config.get("key", "")
             if not provider_config.get("enabled", False):
@@ -135,14 +141,24 @@ class OcrManager:
             result.attempts.append(attempt)
 
             if attempt.status == "success":
+                if attempt.items_found == 0 and fallback_attempt is None:
+                    # Success but no items — store as fallback, try next provider
+                    fallback_attempt = attempt
+                    continue
+
+                # Success with items (or we already have a fallback) — use this result
                 result.success = True
                 result.provider_used = key
-                # The ReceiptData is stored on the attempt (we need to get it from the provider call)
-                # Re-run is wasteful so we store it during _try_provider
                 result.data = attempt._receipt_data  # type: ignore[attr-defined]
                 return result
 
-        # All providers exhausted
+        # All providers exhausted — use fallback if available
+        if fallback_attempt is not None:
+            result.success = True
+            result.provider_used = fallback_attempt.provider
+            result.data = fallback_attempt._receipt_data  # type: ignore[attr-defined]
+            return result
+
         result.error = "all_providers_failed"
         return result
 
