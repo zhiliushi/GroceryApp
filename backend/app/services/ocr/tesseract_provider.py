@@ -264,8 +264,8 @@ class TesseractProvider(OcrProvider):
         total = _parse_total(raw_text)
         receipt_date = _parse_date(raw_text)
         tax = _parse_tax(raw_text)
-
-        confidence = min(0.3 + 0.1 * len(items), 0.7) if items else min(0.1 + 0.05 * len(raw_text.split()), 0.3)
+        currency = _detect_currency(raw_text)
+        confidence = _compute_confidence(items, store, total, receipt_date, currency)
 
         return ReceiptData(
             items=items,
@@ -274,7 +274,7 @@ class TesseractProvider(OcrProvider):
             tax=tax,
             total=total,
             date=receipt_date,
-            currency="MYR",
+            currency=currency,
             raw_text=raw_text,
             confidence=confidence,
         )
@@ -363,14 +363,60 @@ _DATE_PATTERNS = [
     re.compile(r"(\d{2})[/\-.](\d{2})[/\-.](\d{2})"),
 ]
 
-# Lines to skip (headers, footers, non-item lines)
+# --- Store detection helpers ---
+_BUSINESS_INDICATORS = re.compile(
+    r"\b(sdn\s*bhd|bhd|sdn|mart|store|pasar|kedai|restoran|koperasi|"
+    r"enterprise|trading|supermarket|hypermarket|minimarket|"
+    r"ltd|limited|inc|corp|co\.|pte|llc|"
+    r"pharmacy|farmasi|bakery|bakeri)\b",
+    re.IGNORECASE,
+)
+_ADDRESS_INDICATORS = re.compile(
+    r"\b(jalan|jln|no\.\s*\d|lot\s*\d|tingkat|blk|road|rd\.|"
+    r"street|st\.|avenue|ave\.|lorong|taman|persiaran|"
+    r"bandar|kampung|kg\.|plaza|level)\b|\b\d{5}\b",
+    re.IGNORECASE,
+)
+_DATE_LINE_RE = re.compile(
+    r"\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}|\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?|\b\d{2}:\d{2}:\d{2}\b"
+)
+_DIGITS_ONLY_RE = re.compile(r"^[\d\s\-\.\/:*#]+$")
+
+# --- Date keyword search ---
+_DATE_KEYWORDS_RE = re.compile(
+    r"(?:date|tarikh|dated|bill\s*date|invoice\s*date|receipt\s*date)\s*[:\s]*(.+)",
+    re.IGNORECASE,
+)
+
+# --- Currency detection ---
+_CURRENCY_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\bRM\b", re.IGNORECASE), "MYR"),
+    (re.compile(r"\bMYR\b", re.IGNORECASE), "MYR"),
+    (re.compile(r"\bUSD\b", re.IGNORECASE), "USD"),
+    (re.compile(r"\bEUR\b", re.IGNORECASE), "EUR"),
+    (re.compile(r"\bGBP\b", re.IGNORECASE), "GBP"),
+    (re.compile(r"\bSGD\b", re.IGNORECASE), "SGD"),
+    (re.compile(r"\$(?!\d{5})", re.MULTILINE), "USD"),
+    (re.compile(r"\u20ac"), "EUR"),
+    (re.compile(r"\u00a3"), "GBP"),
+]
+
+# --- Bottom-up total fallback ---
+_PRICE_AMOUNT_RE = re.compile(r"(?:RM|MYR)?\s*([\d,]+\.\d{1,2})", re.IGNORECASE)
+
+# Lines to skip (headers, footers, non-item lines, Malaysian e-wallets)
 _SKIP_PATTERNS = re.compile(
     r"(TOTAL|JUMLAH|SUBTOTAL|CHANGE|TUNAI|CASH|VISA|MASTER|DEBIT|CREDIT|"
     r"CARD|TAX|SST|GST|CUKAI|THANK|TERIMA\s*KASIH|RECEIPT|RESIT|"
     r"CASHIER|KASIR|REG|TRANS|INV|TEL|FAX|GST\s*REG|NO\.?|"
     r"ROUNDING|BOUNDING|DISCOUNT|DISKAUN|MEMBER|AHLI|OPEN\s*DAILY|"
     r"SIGN\s*UP|SAVINGS|CLUBCARD|POINTS|MISSED|www\.|\.com|\.my|"
-    r"PAYMENT|BAYARAN|ROUNDED|QR\s*CODE|SCAN\s*TO|BALANCE|BAKI)",
+    r"PAYMENT|BAYARAN|ROUNDED|QR\s*CODE|SCAN\s*TO|BALANCE|BAKI|"
+    r"BOOST|TOUCH\s*N\s*GO|TNG\s*EWALLET|GRABPAY|GRAB\s*PAY|"
+    r"SHOPEE\s*PAY|SHOPEEPAY|MAYBANK|CIMB|DUITNOW|BIGPAY|"
+    r"BARANGAN\s*YANG|TIDAK\s*BOLEH|SIMPAN\s*RESIT|HARGA\s*TERMASUK|"
+    r"SILA\s*SEMAK|GOODS\s*SOLD|NOT\s*REFUNDABLE|RETAIN\s*RECEIPT|"
+    r"PRICE\s*INCLUSIVE)",
     re.IGNORECASE,
 )
 
@@ -474,17 +520,88 @@ def _extract_qty(raw_name: str) -> tuple[str, int]:
 
 
 def _parse_store(text: str) -> ReceiptStore:
-    lines = [ln.strip() for ln in text.split("\n") if ln.strip()][:5]
-    name = lines[0] if lines else None
-    address = lines[1] if len(lines) > 1 and len(lines[1]) > 10 else None
+    """Multi-strategy merchant name and address detection.
+
+    Strategies: business indicators → ALL-CAPS → longest multi-word → fallback.
+    Address: Malaysian indicators (jalan, taman, postcode) after name line.
+    """
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    header = lines[:5]
+    name: Optional[str] = None
+
+    # Strategy 1: Business indicator in first 5 lines
+    for ln in header:
+        if _BUSINESS_INDICATORS.search(ln) and not _SKIP_PATTERNS.search(ln):
+            name = ln
+            break
+
+    # Strategy 2: ALL-CAPS line in first 3 lines
+    if not name:
+        for ln in header[:3]:
+            alpha = [c for c in ln if c.isalpha()]
+            if (len(alpha) >= 3 and ln == ln.upper()
+                    and not _DIGITS_ONLY_RE.match(ln) and not _DATE_LINE_RE.search(ln)):
+                name = ln
+                break
+
+    # Strategy 3: Longest multi-word non-date line in first 3 lines
+    if not name:
+        best, best_len = None, 0
+        for ln in header[:3]:
+            if (len(ln.split()) >= 2 and not _DIGITS_ONLY_RE.match(ln)
+                    and not _DATE_LINE_RE.search(ln) and len(ln) > best_len):
+                best, best_len = ln, len(ln)
+        name = best
+
+    # Strategy 4: Fallback — first non-trivial line
+    if not name:
+        for ln in header:
+            if len(ln) > 3 and not _DIGITS_ONLY_RE.match(ln):
+                name = ln
+                break
+
+    # Address: look for indicators after the name line
+    address: Optional[str] = None
+    name_idx = 0
+    if name:
+        for i, ln in enumerate(lines[:8]):
+            if ln == name:
+                name_idx = i
+                break
+    for ln in lines[name_idx + 1 : name_idx + 5]:
+        if _ADDRESS_INDICATORS.search(ln) and len(ln) > 10:
+            address = ln
+            break
+    if not address:
+        for ln in lines[name_idx + 1 : name_idx + 4]:
+            if len(ln) > 15 and not _DIGITS_ONLY_RE.match(ln) and not _DATE_LINE_RE.search(ln):
+                address = ln
+                break
+
     return ReceiptStore(name=name, address=address)
 
 
 def _parse_total(text: str) -> Optional[float]:
-    matches = _TOTAL_RE.findall(text)
-    if matches:
-        return float(matches[-1].replace(",", ""))
-    return None
+    """Bottom-up total detection: keyword match preferred, largest price fallback."""
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return None
+    # Scan bottom-up for keyword-matched total
+    for ln in reversed(lines):
+        m = _TOTAL_RE.search(ln)
+        if m:
+            return float(m.group(1).replace(",", ""))
+    # Fallback: largest price in last 10 lines
+    largest = 0.0
+    for ln in lines[-10:]:
+        for m in _PRICE_AMOUNT_RE.finditer(ln):
+            try:
+                val = float(m.group(1).replace(",", ""))
+                if val > largest:
+                    largest = val
+            except ValueError:
+                continue
+    return largest if largest > 0 else None
 
 
 def _parse_tax(text: str) -> Optional[float]:
@@ -494,9 +611,22 @@ def _parse_tax(text: str) -> Optional[float]:
     return None
 
 
-def _parse_date(text: str) -> Optional[date]:
+def _detect_currency(text: str) -> str:
+    """Detect most frequent currency in text. Default MYR."""
+    counts: dict[str, int] = {}
+    for pattern, code in _CURRENCY_PATTERNS:
+        n = len(pattern.findall(text))
+        if n > 0:
+            counts[code] = counts.get(code, 0) + n
+    if not counts:
+        return "MYR"
+    return max(counts, key=counts.get)  # type: ignore[arg-type]
+
+
+def _parse_date_from_text(fragment: str) -> Optional[date]:
+    """Try all date patterns on a text fragment."""
     for pattern in _DATE_PATTERNS:
-        match = pattern.search(text)
+        match = pattern.search(fragment)
         if not match:
             continue
         groups = match.groups()
@@ -506,11 +636,44 @@ def _parse_date(text: str) -> Optional[date]:
             elif len(groups[2]) == 4:
                 return date(int(groups[2]), int(groups[1]), int(groups[0]))
             else:
-                year = 2000 + int(groups[2])
-                return date(year, int(groups[1]), int(groups[0]))
+                return date(2000 + int(groups[2]), int(groups[1]), int(groups[0]))
         except ValueError:
             continue
     return None
+
+
+def _parse_date(text: str) -> Optional[date]:
+    """Keyword-first date detection, then blind regex fallback."""
+    # Strategy 1: keyword-anchored (date, tarikh, bill date, etc.)
+    for line in text.split("\n"):
+        kw = _DATE_KEYWORDS_RE.search(line)
+        if kw:
+            result = _parse_date_from_text(kw.group(1)) or _parse_date_from_text(line)
+            if result:
+                return result
+    # Strategy 2: blind regex across full text
+    return _parse_date_from_text(text)
+
+
+def _compute_confidence(
+    items: list[ReceiptItem], store: ReceiptStore,
+    total: Optional[float], receipt_date: Optional[date], currency: Optional[str],
+) -> float:
+    """Weighted confidence: items 35%, total 25%, store 20%, date 15%, currency 5%."""
+    score = 0.0
+    if items:
+        score += 0.35 * (0.5 + 0.5 * min(len(items) / 5.0, 1.0))
+    if total is not None and total > 0:
+        score += 0.25
+    if store.name:
+        score += 0.20
+    if receipt_date is not None:
+        score += 0.15
+    if currency:
+        score += 0.03 if currency == "MYR" else 0.05
+    if not items and total is None:
+        score *= 0.5
+    return round(min(score, 0.95), 2)
 
 
 # ---------------------------------------------------------------------------

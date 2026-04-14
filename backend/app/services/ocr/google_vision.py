@@ -18,8 +18,6 @@ from __future__ import annotations
 import io
 import logging
 import re
-from datetime import date
-from typing import Optional
 
 from .base import (
     OcrProvider,
@@ -65,26 +63,19 @@ def _get_google_credentials():
     return None
 
 
-# Reuse patterns from tesseract provider for text parsing fallback
-_TOTAL_RE = re.compile(
-    r"(?:TOTAL|JUMLAH|AMOUNT\s*DUE|GRAND\s*TOTAL)\s*[:\s]*([\d,]+\.\d{2})",
-    re.IGNORECASE,
+# Import shared parsing helpers from tesseract provider (no duplication)
+from .tesseract_provider import (
+    _parse_store,
+    _parse_total,
+    _parse_date,
+    _parse_tax,
+    _detect_currency,
+    _compute_confidence,
+    _SKIP_PATTERNS,
+    _TAX_RE,
 )
-_TAX_RE = re.compile(
-    r"(?:SST|GST|TAX|CUKAI|SERVICE\s*TAX)\s*(?:\d+%?)?\s*([\d,]+\.\d{2})",
-    re.IGNORECASE,
-)
-_DATE_PATTERNS = [
-    re.compile(r"(\d{2})[/\-.](\d{2})[/\-.](\d{4})"),
-    re.compile(r"(\d{4})[/\-.](\d{2})[/\-.](\d{2})"),
-    re.compile(r"(\d{2})[/\-.](\d{2})[/\-.](\d{2})"),
-]
-_SKIP_RE = re.compile(
-    r"(TOTAL|JUMLAH|SUBTOTAL|CHANGE|TUNAI|CASH|VISA|MASTER|DEBIT|CREDIT|"
-    r"CARD|TAX|SST|GST|CUKAI|THANK|TERIMA\s*KASIH|RECEIPT|RESIT|"
-    r"CASHIER|KASIR|ROUNDING|DISCOUNT|DISKAUN|MEMBER|AHLI)",
-    re.IGNORECASE,
-)
+
+_SKIP_RE = _SKIP_PATTERNS  # alias for references in _extract_items_from_lines
 _PRICE_RE = re.compile(r"^(?:RM|MYR)?\s*\d+(?:\.\d{1,2})?$", re.IGNORECASE)
 _QTY_RE = re.compile(r"\bx\s*(\d+)\b", re.IGNORECASE)
 
@@ -152,12 +143,12 @@ class GoogleVisionProvider(OcrProvider):
         # --- Spatial layout parsing ---
         lines = _group_words_into_lines(annotation)
         items = _extract_items_from_lines(lines)
-        store = _extract_store(raw_text)
-        total = _extract_total(raw_text)
-        tax = _extract_tax(raw_text)
-        receipt_date = _extract_date(raw_text)
-
-        confidence = 0.85 if items else 0.3
+        store = _parse_store(raw_text)
+        total = _parse_total(raw_text)
+        tax = _parse_tax(raw_text)
+        receipt_date = _parse_date(raw_text)
+        currency = _detect_currency(raw_text)
+        confidence = _compute_confidence(items, store, total, receipt_date, currency)
 
         return ReceiptData(
             items=items,
@@ -166,7 +157,7 @@ class GoogleVisionProvider(OcrProvider):
             tax=tax,
             total=total,
             date=receipt_date,
-            currency="MYR",
+            currency=currency,
             raw_text=raw_text,
             confidence=confidence,
         )
@@ -291,36 +282,6 @@ def _extract_items_from_lines(lines: list[list]) -> list[ReceiptItem]:
     return items
 
 
-def _extract_store(text: str) -> ReceiptStore:
-    lines = [ln.strip() for ln in text.split("\n") if ln.strip()][:5]
-    name = lines[0] if lines else None
-    address = lines[1] if len(lines) > 1 and len(lines[1]) > 10 else None
-    return ReceiptStore(name=name, address=address)
 
-
-def _extract_total(text: str) -> Optional[float]:
-    matches = _TOTAL_RE.findall(text)
-    return float(matches[-1].replace(",", "")) if matches else None
-
-
-def _extract_tax(text: str) -> Optional[float]:
-    match = _TAX_RE.search(text)
-    return float(match.group(1).replace(",", "")) if match else None
-
-
-def _extract_date(text: str) -> Optional[date]:
-    for pattern in _DATE_PATTERNS:
-        match = pattern.search(text)
-        if not match:
-            continue
-        groups = match.groups()
-        try:
-            if len(groups[0]) == 4:
-                return date(int(groups[0]), int(groups[1]), int(groups[2]))
-            elif len(groups[2]) == 4:
-                return date(int(groups[2]), int(groups[1]), int(groups[0]))
-            else:
-                return date(2000 + int(groups[2]), int(groups[1]), int(groups[0]))
-        except ValueError:
-            continue
-    return None
+# _extract_store, _extract_total, _extract_tax, _extract_date are now imported
+# from tesseract_provider as _parse_store, _parse_total, _parse_tax, _parse_date
