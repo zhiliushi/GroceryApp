@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     # OCR — Receipt scanning providers
     GOOGLE_VISION_API_KEY: str = ""  # or use Firebase service account (Vision API must be enabled)
     MINDEE_API_KEY: str = ""  # from mindee.com dashboard
+    MISTRAL_API_KEY: str = ""  # LLM fallback for receipt parsing (free tier: 1M tokens/month)
 
     # Environment
     ENVIRONMENT: str = "development"

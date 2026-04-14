@@ -3,6 +3,7 @@ Admin API routes (JSON).
 All endpoints require admin role.
 """
 
+import io
 import logging
 
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
@@ -929,6 +930,87 @@ async def ocr_preview_scan(
         "preview_text": preview_text,
         "duration_ms": duration_ms,
     }
+
+
+@router.post("/ocr/email-results")
+async def ocr_email_results(
+    image: UploadFile = File(...),
+    email: str = "",
+    scan_data: str = "{}",
+    admin: UserInfo = Depends(require_admin),
+):
+    """Email OCR scan results (image + parsed data) for record-keeping."""
+    import base64
+    import json
+    from PIL import Image, ImageOps
+
+    if not email or "@" not in email:
+        raise HTTPException(400, "Valid email address is required")
+
+    # Read and resize image for email (max 800px wide)
+    image_bytes = await image.read()
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img = ImageOps.exif_transpose(img) or img
+        if img.width > 800:
+            scale = 800 / img.width
+            img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=75)
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        img_b64 = None
+
+    # Parse scan data
+    try:
+        data = json.loads(scan_data)
+    except Exception:
+        data = {}
+
+    quality = data.get("quality", "unknown")
+    box_count = data.get("box_count", 0)
+    duration_ms = data.get("duration_ms", 0)
+    raw_text = data.get("raw_text", "")[:2000]
+    mapped_fields = data.get("mapped_fields", {})
+
+    status_badge = {
+        "good": "background:#22c55e;color:white",
+        "fair": "background:#f59e0b;color:white",
+        "poor": "background:#ef4444;color:white",
+        "empty": "background:#6b7280;color:white",
+    }.get(quality, "background:#6b7280;color:white")
+
+    # Build HTML email
+    fields_html = ""
+    if mapped_fields:
+        rows = "".join(
+            f"<tr><td style='padding:4px 8px;font-weight:bold'>{k}</td><td style='padding:4px 8px'>{v}</td></tr>"
+            for k, v in mapped_fields.items() if v
+        )
+        if rows:
+            fields_html = f"<h3>Mapped Fields</h3><table border='1' cellpadding='0' cellspacing='0' style='border-collapse:collapse;border-color:#e5e7eb'>{rows}</table>"
+
+    img_html = f'<img src="data:image/jpeg;base64,{img_b64}" style="max-width:100%;border-radius:8px" />' if img_b64 else "<p>(Image not available)</p>"
+
+    html_body = f"""
+    <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto">
+        <h2>OCR Scan Results</h2>
+        <p><span style="padding:3px 8px;border-radius:4px;font-size:12px;{status_badge}">{quality.upper()}</span>
+        &nbsp; {box_count} boxes &nbsp; {duration_ms}ms</p>
+        {img_html}
+        {fields_html}
+        <h3>Raw OCR Text</h3>
+        <pre style="background:#f3f4f6;padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow:auto">{raw_text or '(no text detected)'}</pre>
+        <p style="font-size:11px;color:#9ca3af;margin-top:16px">Sent from GroceryApp OCR Test Scanner</p>
+    </div>
+    """
+
+    from app.services import email_service
+    try:
+        provider = await email_service.send_email(email, "OCR Scan Results — GroceryApp", html_body)
+        return {"success": True, "message": f"Results emailed to {email} via {provider}"}
+    except email_service.EmailDeliveryFailed as e:
+        raise HTTPException(500, f"Email delivery failed: {e}")
 
 
 def _merge_ocr_words(data: dict, img_w: int, img_h: int) -> list[dict]:

@@ -255,6 +255,11 @@ class TesseractProvider(OcrProvider):
 
         # --- Parse ---
         items = _parse_receipt_lines(raw_text)
+
+        # LLM fallback: if regex found nothing but we have OCR text, try Mistral
+        if not items and len(raw_text.strip()) > 20:
+            items = await _llm_parse_receipt(raw_text)
+
         store = _parse_store(raw_text)
         total = _parse_total(raw_text)
         receipt_date = _parse_date(raw_text)
@@ -276,34 +281,79 @@ class TesseractProvider(OcrProvider):
 
 
 # ---------------------------------------------------------------------------
-# Receipt text parsers (unchanged)
+# Receipt text parsers — tiered regex + LLM fallback
 # ---------------------------------------------------------------------------
 
-# Pattern 1: item name followed by price (right-aligned, 2+ spaces gap)
-_ITEM_LINE_RE = re.compile(
-    r"^(.+?)\s{2,}(\d+\.\d{2})\s*$", re.MULTILINE
-)
+# Flexible price fragment: 5.90, 12.5, 12 (integer), with optional RM/MYR
+_P = r"(\d+(?:\.\d{1,2})?)"  # captures the number
 
-# Pattern 2: Malaysian barcode format — barcode + item name + price on same line
+# --- Tier 1: High confidence (0.6) ---
+
+# Barcode + name + RM price: 1234567890123 MILK RM5.90
+_BARCODE_RM_RE = re.compile(
+    rf"^(\d{{8,14}})\s+(.+?)\s+(?:RM|MYR)\s*{_P}\s*$", re.MULTILINE | re.IGNORECASE
+)
+# Barcode + name + price: 1234567890123 MILK 5.90
 _BARCODE_ITEM_RE = re.compile(
-    r"^(\d{8,14})\s+(.+?)\s+(\d+\.\d{2})\s*$", re.MULTILINE
+    rf"^(\d{{8,14}})\s+(.+?)\s+{_P}\s*$", re.MULTILINE
+)
+# Name + 2+ spaces + RM price: MILK    RM5.90
+_ITEM_RM_RE = re.compile(
+    rf"^(.+?)\s{{2,}}(?:RM|MYR)\s*{_P}\s*$", re.MULTILINE | re.IGNORECASE
+)
+# Name + 2+ spaces + price: MILK    5.90
+_ITEM_LINE_RE = re.compile(
+    rf"^(.+?)\s{{2,}}{_P}\s*$", re.MULTILINE
+)
+# Name + RM price (single space OK): MILK RM5.90
+_RM_PRICE_RE = re.compile(
+    rf"^(.{{2,}}?)\s+(?:RM|MYR)\s*{_P}\s*$", re.MULTILINE | re.IGNORECASE
+)
+# Quantity calc: MILK 2 x 5.90 = 11.80  or  2 x RM5.90
+_QTY_CALC_RE = re.compile(
+    rf"^(.{{2,}}?)\s+(\d+)\s*[xX@]\s*(?:RM|MYR)?\s*{_P}"
+    rf"(?:\s*=\s*(?:RM|MYR)?\s*\d+(?:\.\d{{1,2}})?)?[\s*]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+# Tab-separated: MILK\t\t5.90
+_TAB_SEP_RE = re.compile(
+    rf"^(.{{2,}}?)\t+(?:RM|MYR)?\s*{_P}\s*$", re.MULTILINE | re.IGNORECASE
 )
 
-# Pattern 3: Looser price at end of line
+# --- Tier 2: Medium confidence (0.4) ---
+
+# RM price at start: RM5.90 MILK
+_RM_START_RE = re.compile(
+    rf"^(?:RM|MYR)\s*{_P}\s+(.{{2,}}?)\s*$", re.MULTILINE | re.IGNORECASE
+)
+# Price at start (no RM): 5.90 MILK
+_PRICE_START_RE = re.compile(
+    rf"^{_P}\s+(.{{2,}}?)\s*$", re.MULTILINE
+)
+# Name + price + RM suffix: MILK 5.90RM
+_PRICE_RM_SUFFIX_RE = re.compile(
+    rf"^(.{{2,}}?)\s+{_P}\s*(?:RM|MYR)\s*$", re.MULTILINE | re.IGNORECASE
+)
+
+# --- Tier 3: Low confidence (0.3, fallback only) ---
+
+# Anything + space + price (single space OK, 3+ char name)
 _LOOSE_PRICE_RE = re.compile(
-    r"^(.{3,}?)\s+(\d+\.\d{2})\s*$", re.MULTILINE
+    rf"^(.{{3,}}?)\s+{_P}[\s*TtAa]*$", re.MULTILINE
 )
 
+# --- Quantity ---
 _QTY_RE = re.compile(r"\bx\s*(\d+)\b", re.IGNORECASE)
 _QTY_PREFIX_RE = re.compile(r"^(\d+)\s*[xX@]\s*")
 
+# --- Totals, tax, dates ---
 _TOTAL_RE = re.compile(
-    r"(?:TOTAL|JUMLAH|AMOUNT\s*DUE|GRAND\s*TOTAL)\s*[:\s]*([\d,]+\.\d{2})",
+    r"(?:TOTAL|JUMLAH|AMOUNT\s*DUE|GRAND\s*TOTAL)\s*[:\s]*(?:RM|MYR)?\s*([\d,]+(?:\.\d{1,2})?)",
     re.IGNORECASE,
 )
 
 _TAX_RE = re.compile(
-    r"(?:SST|GST|TAX|CUKAI|SERVICE\s*TAX)\s*(?:\d+%?)?\s*([\d,]+\.\d{2})",
+    r"(?:SST|GST|TAX|CUKAI|SERVICE\s*TAX)\s*(?:\d+%?)?\s*(?:RM|MYR)?\s*([\d,]+(?:\.\d{1,2})?)",
     re.IGNORECASE,
 )
 
@@ -313,77 +363,97 @@ _DATE_PATTERNS = [
     re.compile(r"(\d{2})[/\-.](\d{2})[/\-.](\d{2})"),
 ]
 
+# Lines to skip (headers, footers, non-item lines)
 _SKIP_PATTERNS = re.compile(
     r"(TOTAL|JUMLAH|SUBTOTAL|CHANGE|TUNAI|CASH|VISA|MASTER|DEBIT|CREDIT|"
     r"CARD|TAX|SST|GST|CUKAI|THANK|TERIMA\s*KASIH|RECEIPT|RESIT|"
     r"CASHIER|KASIR|REG|TRANS|INV|TEL|FAX|GST\s*REG|NO\.?|"
     r"ROUNDING|BOUNDING|DISCOUNT|DISKAUN|MEMBER|AHLI|OPEN\s*DAILY|"
-    r"SIGN\s*UP|SAVINGS|CLUBCARD|POINTS|MISSED|www\.|\.com|\.my)",
+    r"SIGN\s*UP|SAVINGS|CLUBCARD|POINTS|MISSED|www\.|\.com|\.my|"
+    r"PAYMENT|BAYARAN|ROUNDED|QR\s*CODE|SCAN\s*TO|BALANCE|BAKI)",
     re.IGNORECASE,
 )
 
 
-def _parse_receipt_lines(text: str) -> list[ReceiptItem]:
-    """Extract item lines from raw OCR text using multiple patterns."""
-    items: list[ReceiptItem] = []
-    seen_lines: set[str] = set()
+def _clean_price(price_str: str) -> float:
+    """Strip currency prefix/suffix and convert to float."""
+    cleaned = re.sub(r"[^\d.]", "", price_str)
+    return float(cleaned) if cleaned else 0.0
 
-    for match in _BARCODE_ITEM_RE.finditer(text):
-        barcode = match.group(1)
-        raw_name = match.group(2).strip()
-        price_str = match.group(3)
-        line_key = f"{raw_name}:{price_str}"
-        if line_key in seen_lines or _SKIP_PATTERNS.search(raw_name):
-            continue
-        seen_lines.add(line_key)
-        price = float(price_str)
-        if price <= 0 or price > 99999:
-            continue
-        name, quantity = _extract_qty(raw_name)
-        if len(name) < 2:
-            continue
-        items.append(ReceiptItem(name=name, price=price, quantity=quantity, barcode=barcode, confidence=0.5))
 
-    for match in _ITEM_LINE_RE.finditer(text):
-        raw_name = match.group(1).strip()
-        price_str = match.group(2)
-        line_key = f"{raw_name}:{price_str}"
-        if line_key in seen_lines or _SKIP_PATTERNS.search(raw_name):
-            continue
-        seen_lines.add(line_key)
-        price = float(price_str)
-        if price <= 0 or price > 99999:
-            continue
-        name, quantity = _extract_qty(raw_name)
-        name = re.sub(r"^\d{8,14}\s*", "", name).strip()
-        if len(name) < 2:
-            continue
-        barcode = None
+def _try_add_item(
+    items: list[ReceiptItem],
+    seen: set[str],
+    raw_name: str,
+    price_str: str,
+    confidence: float,
+    barcode: Optional[str] = None,
+    quantity: int = 0,
+    min_name_len: int = 2,
+) -> None:
+    """Validate and add an item to the list. Shared by all pattern tiers."""
+    raw_name = raw_name.strip()
+    if _SKIP_PATTERNS.search(raw_name):
+        return
+    price = _clean_price(price_str)
+    if price <= 0 or price > 99999:
+        return
+    line_key = f"{raw_name}:{price_str}"
+    if line_key in seen:
+        return
+    seen.add(line_key)
+
+    name, qty = _extract_qty(raw_name)
+    if quantity > 0:
+        qty = quantity  # override from qty-calc pattern
+    name = re.sub(r"^\d{8,14}\s*", "", name).strip()
+    if len(name) < min_name_len:
+        return
+    if not barcode:
         bc_match = re.search(r"\b(\d{8,13})\b", raw_name)
         if bc_match:
             barcode = bc_match.group(1)
-        items.append(ReceiptItem(name=name, price=price, quantity=quantity, barcode=barcode, confidence=0.5))
+    items.append(ReceiptItem(name=name, price=price, quantity=qty, barcode=barcode, confidence=confidence))
 
+
+def _parse_receipt_lines(text: str) -> list[ReceiptItem]:
+    """Extract item lines from raw OCR text using tiered regex patterns.
+
+    Tier 1 (0.6): barcode+RM, barcode, name+RM(2sp), name(2sp), name+RM(1sp), qty-calc, tab
+    Tier 2 (0.4): RM-start, price-start, RM-suffix (if Tier 1 found items, still add Tier 2)
+    Tier 3 (0.3): loose fallback (only if Tiers 1+2 found nothing)
+    """
+    items: list[ReceiptItem] = []
+    seen: set[str] = set()
+
+    # --- Tier 1: High confidence ---
+    for m in _BARCODE_RM_RE.finditer(text):
+        _try_add_item(items, seen, m.group(2), m.group(3), 0.6, barcode=m.group(1))
+    for m in _BARCODE_ITEM_RE.finditer(text):
+        _try_add_item(items, seen, m.group(2), m.group(3), 0.6, barcode=m.group(1))
+    for m in _ITEM_RM_RE.finditer(text):
+        _try_add_item(items, seen, m.group(1), m.group(2), 0.6)
+    for m in _ITEM_LINE_RE.finditer(text):
+        _try_add_item(items, seen, m.group(1), m.group(2), 0.6)
+    for m in _RM_PRICE_RE.finditer(text):
+        _try_add_item(items, seen, m.group(1), m.group(2), 0.6)
+    for m in _QTY_CALC_RE.finditer(text):
+        _try_add_item(items, seen, m.group(1), m.group(3), 0.6, quantity=int(m.group(2)))
+    for m in _TAB_SEP_RE.finditer(text):
+        _try_add_item(items, seen, m.group(1), m.group(2), 0.6)
+
+    # --- Tier 2: Medium confidence ---
+    for m in _RM_START_RE.finditer(text):
+        _try_add_item(items, seen, m.group(2), m.group(1), 0.4)
+    for m in _PRICE_START_RE.finditer(text):
+        _try_add_item(items, seen, m.group(2), m.group(1), 0.4)
+    for m in _PRICE_RM_SUFFIX_RE.finditer(text):
+        _try_add_item(items, seen, m.group(1), m.group(2), 0.4)
+
+    # --- Tier 3: Low confidence (only if nothing found yet) ---
     if not items:
-        for match in _LOOSE_PRICE_RE.finditer(text):
-            raw_name = match.group(1).strip()
-            price_str = match.group(2)
-            line_key = f"{raw_name}:{price_str}"
-            if line_key in seen_lines or _SKIP_PATTERNS.search(raw_name):
-                continue
-            seen_lines.add(line_key)
-            price = float(price_str)
-            if price <= 0 or price > 99999:
-                continue
-            name, quantity = _extract_qty(raw_name)
-            name = re.sub(r"^\d{8,14}\s*", "", name).strip()
-            if len(name) < 3:
-                continue
-            barcode = None
-            bc_match = re.search(r"\b(\d{8,13})\b", raw_name)
-            if bc_match:
-                barcode = bc_match.group(1)
-            items.append(ReceiptItem(name=name, price=price, quantity=quantity, barcode=barcode, confidence=0.3))
+        for m in _LOOSE_PRICE_RE.finditer(text):
+            _try_add_item(items, seen, m.group(1), m.group(2), 0.3, min_name_len=3)
 
     return items
 
@@ -441,3 +511,95 @@ def _parse_date(text: str) -> Optional[date]:
         except ValueError:
             continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# LLM fallback — Mistral AI structured extraction
+# ---------------------------------------------------------------------------
+
+
+async def _llm_parse_receipt(raw_text: str) -> list[ReceiptItem]:
+    """Use Mistral's free API to extract items when regex fails.
+
+    Only called when:
+    - _parse_receipt_lines() returned 0 items
+    - raw_text has 20+ chars of content
+    - MISTRAL_API_KEY is configured
+
+    Returns list of ReceiptItem with confidence=0.5, or [] on any failure.
+    """
+    import json
+    import httpx
+
+    from app.core.config import settings
+
+    if not settings.MISTRAL_API_KEY:
+        return []
+
+    prompt = (
+        "Extract grocery items from this receipt text. "
+        "Return ONLY a JSON object with an 'items' key containing an array.\n"
+        'Example: {"items": [{"name": "MILK", "price": 5.90, "quantity": 1}]}\n'
+        "Rules:\n"
+        "- Only include purchased items (food, drinks, household products)\n"
+        "- Ignore headers, footers, store info, totals, taxes, payment lines\n"
+        "- Price should be a number (strip RM/MYR currency prefix)\n"
+        "- Quantity defaults to 1 if not specified\n"
+        "- If no items found, return {\"items\": []}\n\n"
+        f"Receipt text:\n{raw_text[:3000]}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://api.mistral.ai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "mistral-small-latest",
+                    "messages": [
+                        {"role": "system", "content": "You extract grocery items from receipt text. Return ONLY valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 2000,
+                    "response_format": {"type": "json_object"},
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.info("Mistral API returned %d — skipping LLM fallback", resp.status_code)
+            return []
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+
+        # Handle both {"items": [...]} and bare [...]
+        raw_items = parsed.get("items", parsed) if isinstance(parsed, dict) else parsed
+        if not isinstance(raw_items, list):
+            return []
+
+        items: list[ReceiptItem] = []
+        for item in raw_items:
+            name = str(item.get("name", "")).strip()
+            if len(name) < 2 or _SKIP_PATTERNS.search(name):
+                continue
+            try:
+                price = float(item.get("price", 0))
+            except (ValueError, TypeError):
+                continue
+            if price <= 0 or price > 99999:
+                continue
+            qty = max(1, int(item.get("quantity", 1)))
+            barcode = item.get("barcode") or None
+            items.append(ReceiptItem(name=name, price=price, quantity=qty, barcode=barcode, confidence=0.5))
+
+        if items:
+            logger.info("LLM fallback extracted %d items from receipt", len(items))
+        return items
+
+    except Exception as e:
+        logger.info("LLM fallback failed (non-fatal): %s", e)
+        return []

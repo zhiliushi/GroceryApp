@@ -85,7 +85,7 @@ _SKIP_RE = re.compile(
     r"CASHIER|KASIR|ROUNDING|DISCOUNT|DISKAUN|MEMBER|AHLI)",
     re.IGNORECASE,
 )
-_PRICE_RE = re.compile(r"^\d+\.\d{2}$")
+_PRICE_RE = re.compile(r"^(?:RM|MYR)?\s*\d+(?:\.\d{1,2})?$", re.IGNORECASE)
 _QTY_RE = re.compile(r"\bx\s*(\d+)\b", re.IGNORECASE)
 
 
@@ -254,7 +254,8 @@ def _extract_items_from_lines(lines: list[list]) -> list[ReceiptItem]:
         if price_idx is None or price_idx == 0:
             continue
 
-        price = float(line_words[price_idx]["text"])
+        price_text = re.sub(r"[^\d.]", "", line_words[price_idx]["text"])
+        price = float(price_text) if price_text else 0.0
         if price <= 0 or price > 99999:
             continue
 

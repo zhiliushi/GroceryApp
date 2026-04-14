@@ -181,6 +181,9 @@ export default function OcrTestScanPage() {
   const [quantity, setQuantity] = useState(1);
   const [previewResult, setPreviewResult] = useState<OcrPreviewResult | null>(null);
   const [lightBoost, setLightBoost] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
 
   const photoRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -388,6 +391,42 @@ export default function OcrTestScanPage() {
     return ocrBoxes.reduce((sum, b) => sum + b.confidence, 0) / ocrBoxes.length;
   }, [boxes]);
 
+  // --- Email results ---
+  const userEmail = useAuthStore((s) => s.user?.email);
+  const handleEmailResults = useCallback(async () => {
+    if (!emailTo || !imageFile) return;
+    setEmailSending(true);
+    try {
+      const { apiClient } = await import('@/api/client');
+      const { API } = await import('@/api/endpoints');
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      formData.append('email', emailTo);
+      formData.append('scan_data', JSON.stringify({
+        quality: previewResult?.quality || 'unknown',
+        box_count: boxes.length,
+        duration_ms: scanInfo?.duration_ms || 0,
+        raw_text: rawText,
+        mapped_fields: itemPreview.hasMapped ? {
+          Name: itemPreview.name, Brand: itemPreview.brand,
+          Price: itemPreview.price != null ? `RM ${itemPreview.price.toFixed(2)}` : '',
+          Barcode: itemPreview.barcode, Expiry: itemPreview.expiry,
+          Weight: itemPreview.weight != null ? `${itemPreview.weight} ${itemPreview.weightUnit || ''}` : '',
+        } : {},
+      }));
+      await apiClient.post(API.ADMIN_OCR_EMAIL_RESULTS, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 15_000,
+      });
+      toast.success(`Results emailed to ${emailTo}`);
+      setShowEmailForm(false);
+    } catch {
+      toast.error('Failed to send email. Check email settings.');
+    } finally {
+      setEmailSending(false);
+    }
+  }, [emailTo, imageFile, previewResult, boxes, scanInfo, rawText, itemPreview]);
+
   const isProcessing = scanMutation.isPending || previewMutation.isPending;
 
   return (
@@ -576,6 +615,38 @@ export default function OcrTestScanPage() {
           <summary className="px-4 py-3 text-sm font-medium text-ga-text-secondary cursor-pointer hover:text-ga-text-primary">Raw OCR Text</summary>
           <pre className="px-4 pb-4 text-xs whitespace-pre-wrap text-ga-text-primary font-mono max-h-64 overflow-y-auto">{rawText}</pre>
         </details>
+      )}
+
+      {/* Email results button — visible after any scan (pass or fail) */}
+      {imageFile && (scanInfo || previewResult) && (
+        <div className="mt-4">
+          {!showEmailForm ? (
+            <button onClick={() => { setShowEmailForm(true); setEmailTo(userEmail || ''); }}
+              className="border border-ga-border text-ga-text-secondary hover:text-ga-text-primary text-sm rounded-lg px-4 py-2 transition-colors">
+              📧 Email Results
+            </button>
+          ) : (
+            <div className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-ga-text-primary mb-2">Email Scan Results</h3>
+              <div className="flex gap-2">
+                <input
+                  type="email" value={emailTo} onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="recipient@email.com"
+                  className="flex-1 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleEmailResults(); }}
+                />
+                <button onClick={handleEmailResults} disabled={emailSending || !emailTo.includes('@')}
+                  className="bg-ga-accent hover:bg-ga-accent-hover disabled:opacity-50 text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+                  {emailSending ? 'Sending...' : 'Send'}
+                </button>
+                <button onClick={() => setShowEmailForm(false)}
+                  className="text-ga-text-secondary hover:text-ga-text-primary text-sm px-2">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
