@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>dashboard-health — PASS</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;color:#111;line-height:1.5}
+  h1{margin:0 0 .25rem;font-size:1.5rem}
+  .meta{color:#555;font-size:.9rem;margin-bottom:1rem}
+  code{background:#f3f4f6;padding:2px 5px;border-radius:3px;font-size:.9em}
+  .badge{font-size:.8rem;padding:3px 10px;border-radius:999px;font-weight:600;vertical-align:middle;margin-left:.5rem}
+  .badge.pass{background:#0a7d28;color:#fff}
+  .badge.fail{background:#b91c1c;color:#fff}
+  .passed{color:#0a7d28;font-weight:600}
+  .failed{color:#b91c1c;font-weight:600}
+  img{max-width:100%;border:1px solid #e5e7eb;border-radius:6px;margin:.5rem 0;display:block}
+  details{margin:.5rem 0;padding:.5rem .75rem;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa}
+  summary{cursor:pointer}
+  pre{background:#0f172a;color:#e2e8f0;padding:.75rem;border-radius:6px;overflow:auto;font-size:12px;white-space:pre-wrap}
+  ul{margin:.25rem 0 1rem 1.25rem}
+  .section{margin-top:1.25rem}
+</style></head><body>
+<h1>dashboard-health<span class="badge pass">PASS</span></h1>
+<div class="meta">
+  Run <code>2026-04-24T17-15-14-157Z</code> • Duration 2113 ms • URL <code>http://localhost:5173</code>
+</div>
+<div class="section"><strong>Objective:</strong> Grocery SPA loads cleanly, dev-mode service worker is inactive, and the health-score backend route returns valid JSON (not a 500) even without auth.</div>
+<div class="section"><strong>Success criteria</strong><ul><li>GET / returns 200 and the SPA shell renders without uncaught errors</li><li>No service worker is registered for localhost:5173 in dev mode</li><li>GET /api/waste/health-score unauth returns HTTP 401 with a JSON body</li><li>/login route renders a login form (proves routing + React boot)</li></ul></div>
+
+
+<div class="section"><strong>Steps</strong>
+    <details >
+      <summary><strong>open-root</strong> — <span class="passed">passed</span></summary>
+      <img src="screenshots\open-root.png">
+      
+    </details>
+    <details >
+      <summary><strong>verify-no-service-worker-in-dev</strong> — <span class="passed">passed</span></summary>
+      <img src="screenshots\verify-no-service-worker-in-dev.png">
+      
+    </details>
+    <details >
+      <summary><strong>health-score-endpoint-unauth-shape</strong> — <span class="passed">passed</span></summary>
+      <img src="screenshots\health-score-endpoint-unauth-shape.png">
+      
+    </details>
+    <details >
+      <summary><strong>login-page-renders</strong> — <span class="passed">passed</span></summary>
+      <img src="screenshots\login-page-renders.png">
+      
+    </details>
+    <details >
+      <summary><strong>final</strong> — <span class="passed">passed</span></summary>
+      <img src="screenshots\final-success.png">
+      
+    </details></div>
+</body></html>

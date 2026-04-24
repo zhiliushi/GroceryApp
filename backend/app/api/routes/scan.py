@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from PIL import Image
 
 from app.core.auth import UserInfo, get_current_user
+from app.core.feature_flags import require_flag
 from app.services import product_label_service
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ async def _validate_image(image: UploadFile) -> bytes:
 # POST /api/scan/product-label
 # ---------------------------------------------------------------------------
 
-@router.post("/product-label")
+@router.post("/product-label", dependencies=[require_flag("smart_camera")])
 async def scan_product_label(
     image: UploadFile = File(...),
     user: UserInfo = Depends(get_current_user),
@@ -96,7 +97,7 @@ async def scan_product_label(
 # POST /api/scan/expiry-date
 # ---------------------------------------------------------------------------
 
-@router.post("/expiry-date")
+@router.post("/expiry-date", dependencies=[require_flag("smart_camera")])
 async def scan_expiry_date(
     image: UploadFile = File(...),
     user: UserInfo = Depends(get_current_user),
@@ -140,7 +141,7 @@ async def scan_expiry_date(
 # POST /api/scan/shelf-audit
 # ---------------------------------------------------------------------------
 
-@router.post("/shelf-audit")
+@router.post("/shelf-audit", dependencies=[require_flag("shelf_audit")])
 async def scan_shelf_audit(
     image: UploadFile = File(...),
     user: UserInfo = Depends(get_current_user),

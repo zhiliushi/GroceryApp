@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import PageHeader from '@/components/shared/PageHeader';
 import { cn } from '@/utils/cn';
 import PageManagementTab from './PageManagementTab';
 import TierPlansTab from './TierPlansTab';
 import UserApprovalTab from './UserApprovalTab';
-import OcrSettingsTab from './OcrSettingsTab';
 import EmailSettingsTab from './EmailSettingsTab';
 import SystemSettingsTab from './SystemSettingsTab';
+import FeatureFlagsTab from './FeatureFlagsTab';
+import NudgesTab from './NudgesTab';
 
 const TABS = [
+  { key: 'features', label: 'Feature Flags', icon: '🎚️' },
+  { key: 'nudges', label: 'Nudges', icon: '🔔' },
   { key: 'pages', label: 'Page Management', icon: '📄' },
   { key: 'tiers', label: 'Tier Plans', icon: '💎' },
   { key: 'users', label: 'User Approval', icon: '👥' },
-  { key: 'ocr', label: 'OCR Settings', icon: '🧾' },
   { key: 'email', label: 'Email', icon: '📧' },
   { key: 'system', label: 'System', icon: '🖥️' },
 ] as const;
@@ -21,21 +22,12 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key'];
 
 export default function AdminSettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('pages');
+  const [activeTab, setActiveTab] = useState<TabKey>('features');
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-2">
-        <PageHeader title="Admin Settings" icon="⚙️" />
-        <Link
-          to="/admin-settings/test-scan"
-          className="bg-ga-bg-hover border border-ga-border hover:border-ga-accent/50 text-ga-text-primary text-sm rounded-lg px-4 py-2 transition-colors inline-flex items-center gap-2"
-        >
-          🔬 Test Scanner
-        </Link>
-      </div>
+      <PageHeader title="Admin Settings" icon="⚙️" />
 
-      {/* Tabs */}
       <div className="flex gap-2 mb-4 border-b border-ga-border pb-3">
         {TABS.map((tab) => (
           <button
@@ -54,11 +46,11 @@ export default function AdminSettingsPage() {
         ))}
       </div>
 
-      {/* Tab content */}
+      {activeTab === 'features' && <FeatureFlagsTab />}
+      {activeTab === 'nudges' && <NudgesTab />}
       {activeTab === 'pages' && <PageManagementTab />}
       {activeTab === 'tiers' && <TierPlansTab />}
       {activeTab === 'users' && <UserApprovalTab />}
-      {activeTab === 'ocr' && <OcrSettingsTab />}
       {activeTab === 'email' && <EmailSettingsTab />}
       {activeTab === 'system' && <SystemSettingsTab />}
     </div>

@@ -156,6 +156,68 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // -----------------------------------------------------------------------
+    // Refactor Phase 2 — catalog + purchases + countries
+    // -----------------------------------------------------------------------
+
+    // Catalog entries — global collection keyed by `{user_id}__{name_norm}`.
+    // Owner-only read/write. Admin bypass via Admin SDK (which ignores rules).
+    match /catalog_entries/{entryId} {
+      allow read: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+
+      // Create: doc ID must match `{uid}__{name_norm}` — enforces per-user uniqueness at the storage layer
+      allow create: if isAuthenticated()
+                    && request.resource.data.user_id == request.auth.uid
+                    && entryId == request.auth.uid + '__' + request.resource.data.name_norm
+                    && request.resource.data.name_norm is string
+                    && request.resource.data.name_norm.size() > 0;
+
+      // Update: only the owner
+      allow update: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+
+      // Delete: only if no active purchases (mirrors backend invariant)
+      allow delete: if isAuthenticated()
+                    && resource.data.user_id == request.auth.uid
+                    && resource.data.active_purchases == 0;
+    }
+
+    // Purchase events — subcollection under users/{uid}/purchases
+    match /users/{userId}/purchases/{eventId} {
+      allow read: if canAccess(userId);
+      allow create: if isOwner(userId)
+                    && request.resource.data.catalog_name_norm is string
+                    && request.resource.data.status in ['active', 'used', 'thrown', 'transferred'];
+      allow update: if canAccess(userId)
+                    && (!('status' in request.resource.data)
+                        || request.resource.data.status in ['active', 'used', 'thrown', 'transferred']);
+      allow delete: if isOwner(userId);
+    }
+
+    // Reminders — subcollection under users/{uid}/reminders
+    match /users/{userId}/reminders/{reminderId} {
+      allow read: if isOwner(userId);
+      allow update: if isOwner(userId);       // user dismisses reminders
+      allow create, delete: if false;         // scheduler (Admin SDK) only
+    }
+
+    // Cache + insights — personal
+    match /users/{userId}/cache/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if false;                  // backend only
+    }
+
+    match /users/{userId}/insights/{insightId} {
+      allow read: if isOwner(userId);
+      allow update, delete: if isOwner(userId);
+      allow create: if false;                 // scheduler/backend only
+    }
+
+    // Countries — public read (GS1 prefix lookup)
+    match /countries/{countryCode} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

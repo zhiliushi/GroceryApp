@@ -1,0 +1,140 @@
+{
+  "indexes": [
+    {
+      "_comment": "Legacy grocery_items — status + expiry queries (pre-refactor, kept until migration complete)",
+      "collectionGroup": "grocery_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expiryDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "grocery_items",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expiryDate", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "_comment": "Refactor Phase 2 — catalog_entries (global collection)",
+      "collectionGroup": "catalog_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "barcode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "catalog_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "name_norm", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "catalog_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "last_purchased_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "catalog_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "total_purchases", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "catalog_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "display_name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "Catalog cleanup scheduler — stale no-barcode entries",
+      "collectionGroup": "catalog_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active_purchases", "order": "ASCENDING" },
+        { "fieldPath": "last_purchased_at", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "_comment": "Refactor Phase 2 — purchase events (users/{uid}/purchases)",
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "date_bought", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expiry_date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "consumed_date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "barcode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "catalog_name_norm", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "catalog_name_norm", "order": "ASCENDING" },
+        { "fieldPath": "date_bought", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "_comment": "Collection-group scans (scheduler jobs across all users)",
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expiry_date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "reminder_stage", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

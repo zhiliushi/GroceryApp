@@ -245,3 +245,215 @@ classifyError(error) → AppError
 | Recipes | No | Yes |
 
 Feature checks use `isFeatureAvailable(feature, tier)` from `src/utils/helpers.ts`. UI shows lock icons and "Upgrade to Premium" prompts for gated features.
+
+---
+
+# Refactor Phase 2–5 Workflows (catalog + purchases + waste model)
+
+These flows reflect the shipped 2026-04 refactor. Web admin is the primary surface; mobile continues to work via the compat shim (see `FUTURE_MOBILE_REFACTOR.md`).
+
+## Quick-Add (name-first, default path)
+
+Primary write-path replacing the old "Add Item" form.
+
+```
+User clicks "+ Add item" (dashboard or MyItems)
+  → QuickAddModal opens
+  → User types name
+    → CatalogAutocomplete fetches GET /api/catalog?q=<prefix>
+    → If match exists → tap suggestion → defaults prefilled (barcode, default_location)
+    → If new name → proceed with fresh entry
+  → Optional expiry: ExpiryInput renders live NL preview ("tomorrow" → actual date)
+  → Progressive disclosure: ▼ More reveals barcode / price / payment
+    → Price + payment_method gated by `financial_tracking` flag
+  → Save → POST /api/purchases
+    → Backend: transactional catalog_service.upsert_catalog_entry + purchase_event_service
+                   + catalog counter increment
+    → BackgroundTasks.add_task(insights_service.check_user_milestones, uid)
+  → Toast "Added" → modal closes → queries invalidated (purchases, catalog, waste, reminders)
+```
+
+See: `components/quickadd/{QuickAddModal,CatalogAutocomplete,ExpiryInput}.tsx`.
+
+## Barcode-first scan flow
+
+Primary path for items with a barcode (user scans → app resolves → one action).
+
+```
+User taps FloatingScanButton (bottom-right, persistent via AppLayout)
+  → ContextualScannerModal opens
+    → useScannerEngine starts camera (native BarcodeDetector → html5-qrcode → manual fallback)
+    → Also accepts manual numeric entry
+  → Detected barcode → GET /api/barcode/{bc}/scan-info?user_id=<uid>
+    → ScanResultPanel renders one of three branches:
+
+  [A] user_catalog_match exists
+      → Shows display_name, history (count_purchased, last_bought, avg_price, waste_rate, active_stock)
+      → Primary action: Add new purchase (or Mark Used (FIFO) if context=my-items + stock > 0)
+      → Tap → opens QuickAddModal prefilled with matched entry
+
+  [B] no match but global_product known
+      → "Not in your catalog yet. Global database says this is X."
+      → Primary: "Add to catalog → purchase"
+      → Tap → NameUnknownItemModal (suggestedName prefilled) → QuickAddModal
+
+  [C] fully unknown barcode
+      → Primary: "Name this item" → NameUnknownItemModal → user types name
+                                  → QuickAddModal prefilled with name + barcode
+
+  Context derivation (ContextualScannerModal useLocation):
+    /my-items  → mark_used is primary when stock > 0
+    /shopping-lists → add_to_list (TODO — routes to add_purchase)
+    /catalog → add_purchase
+    default → add_purchase
+```
+
+## FIFO consume
+
+Scan or select a catalog entry → oldest-expiry active event gets marked `used`.
+
+```
+Scanner (context=my-items) → ScanResultPanel with active_stock > 0
+  → "Mark one as used (FIFO, N in stock)"
+  → POST /api/purchases/consume {catalog_name_norm, quantity:1}
+    → purchase_event_service.consume_one_by_catalog
+      → Queries active events, sorts by expiry_date asc (nulls last), date_bought asc
+      → For quantity N, transitions top-N events status=active → used
+      → Each transition decrements catalog.active_purchases counter (in-transaction)
+  → Toast "Marked 1 '<display>' as used"
+```
+
+## Status transitions (used / thrown / transferred)
+
+State-driven — buttons appear from `getPurchaseEventActions(event)` based on state key (draft / active_no_expiry / active_fresh / active_expiring_soon / active_expiring_urgent / active_expired / terminal).
+
+```
+active → used
+  User taps "Used" → POST /api/purchases/{id}/status {status:'used', reason:'used_up'}
+
+active → thrown
+  User taps "Throw" → ThrowAwayModal (reason radios: expired / bad / used_up / gift)
+  → POST /api/purchases/{id}/status {status:'thrown', reason}
+
+active → transferred
+  User taps "Give away" → GiveAwayModal (foodbank picker OR free-text recipient)
+  → POST /api/purchases/{id}/status {status:'transferred', reason:'gift', transferred_to}
+
+Terminal states cannot transition further (ValidationError 400).
+Each transition decrements catalog.active_purchases (transactional).
+```
+
+## 7/14/21-day reminders (nudge_service)
+
+Daily scheduler scans active purchases with no expiry. Creates reminder docs as items age.
+
+```
+Scheduler (daily 08:00 UTC) → nudge_service.scan_reminders
+  → collection_group('purchases').where(status==active, reminder_stage<3)
+  → For each event with expiry_date=null and age≥7d:
+      stage 1 (7d),  2 (14d),  3 (21d)
+      → Create reminder doc at users/{uid}/reminders/{id}
+      → Update event.reminder_stage = stage
+      → At stage 3, also set catalog_entry.needs_review = true
+
+User on dashboard → NudgeBanner reads useReminders(false)
+  → Displays top reminder with inline [Used] [Thrown] [Still have]
+  → POST /api/reminders/{id}/dismiss {action} triggers linked event's status transition.
+```
+
+## Progressive threshold nudges (5 / 10 / 20 items)
+
+Distinct from 7/14/21 reminders — these are onboarding-style UX nudges driven by total purchase count.
+
+```
+useNudges hook (components/nudge/ProgressiveNudge.tsx) computes highest-priority:
+  total_bought == 0             → 'welcome' banner
+  total_bought >= 5 + no expiry → 'nudge_expiry'
+  total_bought >= 10 + no price + financial_tracking on → 'nudge_price'
+  total_bought >= 20 + no quantity/unit → 'nudge_volume'
+
+Gated behind `progressive_nudges` flag.
+Dismissed via uiStore.dismissedNudges[] (zustand persist middleware, localStorage).
+Thresholds configurable via app_config/features.nudge_thresholds.
+```
+
+## Milestone insights (50 / 100 / 500 / 1000)
+
+Rich narrative insights emitted when a user crosses a total-purchase threshold.
+
+```
+Trigger:
+  POST /api/purchases → BackgroundTasks.add_task(check_user_milestones, uid)
+                      → after response returned, runs in-process.
+
+  Backstop: scheduler.check_milestones (hourly) iterates all users with catalog entries.
+            Idempotent via doc ID f"milestone_{N}" .get().exists check.
+
+check_user_milestones(uid):
+  Pass 1 (cheap): sum catalog_entries.total_purchases where user_id == uid
+    → If no milestone crossed, stop.
+  Pass 2 (heavy, only when emitting):
+    _aggregate_user_stats(uid) — one catalog query + one purchase events stream
+      → top_purchased (by total_purchases, top 10)
+      → waste_breakdown (status=thrown, grouped by catalog_name_norm)
+      → spending (cash/card/total across all purchases)
+      → shopping_frequency (avg_days_between gaps + peak weekday)
+      → avoid_list (entries with waste_rate ≥ 30% and ≥ 3 thrown)
+    → _build_milestone_doc + _narrative (rule-based summary)
+    → write to users/{uid}/insights/milestone_{N}
+
+User dashboard → InsightsCard shows top active insight inline.
+Click "View all →" → /insights → InsightsPage renders rich content per doc
+  → Each catalog mention cross-links to /catalog/{name_norm}.
+```
+
+## Health score (dashboard hero)
+
+```
+Frontend: useHealthScore → GET /api/waste/health-score (cached 5min server-side)
+Formula (waste_service.compute_health_score):
+  active_component = Σ(count × weight) / active_total
+    where weight: healthy 1.0 · expiring_7d 0.8 · expiring_3d 0.5 · expired 0.0 · untracked 0.6
+  waste_component = 1 - (thrown_this_month / (used_this_month + thrown_this_month))
+  score = round(100 × (0.7 × active_component + 0.3 × waste_component))
+Grades: green ≥80 · yellow ≥50 · red <50
+Cached at users/{uid}/cache/health (5min TTL). Recomputed on purchase mutation via query invalidation.
+```
+
+See `docs/HEALTH_SCORE.md` for worked examples.
+
+## OCR flag-gated flows
+
+Receipt scan, smart camera, recipe OCR, shelf audit — all OFF by default post-refactor.
+
+```
+Admin toggles via /admin-settings → FeatureFlagsTab → PATCH /api/admin/features
+Backend cache invalidates within 60s.
+
+When ocr_enabled = false:
+  - /api/receipt/* + /api/scan/* routes return 404 (Depends(require_flag) at include-level)
+  - Dashboard ScanReceiptButton hidden (useFeatureFlags)
+  - RecipeFormPage scan-recipe button hidden (recipe_ocr flag)
+  - AdminSettingsPage OCR tab + "Test Scanner" button hidden
+  - /admin-settings/test-scan redirects to /admin-settings (FeatureFlagGate)
+```
+
+## Legacy mobile via compat shim
+
+```
+Mobile app (unchanged) → GET /api/inventory/my
+  if feature_flags.legacy_endpoints_use_new_model == true:
+    → purchase_event_service.list_purchases(user, status='active')
+    → each event passed through compat.legacy_item_shim.new_event_to_legacy_item
+      (field rename: catalog_display → name, expiry_date → expiryDate ms, status mapping)
+  else:
+    → legacy inventory_service.get_household_items (pre-refactor path)
+
+Mobile → POST /api/barcode/{bc}/add-to-inventory
+  if flag on → purchase_event_service.create_purchase (transactional)
+  else → direct grocery_items doc write
+
+Flip the flag AFTER running scripts/migrate_grocery_items_to_purchases.py --execute.
+```
+
+See `docs/MIGRATION_GUIDE.md`.

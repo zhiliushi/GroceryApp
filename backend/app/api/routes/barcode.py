@@ -122,6 +122,121 @@ async def get_item_overview(barcode: str, user_id: str = ""):
 
 
 # ---------------------------------------------------------------------------
+# Scan Info (unified scan result — new model)
+# ---------------------------------------------------------------------------
+
+@router.get("/{barcode}/scan-info")
+async def get_scan_info(barcode: str, user_id: str = ""):
+    """Unified scan-result endpoint for the new catalog+purchases model.
+
+    Returns:
+        {
+          "barcode": str,
+          "country_code": str | None,
+          "user_catalog_match": CatalogEntry | None,  # this user's existing entry for the barcode
+          "global_product": ProductDict | None,       # shared products/{barcode} record
+          "user_history": {                           # aggregated stats from purchase events
+              "count_purchased": int,
+              "active_stock": int,
+              "last_bought": datetime | None,
+              "avg_price": float | None,
+              "waste_rate": float,                    # 0..1 — thrown / total
+              "active_items": [...]                   # FIFO-sorted active events
+          },
+          "suggested_actions": [                      # state-driven hints
+              {"action": "add_purchase", "label": "..."},
+              ...
+          ]
+        }
+    """
+    from app.services import (
+        catalog_service,
+        country_service,
+        barcode_service,
+        purchase_event_service,
+    )
+
+    country_code = country_service.detect_country_by_barcode(barcode)
+
+    # Global product (may be None)
+    try:
+        product = await barcode_service.lookup_barcode(barcode)
+        global_product = product.model_dump() if product.found else None
+    except Exception as exc:
+        logger.warning("scan-info: global lookup failed for %s: %s", barcode, exc)
+        global_product = None
+
+    user_catalog_match = None
+    user_history = {
+        "count_purchased": 0,
+        "active_stock": 0,
+        "last_bought": None,
+        "avg_price": None,
+        "waste_rate": 0.0,
+        "active_items": [],
+    }
+
+    if user_id:
+        user_catalog_match = catalog_service.find_by_barcode(user_id, barcode)
+        active = purchase_event_service.find_purchases_by_barcode(user_id, barcode)
+        user_history["active_stock"] = active["total_in_stock"]
+        user_history["active_items"] = active["items"]
+
+        if user_catalog_match:
+            user_history["count_purchased"] = user_catalog_match.get("total_purchases", 0)
+            user_history["last_bought"] = user_catalog_match.get("last_purchased_at")
+
+            name_norm = user_catalog_match.get("name_norm")
+            if name_norm:
+                all_events = purchase_event_service.list_purchases(
+                    user_id=user_id,
+                    catalog_name_norm=name_norm,
+                    limit=200,
+                )["items"]
+                prices = [e["price"] for e in all_events if e.get("price") is not None]
+                if prices:
+                    user_history["avg_price"] = round(sum(prices) / len(prices), 2)
+                thrown = sum(1 for e in all_events if e.get("status") == "thrown")
+                total_terminal = sum(
+                    1 for e in all_events if e.get("status") in ("used", "thrown", "transferred")
+                )
+                if total_terminal:
+                    user_history["waste_rate"] = round(thrown / total_terminal, 3)
+
+    # Suggested actions — state-driven hints for the client
+    suggested: list[dict] = []
+    if user_catalog_match:
+        suggested.append({
+            "action": "add_purchase",
+            "label": f"Add new purchase of '{user_catalog_match.get('display_name')}'",
+        })
+        if user_history["active_stock"] > 0:
+            suggested.append({"action": "mark_used", "label": "Mark one as used (FIFO)"})
+            suggested.append({"action": "move_location", "label": "Move to different location"})
+        suggested.append({
+            "action": "view_catalog",
+            "label": f"View catalog entry ({user_history['count_purchased']} total purchases)",
+        })
+    elif global_product:
+        suggested.append({
+            "action": "name_and_add",
+            "label": f"Add as '{global_product.get('product_name', 'Unnamed product')}'",
+        })
+        suggested.append({"action": "name_custom", "label": "Give it your own name"})
+    else:
+        suggested.append({"action": "name_custom", "label": "What do you call this?"})
+
+    return {
+        "barcode": barcode,
+        "country_code": country_code,
+        "user_catalog_match": user_catalog_match,
+        "global_product": global_product,
+        "user_history": user_history,
+        "suggested_actions": suggested,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Inventory check (for scanner popup: "You Already Have")
 # ---------------------------------------------------------------------------
 
@@ -130,9 +245,28 @@ async def get_barcode_inventory(barcode: str, user_id: str = ""):
     """Check existing inventory items matching this barcode for the user + household.
 
     Used by scanner popup to show "You Already Have" section.
+
+    When `legacy_endpoints_use_new_model` is on, results come from the new
+    purchase events (shape-translated via compat shim).
     """
     if not user_id:
         return {"barcode": barcode, "items": [], "total_in_stock": 0}
+
+    from app.core import feature_flags
+
+    if feature_flags.is_enabled("legacy_endpoints_use_new_model"):
+        from app.services import purchase_event_service
+        from app.services.compat.legacy_item_shim import new_event_to_legacy_item
+        try:
+            result = purchase_event_service.find_purchases_by_barcode(user_id, barcode)
+            items = []
+            for event in result["items"]:
+                event["user_id"] = user_id
+                items.append(new_event_to_legacy_item(event))
+            return {"barcode": barcode, "items": items, "total_in_stock": result["total_in_stock"]}
+        except Exception as e:
+            logger.error("Inventory check (new model) failed for %s: %s", barcode, e)
+            return {"barcode": barcode, "items": [], "total_in_stock": 0}
 
     from app.services import inventory_service
     try:
@@ -151,12 +285,35 @@ async def use_one_item(barcode: str, body: dict = {}):
     """Smart consume: find soonest-expiring item with this barcode and decrement/consume.
 
     FIFO logic: own items first → soonest expiry → lowest qty → oldest added.
+
+    When `legacy_endpoints_use_new_model` is on, routes to purchase_event_service:
+    finds the user's catalog entry by barcode and consumes the oldest-expiry active event.
     """
     user_id = body.get("user_id", "")
     qty = body.get("quantity", 1)
 
     if not user_id:
         raise HTTPException(400, "user_id is required")
+
+    from app.core import feature_flags
+
+    if feature_flags.is_enabled("legacy_endpoints_use_new_model"):
+        from app.services import catalog_service, purchase_event_service
+        from app.core.exceptions import NotFoundError
+        try:
+            entry = catalog_service.find_by_barcode(user_id, barcode)
+            if not entry:
+                raise HTTPException(404, f"No catalog entry for barcode {barcode}")
+            return purchase_event_service.consume_one_by_catalog(
+                user_id, entry["name_norm"], quantity=qty
+            )
+        except NotFoundError as e:
+            raise HTTPException(404, str(e))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("use-one (new model) failed for %s: %s", barcode, e)
+            raise HTTPException(500, f"Failed to consume item: {e}")
 
     from app.services import inventory_service
     try:
@@ -179,6 +336,9 @@ async def add_to_inventory(barcode: str, body: dict = {}):
 
     Creates a new grocery_item document in the user's collection.
     Unlike receipt/confirm, this doesn't require a prior scan log.
+
+    When `legacy_endpoints_use_new_model` is on, routes to purchase_event_service
+    which transactionally upserts the catalog entry + creates a purchase event.
     """
     user_id = body.get("user_id", "")
     if not user_id:
@@ -187,6 +347,31 @@ async def add_to_inventory(barcode: str, body: dict = {}):
     name = body.get("name", barcode)
     location = body.get("location", "pantry")
     quantity = body.get("quantity", 1)
+
+    from app.core import feature_flags
+
+    if feature_flags.is_enabled("legacy_endpoints_use_new_model"):
+        from app.services import purchase_event_service
+        from app.core.exceptions import ConflictError, ValidationError
+        try:
+            event = purchase_event_service.create_purchase(
+                user_id=user_id,
+                name=name,
+                barcode=barcode,
+                quantity=float(quantity),
+                location=location,
+                source="barcode_scan",
+            )
+            return {
+                "success": True,
+                "item_id": event["id"],
+                "message": f"Added {name} to {location}",
+            }
+        except (ConflictError, ValidationError) as e:
+            raise HTTPException(e.http_status, e.message)
+        except Exception as e:
+            logger.error("add-to-inventory (new model) failed for %s: %s", barcode, e)
+            raise HTTPException(500, f"Failed to add item: {e}")
 
     from firebase_admin import firestore
     from datetime import datetime

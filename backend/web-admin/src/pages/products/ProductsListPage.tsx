@@ -8,7 +8,7 @@ import SearchBar from '@/components/shared/SearchBar';
 import ImagePreview from '@/components/shared/ImagePreview';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
-import ScanBarcodeButton from '@/components/barcode/ScanBarcodeButton';
+// Barcode scanning is available via the AppLayout FloatingScanButton (bottom-right).
 import IdentifyProductModal from '@/components/products/IdentifyProductModal';
 import DisputeProductModal from '@/components/products/DisputeProductModal';
 import { formatRelativeDate } from '@/utils/format';
@@ -83,7 +83,6 @@ export default function ProductsListPage() {
       <div className="flex items-center justify-between mb-4">
         <PageHeader title="Products" icon="🏷️" count={counts.all} />
         <div className="flex items-center gap-2">
-          <ScanBarcodeButton />
           <Link to="/products/new"
             className="bg-ga-accent hover:bg-ga-accent/90 text-white text-sm font-medium rounded-lg px-4 py-2">
             + Add Product

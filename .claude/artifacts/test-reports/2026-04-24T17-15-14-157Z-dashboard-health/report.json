@@ -1,0 +1,50 @@
+{
+  "runId": "2026-04-24T17-15-14-157Z",
+  "spec": {
+    "name": "dashboard-health",
+    "url": "http://localhost:5173",
+    "objective": "Grocery SPA loads cleanly, dev-mode service worker is inactive, and the health-score backend route returns valid JSON (not a 500) even without auth.",
+    "successCriteria": [
+      "GET / returns 200 and the SPA shell renders without uncaught errors",
+      "No service worker is registered for localhost:5173 in dev mode",
+      "GET /api/waste/health-score unauth returns HTTP 401 with a JSON body",
+      "/login route renders a login form (proves routing + React boot)"
+    ]
+  },
+  "passed": true,
+  "failureReason": null,
+  "failureCategory": null,
+  "consoleErrors": [],
+  "pageErrors": [],
+  "steps": [
+    {
+      "name": "open-root",
+      "status": "passed",
+      "screenshot": "screenshots\\open-root.png"
+    },
+    {
+      "name": "verify-no-service-worker-in-dev",
+      "status": "passed",
+      "screenshot": "screenshots\\verify-no-service-worker-in-dev.png"
+    },
+    {
+      "name": "health-score-endpoint-unauth-shape",
+      "status": "passed",
+      "screenshot": "screenshots\\health-score-endpoint-unauth-shape.png"
+    },
+    {
+      "name": "login-page-renders",
+      "status": "passed",
+      "screenshot": "screenshots\\login-page-renders.png"
+    },
+    {
+      "name": "final",
+      "status": "passed",
+      "screenshot": "screenshots\\final-success.png"
+    }
+  ],
+  "durationMs": 2113,
+  "startedAt": "2026-04-24T17:15:14.157Z",
+  "endedAt": "2026-04-24T17:15:16.270Z",
+  "reportDir": "F:\\ClaudeProjects\\GroceryApp\\.claude\\artifacts\\test-reports\\2026-04-24T17-15-14-157Z-dashboard-health"
+}

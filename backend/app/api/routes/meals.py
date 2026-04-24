@@ -89,7 +89,10 @@ async def get_suggestions(user: UserInfo = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/scan-recipe")
+from app.core.feature_flags import require_flag
+
+
+@router.post("/scan-recipe", dependencies=[require_flag("recipe_ocr")])
 async def scan_recipe(
     image: UploadFile = File(...),
     user: UserInfo = Depends(get_current_user),

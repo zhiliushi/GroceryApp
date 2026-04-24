@@ -42,4 +42,36 @@ export const qk = {
     errors: ['ocr', 'errors'] as const,
     history: ['ocr', 'history'] as const,
   },
+  // Phase 2 refactor keys
+  catalog: {
+    all: (params?: { q?: string; sort_by?: string }) => ['catalog', params] as const,
+    detail: (nameNorm: string) => ['catalog', nameNorm] as const,
+    byBarcode: (barcode: string) => ['catalog', 'barcode', barcode] as const,
+  },
+  purchases: {
+    all: (params?: { status?: string; location?: string; catalog_name_norm?: string }) =>
+      ['purchases', params] as const,
+    detail: (id: string) => ['purchases', id] as const,
+  },
+  countries: {
+    all: ['countries'] as const,
+    lookup: (barcode: string) => ['countries', 'lookup', barcode] as const,
+  },
+  reminders: {
+    all: (includeDismissed?: boolean) => ['reminders', { includeDismissed }] as const,
+    detail: (id: string) => ['reminders', id] as const,
+  },
+  waste: {
+    summary: (period: string) => ['waste', 'summary', period] as const,
+    spending: (period: string) => ['waste', 'spending', period] as const,
+    financial: (period: string) => ['waste', 'financial', period] as const,
+    health: ['waste', 'health'] as const,
+  },
+  featureFlags: ['feature-flags'] as const,
+  scanInfo: (barcode: string) => ['scan-info', barcode] as const,
+  catalogAnalysis: ['catalog-analysis'] as const,
+  insights: {
+    all: ['insights'] as const,
+    detail: (id: string) => ['insights', id] as const,
+  },
 };

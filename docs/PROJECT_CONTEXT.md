@@ -1,344 +1,230 @@
-# GroceryApp - Project Context
+# GroceryApp — Project Context
 
-## Project Overview
+## Product Vision
 
-GroceryApp is a comprehensive grocery management mobile application built with React Native that helps users manage their grocery inventory, track purchases, scan barcodes, and analyze spending patterns. The app operates on a freemium model with both free and paid tiers.
+GroceryApp is a **simple waste-prevention app**. It helps users minimise food waste by tracking what they buy, when it expires, and what they use vs throw away. The app gets out of the way: users add items via barcode scan or name entry, and the app surfaces expiring items before they go bad.
+
+### Core principles
+
+1. **Dumb-simple to use** — new users face minimum friction; a single "what did you buy?" input + optional scan is all that's required.
+2. **Name-centric catalog** — items are identified by name; barcode is a helpful tool when available, not required.
+3. **Progressive disclosure** — no forms upfront; the app nudges users to add expiry/price/volume after they've added N items and see the value.
+4. **Waste-focused** — dashboard shows health bar, expiring items, untracked age buckets, and waste stats; not inventory count.
+5. **State-driven UI** — every screen's actions appear/hide based on current data state (like a PO system where draft shows only "Publish", published shows stage-appropriate actions).
+6. **Barcode as helper** — scanning auto-finds catalog entries when available; items without barcodes (user-entered names) are first-class.
+
+### What this app is NOT
+
+- Not a budget/expense tracker (basic finance only: cash vs card per purchase)
+- Not a recipe app (though meals feature is retained for waste-prevention "cook these now" suggestions)
+- Not an OCR/receipt-scanning app (OCR features hidden behind admin toggle during refactor)
+- Not a complex inventory management system (no locations hierarchy, no batch operations default)
 
 ## Business Model
 
-### Free Tier
-- **Local-only storage** using React Native SQLite Storage
-- Basic grocery management features:
-  - Manual item entry and management
-  - Barcode scanning with product lookup
-  - Simple inventory tracking
-  - Basic expense tracking
-  - Local data persistence
+Tier-based feature gating (mostly retained, simplified):
 
-### Paid Tier (Premium)
-- **Cloud sync** via Firebase Firestore
-- **AI-powered features**:
-  - Smart shopping list generation
-  - Price trend analysis
-  - Expiry date predictions
-  - Recipe suggestions based on inventory
-- **Advanced analytics**:
-  - Spending insights and trends
-  - Category-wise expense breakdown
-  - Budget tracking and alerts
-- **Multi-device sync**
-- **Data backup and restore**
-- **Priority support**
+### Free tier
+- Local + cloud-synced grocery management
+- Unlimited catalog entries
+- Unlimited purchase events
+- Barcode scanning (shared global products DB)
+- Manual name entry (personal catalog)
+- Expiry reminders (7/14/21-day nudges for untracked items)
+- Waste tracking + health score
+- Shopping lists
+- Foodbank directory
+
+### Plus tier ("Smart Cart")
+- All free features
+- 3 selected advanced tools from menu
+- Premium insights (milestone analytics)
+- Household sharing (up to 5 members)
+- Priority feature unlock
+
+### Pro tier ("Full Fridge")
+- All features unlocked
+- Unlimited household members (up to 10)
+- All admin analytics
+- Early access to new features
 
 ## Technology Stack
 
-### Mobile App (React Native)
-- **Framework**: React Native (latest stable)
-- **Language**: TypeScript
-- **Local Database**: React Native SQLite Storage (equivalent to Android Room)
-- **Cloud Services**: Firebase (Firestore + Authentication)
-- **Barcode Scanning**: React Native Camera / react-native-vision-camera
-- **Navigation**: React Navigation v6+
-- **State Management**: Redux Toolkit / Zustand
-- **UI Components**: React Native Paper / Native Base
-- **HTTP Client**: Axios
+### Mobile App (React Native) — legacy, refactor deferred
+- Framework: React Native + TypeScript
+- Local DB: WatermelonDB (SQLite)
+- Cloud: Firebase (Firestore + Auth)
+- Barcode: react-native-vision-camera + ML Kit
+- Nav: React Navigation v6+
+- State: Zustand
+- UI: react-native-paper
+- HTTP: axios
+- **Note:** currently consumes legacy `/api/inventory/my` endpoints via backward-compat shim. Migration to new `/api/purchases` + `/api/catalog` is deferred to `docs/FUTURE_MOBILE_REFACTOR.md`.
 
-### Backend (Python FastAPI)
-- **Framework**: FastAPI
-- **Deployment**: Render.com (Docker)
-- **Database**: Firebase Firestore (cloud database)
-- **External APIs**:
-  - Open Food Facts API (product information)
-  - Firebase Admin SDK
-  - Google Maps/Places API (reverse geocoding)
-- **Purpose**:
-  - Barcode scanning workflow intermediary
-  - Analytics data aggregation
-  - AI feature processing (paid tier)
-  - Firebase integration
+### Backend (FastAPI)
+- Framework: FastAPI 2.2.0
+- Python 3.11
+- Firebase Admin SDK + Firestore
+- Deploy: Render.com (Docker, rootDir: `backend/`)
+- External APIs: Open Food Facts (product lookup)
+- OCR providers (Tesseract/Mindee/Google Vision) — retained but feature-flag gated
 
-### Web Admin (React SPA)
-- **Framework**: React 19 + TypeScript
-- **Build**: Vite 6, output to `backend/static/spa/`
-- **Styling**: Tailwind CSS v4 (dark theme)
-- **Data**: TanStack Query v5 (reactive cache invalidation)
-- **Forms**: React Hook Form v7
-- **State**: Zustand v5 (auth + UI)
-- **Charts**: Chart.js 4 + react-chartjs-2
-- **Auth**: Firebase client SDK (same auth as mobile app)
-- **Dev**: `cd backend/web-admin && npm run dev` (proxies API to FastAPI :8000)
-- **17 pages**: Dashboard, Products, Users, Contributed, Needs Review, Inventory, Shopping Lists, Price Records, Foodbanks, Analytics, Settings + detail/form pages
+### Web Admin SPA
+- React 19 + TypeScript
+- Vite 6 (build output to `backend/static/spa/`)
+- Tailwind CSS v4 (light theme, purple accent)
+- TanStack Query v5
+- React Hook Form v7
+- Zustand v5 (auth + UI)
+- Chart.js 4
+- Firebase client SDK (same auth as mobile)
 
 ### Infrastructure
-- **Cloud Database**: Firebase Firestore
-- **Authentication**: Firebase Auth
-- **Storage**: Firebase Storage (for images)
-- **Backend Hosting**: Render.com (FastAPI)
-- **External API**: Open Food Facts (product database)
+- Firestore (primary DB)
+- Firebase Auth (user identity)
+- Firebase Storage (images)
+- Render.com (backend hosting, free tier)
+- Open Food Facts (product lookup)
 
-## Architecture Overview
+## Architecture
 
-### Data Flow - Barcode Scanning
+### Data model (refactored)
+
+**Global collections:**
+- `catalog_entries/{user_id}__{name_norm}` — per-user name catalog (doc ID enforces uniqueness)
+- `products/{barcode}` — global barcode-keyed product DB + country + verification
+- `contributed_products/{barcode}` — user-submitted products awaiting admin review
+- `countries/{code}` — country definitions with GS1 prefix ranges
+- `foodbanks/{id}` — foodbank directory
+- `households/{id}` — shared family groupings
+- `app_config/*` — global config docs (features, ocr, visibility, tiers, locations, map, stores)
+
+**Per-user subcollections:**
+- `users/{uid}` — user profile
+- `users/{uid}/purchases/{event_id}` — purchase events (status: active/used/thrown/transferred)
+- `users/{uid}/recipes/{recipe_id}` — personal recipes
+- `users/{uid}/price_records/{record_id}` — price history
+- `users/{uid}/shopping_lists/{list_id}/items/{item_id}` — shopping lists
+- `users/{uid}/reminders/{reminder_id}` — 7/14/21-day nudges
+- `users/{uid}/insights/{milestone_id}` — milestone analytics output
+- `users/{uid}/analytics_events/{event_id}` — behavior events
+
+### Data flow — Add item (happy path)
 
 ```
-Mobile App (Scanner)
+User enters name OR scans barcode
     ↓
-    → Capture barcode via Camera
+API: POST /api/purchases
     ↓
-    → Send to FastAPI Backend (Render)
+Backend (purchase_event_service.create_purchase):
+    1. Normalize name → name_norm
+    2. Upsert catalog_entries/{uid}__{name_norm}
+       - If barcode provided: check no other entry has it (composite uniqueness)
+       - If country_code unknown + barcode: detect via GS1 prefix
+    3. Create users/{uid}/purchases/{event_id}
+       - Parse natural-language expiry if provided
+       - Default location from catalog.default_location
+    4. Increment catalog counters (total_purchases, active_purchases)
+    5. Fire analytics event (for milestone triggers)
     ↓
-    → Query Open Food Facts API
-    ↓
-    → Store/Update in Firebase (paid users)
-    ↓
-    → Return product data to app
-    ↓
-    → Store locally in SQLite (all users)
-    ↓
-Display product info to user
+Return PurchaseEvent to client
 ```
 
-### Data Flow - Analytics Sync (Paid Tier Only)
+### Data flow — Expiry reminder scan (daily scheduler)
 
 ```
-Mobile App (Local SQLite)
+08:00 UTC cron fires
     ↓
-    → Periodic batch collection of:
-       - Purchase records
-       - Inventory changes
-       - Expense data
+nudge_service.scan_reminders (feature-flag guarded)
     ↓
-    → Send to FastAPI Backend
+Query collection-group users/{uid}/purchases
+   where status == 'active' AND expiry_date == null
     ↓
-    → Validate user subscription
+For each purchase:
+   age = now - date_bought (days)
+   IF age >= 7 AND reminder_stage < 1 → create reminder (stage=1)
+   IF age >= 14 AND reminder_stage < 2 → create reminder (stage=2)
+   IF age >= 21 AND reminder_stage < 3 → create reminder (stage=3)
+                                         + flag catalog.needs_review=true
     ↓
-    → Store in Firebase Firestore
-    ↓
-    → Trigger AI analysis (if enabled)
-    ↓
-Return insights to mobile app
+Future: push notification to mobile / Telegram
 ```
-
-### Storage Strategy
-
-#### Free Tier Users
-- All data stored locally in SQLite
-- No cloud backup
-- Data tied to single device
-- Manual export/import for data transfer
-
-#### Paid Tier Users
-- **Primary**: Local SQLite (for offline access)
-- **Secondary**: Firebase Firestore (for sync & backup)
-- Two-way sync on app launch and periodically
-- Conflict resolution: Last-write-wins with timestamps
-- Offline-first architecture
 
 ## Core Features
 
-### 1. Inventory Management
-- Add/Edit/Delete grocery items
-- Categories and tags
-- Quantity tracking
-- Expiry date management
-- Low stock alerts
-- Search and filter
+1. **Simple Add Item** — name input with catalog autocomplete + optional barcode scan
+2. **Catalog Management** — user's reusable name catalog; case-insensitive dedup per user
+3. **Purchase Tracking** — each shopping trip = multiple purchase events referring to catalog
+4. **Expiry Management** — natural language input, visual chips, state-driven action buttons
+5. **Waste Prevention Dashboard** — health bar, expiring cards, untracked age buckets
+6. **Simple Actions** — Used / Thrown / Give Away per item, conditional on state
+7. **Household Sharing** — tier-gated, up to 5/10 members
+8. **Shopping Lists** — scan-to-add, scan-at-checkout-to-mark-bought
+9. **Foodbank Finder** — "Give Away" links to local foodbanks via map
+10. **Basic Finance** — per-purchase cash/card toggle, monthly summary
+11. **Progressive Nudges** — contextual prompts at 5/10/20/50/100/500 items
+12. **Milestone Insights** — AI-generated patterns at thresholds
+13. **Admin Catalog Analysis** — cross-user aggregation view for data quality
 
-### 2. Barcode Scanning
-- Camera-based barcode scanning
-- Product info lookup via Open Food Facts
-- Manual entry fallback
-- Quick add to inventory
-- Historical scan records
+### Hidden during refactor (feature flag)
 
-### 3. Shopping List
-- Create multiple lists
-- Smart suggestions (AI - paid tier)
-- Share lists (paid tier)
-- Item categorization
-- Price estimates
+- Receipt OCR scanning
+- Smart camera scans (product label, expiry, shelf audit)
+- OCR test scanner (admin tool)
+- Recipe image OCR
 
-### 4. Expense Tracking
-- Purchase recording
-- Receipt scanning (paid tier)
-- Category-based tracking
-- Budget management
-- Monthly/weekly reports
+## Development Phases (current refactor)
 
-### 5. Analytics & Insights (Enhanced for Paid Tier)
-- Spending trends
-- Category analysis
-- Price comparisons
-- Waste tracking (expired items)
-- AI-powered predictions
+See `C:\Users\Shahir\.claude\plans\hidden-yawning-shamir.md` for detailed plan.
 
-### 6. User Management
-- Firebase Authentication
-  - Email/Password
-  - Google Sign-In
-  - Apple Sign-In (iOS)
-- Profile management
-- Subscription management
-- Settings and preferences
-
-## Project Structure
-
-```
-GroceryApp/
-├── mobile-app/              # React Native application
-│   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── screens/         # Screen components
-│   │   ├── navigation/      # Navigation configuration
-│   │   ├── services/        # API and business logic
-│   │   │   ├── api/         # API calls
-│   │   │   ├── database/    # SQLite operations
-│   │   │   ├── firebase/    # Firebase integration
-│   │   │   └── barcode/     # Barcode scanning logic
-│   │   ├── store/           # State management
-│   │   ├── utils/           # Utility functions
-│   │   ├── types/           # TypeScript type definitions
-│   │   └── constants/       # Constants and config
-│   ├── android/             # Android-specific code
-│   ├── ios/                 # iOS-specific code
-│   └── package.json
-│
-├── backend/                 # FastAPI backend
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── routes/      # API endpoints
-│   │   │       ├── barcode.py
-│   │   │       ├── analytics.py
-│   │   │       └── ai.py
-│   │   ├── core/            # Configuration
-│   │   ├── models/          # Data models
-│   │   ├── services/        # Business logic
-│   │   └── utils/           # Utilities
-│   ├── tests/               # Backend tests
-│   ├── requirements.txt
-│   └── main.py
-│
-└── docs/                    # Documentation
-    ├── PROJECT_CONTEXT.md
-    ├── DEVELOPMENT_RULES.md
-    ├── CREDENTIALS.md
-    ├── ACTIVE_TASKS.md
-    └── subsystems/
-        ├── android-grocery-app.md
-        └── interface-grocery-app.md
-```
-
-## Development Phases
-
-### Phase 1: Core Mobile App (Current)
-- [ ] Project setup and configuration
-- [ ] Basic UI/UX implementation
-- [ ] SQLite database integration
-- [ ] Core inventory management
-- [ ] Basic CRUD operations
-
-### Phase 2: Barcode Integration
-- [ ] Camera integration
-- [ ] Barcode scanning functionality
-- [ ] FastAPI backend setup
-- [ ] Open Food Facts API integration
-- [ ] Product lookup workflow
-
-### Phase 3: Cloud Features
-- [ ] Firebase Authentication
-- [ ] Firebase Firestore integration
-- [ ] Cloud sync logic
-- [ ] Subscription management
-- [ ] Free vs Paid tier logic
-
-### Phase 4: Analytics
-- [ ] Local analytics tracking
-- [ ] Backend analytics API
-- [ ] Data visualization
-- [ ] Report generation
-
-### Phase 5: AI Features (Paid Tier)
-- [ ] Smart shopping lists
-- [ ] Price predictions
-- [ ] Expiry predictions
-- [ ] Recipe suggestions
-- [ ] Spending insights
-
-### Phase 6: Polish & Launch
-- [ ] Performance optimization
-- [ ] Testing (unit, integration, E2E)
-- [ ] Security audit
-- [ ] App store preparation
-- [ ] Marketing materials
+- **Phase 0** (this phase) — Documentation update
+- **Phase 1** — Backend foundation (feature flags, core services, migration script)
+- **Phase 2** — API endpoints + backward-compat shim + run migration
+- **Phase 3** — Scheduler jobs
+- **Phase 4** — Frontend refactor (Dashboard, My Items, Catalog, QuickAdd, etc.)
+- **Phase 5** — Insights + analytics UI
+- **Phase 6** — Documentation update (page docs)
+- **Future** — Telegram integration, mobile refactor, AI dedup
 
 ## Key Technical Decisions
 
-### Why React Native?
-- Cross-platform (iOS + Android) from single codebase
-- Large ecosystem and community
-- Good performance for this use case
-- Faster development and iteration
-
-### Why SQLite for Local Storage?
-- Offline-first capability
-- Fast local queries
-- Proven reliability
-- Small footprint
-- No network dependency
-
-### Why Firebase?
-- Managed backend reduces infrastructure work
-- Real-time sync capabilities
-- Built-in authentication
-- Scalable and reliable
-- Free tier for development
-
-### Why FastAPI Backend?
-- Fast and modern Python framework
-- Easy deployment on Render
-- Excellent performance
-- Built-in API documentation
-- Async support for external API calls
-
-### Why Open Food Facts?
-- Free and open product database
-- Good barcode coverage
-- Community-maintained
-- No API key required for basic usage
-- Nutrition data available
+- **Global `catalog_entries` collection (not subcollection)** — enables admin cross-user analysis queries without expensive collection_group scans
+- **Doc ID = `{user_id}__{name_norm}`** — composite uniqueness enforced at Firestore level, no app-level checks needed
+- **One barcode per catalog entry** — forces clean data; different package sizes = separate entries
+- **Transactional purchase creation** — atomic catalog upsert + event create + counter increment
+- **State-driven UI** — pure function `getAvailableActions(data)` drives button visibility; no hardcoded conditions scattered across components
+- **Backward-compat shim** — new data model backs old `/api/inventory/my` endpoints so existing mobile app keeps working during transition
+- **Feature flags 60s cache** — admin toggles propagate within 60s without deploys
 
 ## Security Considerations
 
-1. **API Keys**: Store in environment variables, never commit
-2. **Firebase Rules**: Implement proper Firestore security rules
-3. **User Data**: Encrypt sensitive data in SQLite
-4. **Authentication**: Use Firebase Auth best practices
-5. **Backend**: Validate all inputs, implement rate limiting
-6. **HTTPS**: All network communication over HTTPS
-7. **Subscription Validation**: Server-side verification
+1. Firestore security rules enforce doc-ID uniqueness and user-ownership
+2. Admin-only routes use `Depends(require_admin)` + Firestore role check
+3. Rate limiting per-user (60 writes/min) prevents abuse
+4. OCR API keys in environment vars, feature-flag gated at API layer
+5. Audit trail on admin actions (`updated_by`, `updated_at`, dedicated audit logs)
+6. All metadata writes (created_at, etc.) use `SERVER_TIMESTAMP` not client time
 
 ## Performance Targets
 
-- App launch: < 2 seconds
-- Barcode scan: < 1 second
-- Local database queries: < 100ms
-- Cloud sync: < 5 seconds for typical dataset
-- UI responsiveness: 60 FPS target
+- Add item via name: < 500ms (incl. Firestore write)
+- Add item via barcode: < 1s (incl. cascade lookup)
+- Dashboard load: < 1s
+- Catalog autocomplete: < 200ms (cached in React Query)
+- Expiry scan (daily scheduler): < 60s for 1000 active users
 
-## Monetization Strategy
+## Monetization
 
-- Free tier to build user base
-- Premium subscription: $4.99/month or $49.99/year
-- 7-day free trial for premium features
-- Feature-gated approach (not time-limited for free tier)
-- In-app purchase via App Store/Play Store
+- Free tier: full core waste-tracking features
+- Plus ($4.99/mo or $49.99/yr): "Smart Cart" with 3 premium tools picked from menu
+- Pro ($9.99/mo or $99.99/yr): "Full Fridge" — everything unlocked + priority support
+- 7-day free trial for paid tiers
 
 ## Success Metrics
 
-- User retention rate
-- Free to paid conversion rate
-- Daily active users (DAU)
-- Barcode scan success rate
-- Cloud sync reliability
-- App store ratings
-- Customer support ticket volume
+- **Primary:** waste rate reduction (% items thrown vs total purchased)
+- User retention (30/60/90 day)
+- Catalog growth rate (items added per active user)
+- Expiry-tracking adoption (% of purchase events with expiry set)
+- Nudge engagement (% of nudges actioned vs dismissed)
+- Milestone insight views (user returns to see insights)

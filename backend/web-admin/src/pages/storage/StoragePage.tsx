@@ -139,11 +139,10 @@ interface LocationCardProps {
   isOnly: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
-  onDelete: () => void;
   onSave: (updates: Partial<LocationItem>) => void;
 }
 
-function LocationCard({ stat, isAdmin, isFirst, isLast, isOnly, onMoveUp, onMoveDown, onDelete, onSave }: LocationCardProps) {
+function LocationCard({ stat, isAdmin, isFirst, isLast, isOnly, onMoveUp, onMoveDown, onSave }: LocationCardProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(stat.location.name);
   const [editIcon, setEditIcon] = useState(stat.location.icon);
@@ -361,10 +360,6 @@ export default function StoragePage() {
     updateMutation.mutate(updated);
   }, [locations, updateMutation]);
 
-  const handleDelete = useCallback((_key: string) => {
-    // Handled by LocationCard's own delete mutation
-  }, []);
-
   if (isLoading) return <LoadingSpinner />;
 
   return (
@@ -401,7 +396,6 @@ export default function StoragePage() {
               isOnly={locationStats.length === 1}
               onMoveUp={() => handleMoveUp(index)}
               onMoveDown={() => handleMoveDown(index)}
-              onDelete={() => handleDelete(stat.location.key)}
               onSave={(updates) => handleSave(index, updates)}
             />
           ))}

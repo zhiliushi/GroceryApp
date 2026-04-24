@@ -794,3 +794,384 @@ export interface OverpassNode {
   lon: number;
   tags: Record<string, string>;
 }
+
+// ============================================================================
+// Phase 2 Refactor — new catalog + purchases + waste + reminders types
+// ============================================================================
+
+export type PurchaseStatus = 'active' | 'used' | 'thrown' | 'transferred';
+export type ConsumeReason = 'used_up' | 'expired' | 'bad' | 'gift';
+export type PaymentMethod = 'cash' | 'card';
+
+export interface CatalogEntry {
+  id: string;
+  user_id: string;
+  name_norm: string;
+  display_name: string;
+  aliases: string[];
+  barcode: string | null;
+  country_code: string | null;
+  default_location: string | null;
+  default_category: string | null;
+  image_url: string | null;
+  total_purchases: number;
+  active_purchases: number;
+  last_purchased_at: string | null;
+  needs_review: boolean;
+  created_at?: string;
+  updated_at?: string;
+  history?: PurchaseEvent[];
+}
+
+export interface CatalogListResponse {
+  count: number;
+  items: CatalogEntry[];
+  next_cursor?: string | null;
+}
+
+export interface PurchaseEvent {
+  id: string;
+  catalog_name_norm: string;
+  catalog_display: string;
+  barcode: string | null;
+  country_code: string | null;
+  quantity: number;
+  unit: string | null;
+  expiry_date: string | null;
+  expiry_source: 'user' | 'nlp' | 'ocr' | 'none' | null;
+  expiry_raw: string | null;
+  price: number | null;
+  currency: string | null;
+  payment_method: PaymentMethod | null;
+  date_bought: string;
+  location: string | null;
+  status: PurchaseStatus;
+  consumed_date: string | null;
+  consumed_reason: ConsumeReason | null;
+  transferred_to: string | null;
+  reminder_stage: number;
+  last_reminded_at: string | null;
+  household_id: string | null;
+  source_ref: string | null;
+  expiry_past?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  source?: string;
+}
+
+export interface PurchaseListResponse {
+  count: number;
+  items: PurchaseEvent[];
+  next_cursor?: string | null;
+}
+
+// Federated search (GlobalSearchBar / Cmd+K)
+export interface SearchRecipeResult {
+  id: string;
+  title: string;
+  cuisine?: string | null;
+  image_url?: string | null;
+}
+
+export interface SearchResults {
+  query: string;
+  catalog: CatalogEntry[];
+  purchases_active: PurchaseEvent[];
+  recipes: SearchRecipeResult[];
+}
+
+export interface PurchaseCreateRequest {
+  name?: string;                    // one of name OR catalog_name_norm
+  catalog_name_norm?: string;
+  barcode?: string | null;
+  quantity?: number;
+  unit?: string;
+  expiry_raw?: string;              // "tomorrow", "next week", ISO, "no expiry"
+  expiry_date?: string;             // ISO overrides expiry_raw
+  price?: number;
+  currency?: string;
+  payment_method?: PaymentMethod;
+  date_bought?: string;
+  location?: string;
+}
+
+export interface PurchaseUpdateRequest {
+  quantity?: number;
+  unit?: string;
+  expiry_raw?: string;
+  expiry_date?: string;
+  price?: number;
+  payment_method?: PaymentMethod;
+  location?: string;
+}
+
+export interface PurchaseStatusUpdateRequest {
+  status: Exclude<PurchaseStatus, 'active'>;
+  reason?: ConsumeReason;
+  transferred_to?: string;
+}
+
+// === Countries ===
+
+export interface GS1PrefixRange {
+  start: string;
+  end: string;
+}
+
+export interface Country {
+  code: string;
+  name: string;
+  currency: string;
+  currency_symbol: string;
+  gs1_prefix_ranges: GS1PrefixRange[];
+  flag_emoji: string;
+  locale: string;
+  enabled: boolean;
+}
+
+export interface CountryListResponse {
+  countries: Country[];
+}
+
+// === Reminders ===
+
+export interface Reminder {
+  id: string;
+  purchase_event_id: string;
+  catalog_name_norm: string;
+  display_name: string;
+  stage: number;                    // 7 | 14 | 21
+  message: string;
+  created_at: string;
+  dismissed_at: string | null;
+  acted_at: string | null;
+  action_taken: 'used' | 'thrown' | 'snooze' | 'still_have' | null;
+}
+
+export interface ReminderListResponse {
+  count: number;
+  reminders: Reminder[];
+}
+
+export type ReminderDismissAction = 'used' | 'thrown' | 'still_have' | 'snooze';
+
+export interface ReminderDismissRequest {
+  action: ReminderDismissAction;
+  reason?: string;
+}
+
+// === Waste + Health Score ===
+
+export interface HealthComponents {
+  active_healthy: number;
+  active_expiring_7d: number;
+  active_expiring_3d: number;
+  active_expired: number;
+  active_untracked: number;
+  thrown_this_month: number;
+  used_this_month: number;
+}
+
+export interface HealthScore {
+  score: number;                    // 0..100
+  grade: 'green' | 'yellow' | 'red';
+  components: HealthComponents;
+  waste_rate_month: number;         // 0..1
+  computed_at: string;
+}
+
+export interface WasteSummaryItem {
+  catalog_name_norm: string;
+  display_name: string;
+  count: number;
+  total_value: number;
+}
+
+export interface WasteSummary {
+  period: 'week' | 'month' | 'year' | 'all';
+  from_date: string;
+  to_date: string;
+  thrown_count: number;
+  thrown_value: number;
+  top_wasted: WasteSummaryItem[];
+}
+
+export interface SpendingSummary {
+  period: 'week' | 'month' | 'year' | 'all';
+  from_date: string;
+  to_date: string;
+  cash_total: number;
+  card_total: number;
+  grand_total: number;
+  untracked_count: number;
+}
+
+export interface FinancialSummaryRow {
+  catalog_name_norm: string;
+  display_name: string;
+  total_purchases: number;
+  total_spent: number;
+  active_count: number;
+  used_count: number;
+  thrown_count: number;
+  thrown_value: number;
+  waste_pct: number;       // 0..1 — thrown_count / total_purchases
+  waste_value_pct: number; // 0..1 — thrown_value / total_spent
+}
+
+export interface FinancialSummary {
+  period: 'week' | 'month' | 'year' | 'all';
+  from_date: string;
+  to_date: string;
+  grand_total_spent: number;
+  grand_total_wasted: number;
+  grand_waste_pct: number; // 0..1
+  rows: FinancialSummaryRow[];
+}
+
+// === Feature Flags ===
+
+export interface NudgeThresholds {
+  expiry: number;
+  price: number;
+  volume: number;
+}
+
+export interface FeatureFlags {
+  // OCR
+  ocr_enabled: boolean;
+  receipt_scan: boolean;
+  smart_camera: boolean;
+  recipe_ocr: boolean;
+  shelf_audit: boolean;
+  // Product features
+  progressive_nudges: boolean;
+  financial_tracking: boolean;
+  insights: boolean;
+  nl_expiry_parser: boolean;
+  // Background jobs
+  barcode_country_autodetect: boolean;
+  catalog_cleanup: boolean;
+  reminder_scan: boolean;
+  milestone_analytics: boolean;
+  // Legacy routing
+  legacy_endpoints_use_new_model: boolean;
+  // Thresholds
+  nudge_thresholds: NudgeThresholds;
+  [key: string]: boolean | NudgeThresholds | unknown;
+}
+
+export interface FeatureFlagsResponse {
+  flags: FeatureFlags;
+}
+
+// === Scan-info (unified barcode scan result) ===
+
+export interface ScanInfoUserHistory {
+  count_purchased: number;
+  active_stock: number;
+  last_bought: string | null;
+  avg_price: number | null;
+  waste_rate: number;               // 0..1
+  active_items: PurchaseEvent[];
+}
+
+export interface SuggestedAction {
+  action: string;
+  label: string;
+}
+
+export interface ScanInfo {
+  barcode: string;
+  country_code: string | null;
+  user_catalog_match: CatalogEntry | null;
+  global_product: Record<string, unknown> | null;
+  user_history: ScanInfoUserHistory;
+  suggested_actions: SuggestedAction[];
+}
+
+// === Admin Catalog Analysis ===
+
+export interface CatalogAnalysisBarcodeToNames {
+  barcode: string;
+  country_code: string | null;
+  user_count: number;
+  consistent: boolean;              // all users agree on the name
+  names: Array<{ name: string; count: number }>;
+}
+
+export interface CatalogAnalysisNoBarcodeName {
+  name_norm: string;
+  display_names: Array<{ name: string; count: number }>;
+  user_count: number;
+  total_purchases: number;
+}
+
+export interface CatalogAnalysisCleanupEntry {
+  catalog_id: string;
+  user_id: string;
+  name_norm: string;
+  display_name: string;
+  last_purchased_at: string | null;
+  total_purchases: number;
+}
+
+export interface CatalogAnalysis {
+  barcode_to_names: CatalogAnalysisBarcodeToNames[];
+  no_barcode_names: CatalogAnalysisNoBarcodeName[];
+  cleanup_preview: CatalogAnalysisCleanupEntry[];
+  computed_at?: string;
+  schema_version?: number;
+}
+
+// === Insights (milestones) ===
+
+export interface TopPurchasedItem {
+  name: string;
+  name_norm: string;
+  count: number;
+}
+
+export interface WasteBreakdownItem {
+  name: string;
+  name_norm: string;
+  count: number;
+  value: number;
+}
+
+export interface AvoidListItem {
+  name: string;
+  name_norm: string;
+  waste_rate: number;
+  thrown: number;
+  total: number;
+}
+
+export interface InsightSpending {
+  cash: number;
+  card: number;
+  total: number;
+}
+
+export interface InsightShoppingFrequency {
+  avg_days_between: number | null;
+  peak_day: string | null;
+}
+
+export interface Insight {
+  id: string;
+  kind?: 'milestone' | 'tip' | 'alert';
+  milestone?: number;
+  total_purchases_at_trigger?: number;
+  status?: 'pending_analysis' | 'ready';
+  title: string;
+  description?: string;
+  created_at?: string;
+  dismissed_at?: string | null;
+  // Rich milestone content (populated when kind === 'milestone' and status === 'ready')
+  top_purchased?: TopPurchasedItem[];
+  waste_breakdown?: WasteBreakdownItem[];
+  spending?: InsightSpending;
+  shopping_frequency?: InsightShoppingFrequency;
+  avoid_list?: AvoidListItem[];
+}

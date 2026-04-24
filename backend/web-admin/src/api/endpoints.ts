@@ -112,4 +112,48 @@ export const API = {
   ADMIN_STORE: (id: string) => `/api/admin/stores/${id}`,
   CONFIG_MAP: '/api/config/map',
   ADMIN_CONFIG_MAP: '/api/admin/config/map',
+
+  // ============================================================
+  // Phase 2 Refactor — new catalog + purchases + waste endpoints
+  // ============================================================
+  CATALOG: '/api/catalog',
+  CATALOG_ENTRY: (nameNorm: string) => `/api/catalog/${encodeURIComponent(nameNorm)}`,
+  CATALOG_MERGE: (nameNorm: string) => `/api/catalog/${encodeURIComponent(nameNorm)}/merge`,
+  CATALOG_BARCODE_LOOKUP: (barcode: string) => `/api/catalog/lookup/barcode/${encodeURIComponent(barcode)}`,
+
+  PURCHASES: '/api/purchases',
+  PURCHASE: (id: string) => `/api/purchases/${id}`,
+  PURCHASE_STATUS: (id: string) => `/api/purchases/${id}/status`,
+  PURCHASE_CONSUME: '/api/purchases/consume',
+
+  COUNTRIES: '/api/countries',
+  COUNTRY_LOOKUP: (barcode: string) => `/api/countries/lookup/${encodeURIComponent(barcode)}`,
+
+  REMINDERS: '/api/reminders',
+  REMINDER: (id: string) => `/api/reminders/${id}`,
+  REMINDER_DISMISS: (id: string) => `/api/reminders/${id}/dismiss`,
+
+  WASTE_SUMMARY: '/api/waste/summary',
+  WASTE_SPENDING: '/api/waste/spending',
+  WASTE_HEALTH_SCORE: '/api/waste/health-score',
+  WASTE_FINANCIAL_SUMMARY: '/api/waste/financial-summary',
+
+  BARCODE_SCAN_INFO: (barcode: string) => `/api/barcode/${encodeURIComponent(barcode)}/scan-info`,
+
+  // Admin Phase 2 endpoints
+  ADMIN_FEATURES: '/api/admin/features',
+  ADMIN_CATALOG_ANALYSIS: '/api/admin/catalog-analysis',
+  ADMIN_CATALOG_PROMOTE: '/api/admin/catalog-analysis/promote',
+  ADMIN_CATALOG_FLAG_SPAM: '/api/admin/catalog-analysis/flag-spam',
+
+  // Public subset of flags — safe for unauthenticated dashboard reads
+  PUBLIC_FEATURES: '/api/features/public',
+
+  // Federated search (GlobalSearchBar / Cmd+K)
+  SEARCH: '/api/search',
+
+  // Insights (milestone-driven)
+  INSIGHTS: '/api/insights',
+  INSIGHT: (id: string) => `/api/insights/${id}`,
+  INSIGHT_DISMISS: (id: string) => `/api/insights/${id}/dismiss`,
 } as const;

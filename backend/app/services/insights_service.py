@@ -340,3 +340,279 @@ def _check_budget(
                     priority=InsightPriority.MEDIUM,
                     category=InsightCategory.BUDGET,
                 ))
+
+
+# ---------------------------------------------------------------------------
+# Milestone check (Phase 3 scheduler entry point + Phase 5 rich content)
+# ---------------------------------------------------------------------------
+
+MILESTONES = (50, 100, 500, 1000)
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _aggregate_user_stats(db, uid: str) -> Dict[str, Any]:
+    """Aggregate everything needed for a milestone insight in one pass.
+
+    Reads: catalog_entries (user-scoped), users/{uid}/purchases (all).
+    Returns aggregate dict used by `_build_milestone_doc`.
+    """
+    from datetime import datetime as _dt
+
+    # Catalog entries → top_purchased + avoid_list
+    catalog_entries: List[Dict[str, Any]] = []
+    for doc in db.collection("catalog_entries").where("user_id", "==", uid).stream():
+        data = doc.to_dict() or {}
+        catalog_entries.append(data)
+
+    total_purchases = sum(int(e.get("total_purchases", 0)) for e in catalog_entries)
+
+    top_purchased = sorted(
+        [
+            {
+                "name": e.get("display_name") or e.get("name_norm", "(unknown)"),
+                "name_norm": e.get("name_norm", ""),
+                "count": int(e.get("total_purchases", 0)),
+            }
+            for e in catalog_entries
+        ],
+        key=lambda x: x["count"],
+        reverse=True,
+    )[:10]
+
+    # Purchase events → waste_breakdown, spending, frequency
+    cash = 0.0
+    card = 0.0
+    dates_bought: List[_dt] = []
+    waste_by_name: Dict[str, Dict[str, Any]] = {}
+    status_counts: Dict[str, int] = defaultdict(int)
+    per_catalog_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: {"total": 0, "thrown": 0})
+
+    for doc in db.collection("users").document(uid).collection("purchases").stream():
+        data = doc.to_dict() or {}
+        status = data.get("status", "active")
+        status_counts[status] += 1
+        price = data.get("price")
+        method = data.get("payment_method")
+        if price is not None and method == "cash":
+            cash += float(price)
+        elif price is not None and method == "card":
+            card += float(price)
+
+        db_date = data.get("date_bought")
+        if hasattr(db_date, "to_datetime"):
+            db_date = db_date.to_datetime()
+        if isinstance(db_date, _dt):
+            dates_bought.append(db_date)
+
+        name_norm = data.get("catalog_name_norm", "")
+        display = data.get("catalog_display") or name_norm
+        per_catalog_counts[name_norm]["total"] += 1
+        if status == "thrown":
+            per_catalog_counts[name_norm]["thrown"] += 1
+            if name_norm not in waste_by_name:
+                waste_by_name[name_norm] = {
+                    "name": display,
+                    "name_norm": name_norm,
+                    "count": 0,
+                    "value": 0.0,
+                }
+            waste_by_name[name_norm]["count"] += 1
+            if price is not None:
+                waste_by_name[name_norm]["value"] += float(price)
+
+    waste_breakdown = sorted(
+        [
+            {**v, "value": round(v["value"], 2)}
+            for v in waste_by_name.values()
+        ],
+        key=lambda x: x["count"],
+        reverse=True,
+    )[:10]
+
+    # Avoid list: catalog entries with waste_rate > 30% and at least 3 thrown
+    avoid_list: List[Dict[str, Any]] = []
+    for nm, counts in per_catalog_counts.items():
+        if counts["total"] < 3:
+            continue
+        rate = counts["thrown"] / counts["total"]
+        if rate >= 0.3 and counts["thrown"] >= 3:
+            entry = next((e for e in catalog_entries if e.get("name_norm") == nm), None)
+            avoid_list.append(
+                {
+                    "name": entry.get("display_name", nm) if entry else nm,
+                    "name_norm": nm,
+                    "waste_rate": round(rate, 3),
+                    "thrown": counts["thrown"],
+                    "total": counts["total"],
+                }
+            )
+    avoid_list.sort(key=lambda x: x["waste_rate"], reverse=True)
+    avoid_list = avoid_list[:10]
+
+    # Shopping frequency: sort dates, compute gaps, find peak weekday
+    avg_days_between: Optional[float] = None
+    peak_day: Optional[str] = None
+    if len(dates_bought) >= 2:
+        sorted_dates = sorted(dates_bought)
+        gaps = [
+            (sorted_dates[i] - sorted_dates[i - 1]).days
+            for i in range(1, len(sorted_dates))
+            if (sorted_dates[i] - sorted_dates[i - 1]).days > 0
+        ]
+        if gaps:
+            avg_days_between = round(sum(gaps) / len(gaps), 1)
+    if dates_bought:
+        weekday_counts = Counter(d.weekday() for d in dates_bought)
+        if weekday_counts:
+            peak_wd = weekday_counts.most_common(1)[0][0]
+            peak_day = WEEKDAY_NAMES[peak_wd]
+
+    return {
+        "total_purchases": total_purchases,
+        "top_purchased": top_purchased,
+        "waste_breakdown": waste_breakdown,
+        "spending": {
+            "cash": round(cash, 2),
+            "card": round(card, 2),
+            "total": round(cash + card, 2),
+        },
+        "shopping_frequency": {
+            "avg_days_between": avg_days_between,
+            "peak_day": peak_day,
+        },
+        "avoid_list": avoid_list,
+        "status_counts": dict(status_counts),
+    }
+
+
+def _narrative(milestone: int, stats: Dict[str, Any]) -> str:
+    """Rule-based summary text. LLM polish is a future enhancement."""
+    total = stats["total_purchases"]
+    used = stats["status_counts"].get("used", 0)
+    thrown = stats["status_counts"].get("thrown", 0)
+    terminal = used + thrown
+    waste_rate = (thrown / terminal) if terminal else 0.0
+
+    pieces = [f"You've crossed {milestone} purchases."]
+    if stats["top_purchased"]:
+        top = stats["top_purchased"][0]
+        pieces.append(f"Your most-bought item is {top['name']} ({top['count']}×).")
+    if terminal:
+        pieces.append(
+            f"So far you've used {used} and thrown {thrown} "
+            f"({int(waste_rate * 100)}% waste rate)."
+        )
+    freq = stats["shopping_frequency"]
+    if freq.get("avg_days_between") and freq.get("peak_day"):
+        pieces.append(
+            f"You shop about every {freq['avg_days_between']} days, most often on {freq['peak_day']}."
+        )
+    if stats["avoid_list"]:
+        worst = stats["avoid_list"][0]
+        pieces.append(
+            f"Consider buying less {worst['name']} — you've thrown "
+            f"{int(worst['waste_rate'] * 100)}% of what you bought."
+        )
+    return " ".join(pieces)
+
+
+def _build_milestone_doc(milestone: int, stats: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "kind": "milestone",
+        "milestone": milestone,
+        "total_purchases_at_trigger": stats["total_purchases"],
+        "status": "ready",
+        "title": f"You've bought {milestone} items!",
+        "description": _narrative(milestone, stats),
+        "top_purchased": stats["top_purchased"],
+        "waste_breakdown": stats["waste_breakdown"],
+        "spending": stats["spending"],
+        "shopping_frequency": stats["shopping_frequency"],
+        "avoid_list": stats["avoid_list"],
+    }
+
+
+def check_user_milestones(uid: str) -> int:
+    """Single-user milestone check. Idempotent (skips if doc already exists).
+
+    Called from POST /api/purchases via BackgroundTasks for near-realtime triggering.
+    Returns count of milestone docs emitted.
+    """
+    from firebase_admin import firestore
+    from app.core.feature_flags import is_enabled
+    from app.core.metadata import apply_create_metadata
+
+    if not is_enabled("milestone_analytics"):
+        return 0
+
+    db = firestore.client()
+
+    # Cheap first pass: aggregate total from catalog counters only.
+    total = 0
+    for doc in db.collection("catalog_entries").where("user_id", "==", uid).stream():
+        total += int((doc.to_dict() or {}).get("total_purchases", 0))
+
+    # Which milestones are due?
+    due = [m for m in MILESTONES if total >= m]
+    if not due:
+        return 0
+
+    # Filter out already-emitted
+    not_emitted: List[int] = []
+    for m in due:
+        if not db.collection("users").document(uid).collection("insights").document(f"milestone_{m}").get().exists:
+            not_emitted.append(m)
+    if not_emitted:
+        # Heavy pass only when we actually need to emit
+        stats = _aggregate_user_stats(db, uid)
+    else:
+        return 0
+
+    created = 0
+    for m in not_emitted:
+        insight_ref = (
+            db.collection("users").document(uid)
+            .collection("insights").document(f"milestone_{m}")
+        )
+        insight_ref.set(
+            apply_create_metadata(
+                _build_milestone_doc(m, stats),
+                uid="system",
+                source="scheduler",
+            )
+        )
+        created += 1
+        logger.info("insights.milestone user=%s milestone=%d", uid, m)
+    return created
+
+
+def check_milestones() -> int:
+    """All-users scheduler entry point. Iterates every user, calls check_user_milestones.
+
+    Returns count of milestone docs created this run.
+    """
+    from firebase_admin import firestore
+    from app.core.feature_flags import is_enabled
+
+    if not is_enabled("milestone_analytics"):
+        logger.info("insights.check_milestones: skipped (flag off)")
+        return 0
+
+    db = firestore.client()
+    # Aggregate users who have catalog entries
+    users = set()
+    for doc in db.collection("catalog_entries").stream():
+        uid = (doc.to_dict() or {}).get("user_id")
+        if uid:
+            users.add(uid)
+
+    created = 0
+    for uid in users:
+        try:
+            created += check_user_milestones(uid)
+        except Exception as exc:
+            logger.exception("insights.check_milestones user=%s failed: %s", uid, exc)
+
+    if created:
+        logger.info("insights.check_milestones created=%d users=%d", created, len(users))
+    return created

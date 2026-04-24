@@ -6,7 +6,6 @@ import { useOverpassStores } from '@/api/queries/useOverpassStores';
 import { useFoodbanks } from '@/api/queries/useFoodbanks';
 import { useAddStore, useUpdateStore, useDeleteStore, useUpdateMapConfig } from '@/api/mutations/useStoreMutations';
 import { useAuthStore } from '@/stores/authStore';
-import { toast } from 'sonner';
 import type { ManualStore } from '@/types/api';
 
 // --- Custom marker icons (colored circle SVGs) ---

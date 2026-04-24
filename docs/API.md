@@ -637,4 +637,110 @@ The backend allows cross-origin requests from origins specified in `ALLOWED_ORIG
 
 ## Rate Limiting
 
-No rate limiting is currently implemented. The Open Food Facts API has its own rate limits — the backend uses proper User-Agent headers and caches results in Firestore to minimize external calls.
+Per-user in-memory token bucket: 60 writes/min, keyed by Firebase UID (`app.core.rate_limit.rate_limit`). Applied on write-path refactor endpoints (POST/PATCH/DELETE `/api/purchases`, `/api/catalog`, `/api/reminders`). Exceeds → 429 with `Retry-After` header. Admin/unauthenticated requests bypass. Open Food Facts traffic caches via `products/` collection.
+
+---
+
+# Refactor Phase 2–5 Endpoints (catalog + purchases + waste + insights)
+
+All refactor endpoints require Firebase auth via `__session` cookie or `Authorization: Bearer <token>`. Admin endpoints additionally require `role=admin`. Errors are mapped from `DomainError` subclasses (`NotFoundError` → 404, `ConflictError` → 409, `ValidationError` → 400, `FeatureDisabledError` → 404, `RateLimitError` → 429, `TransientError` → 503).
+
+## Catalog (`/api/catalog`)
+
+User's personal reusable name catalog. Doc ID format: `{user_id}__{name_norm}`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/catalog` | List. Query: `?q=<prefix>&sort_by=last_purchased_at\|total_purchases\|display_name&limit=` |
+| GET | `/api/catalog/lookup/barcode/{barcode}` | Find caller's catalog entry by barcode — returns `{entry: null}` if none |
+| GET | `/api/catalog/{name_norm}` | Entry + `history` array (last 20 purchase events) |
+| PATCH | `/api/catalog/{name_norm}` | Partial update: `display_name` / `barcode` (pass `""` to unlink) / `default_location` / `default_category` |
+| POST | `/api/catalog/{name_norm}/merge` | Body `{target_name_norm}` — reparents all purchases to target, deletes source |
+| DELETE | `/api/catalog/{name_norm}?force=false` | 409 if `active_purchases > 0` unless `force=true` |
+
+## Purchases (`/api/purchases`)
+
+Purchase events — one per shopping trip / individual buy.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/purchases` | Create (transactional catalog upsert + event + counter increment). Body: `name` OR `catalog_name_norm` (one required), `barcode?`, `quantity=1.0`, `expiry_raw?` (NL string), `expiry_date?`, `price?`, `currency?`, `payment_method?` (cash\|card), `location?`, `date_bought?`. **Fires milestone check via BackgroundTasks.** |
+| GET | `/api/purchases` | List. Query: `?status=&location=&catalog_name_norm=&limit=` |
+| GET | `/api/purchases/{event_id}` | Single event |
+| PATCH | `/api/purchases/{event_id}` | Partial update (NOT status). Fields: `quantity`, `unit`, `expiry_raw`, `expiry_date`, `price`, `payment_method`, `location` |
+| POST | `/api/purchases/{event_id}/status` | Terminal status transition. Body: `{status: used\|thrown\|transferred, reason?: used_up\|expired\|bad\|gift, transferred_to?}` |
+| POST | `/api/purchases/consume` | FIFO consume by catalog. Body: `{catalog_name_norm, quantity=1}` — marks oldest-expiry active events as used |
+| DELETE | `/api/purchases/{event_id}` | Hard delete (prefer status transition for history) |
+
+## Countries (`/api/countries`)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/countries` | Seeded list (MY, SG, ID, TH, US, GB, CN, JP, KR, AU) with GS1 prefix ranges |
+| GET | `/api/countries/lookup/{barcode}` | 3-digit GS1 prefix → ISO country code → `{barcode, country_code}` |
+
+## Reminders (`/api/reminders`)
+
+7/14/21-day nudges written by `nudge_service.scan_reminders` scheduler (daily 08:00 UTC).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/reminders?include_dismissed=false&limit=20` | List (stage desc) |
+| GET | `/api/reminders/{reminder_id}` | Single |
+| POST | `/api/reminders/{reminder_id}/dismiss` | Body: `{action: used\|thrown\|still_have\|snooze, reason?}`. `used`/`thrown` also transition the linked purchase event. |
+
+## Waste + Spending + Health Score (`/api/waste`)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/waste/summary?period=week\|month\|year\|all` | Thrown count + value + top-10 wasted |
+| GET | `/api/waste/spending?period=...` | Cash / card / untracked totals |
+| GET | `/api/waste/health-score?no_cache=false` | Score 0-100, grade green/yellow/red, components, `waste_rate_month`. Cached 5min at `users/{uid}/cache/health`. See `docs/HEALTH_SCORE.md`. |
+
+## Insights (`/api/insights`)
+
+Milestone-driven insight docs emitted at 50/100/500/1000 total purchases.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/insights` | Active (non-dismissed) insights. Gated behind `insights` flag — returns `{count:0, insights:[]}` when off. Rich content: `top_purchased`, `waste_breakdown`, `spending`, `shopping_frequency`, `avoid_list`, `description` narrative. |
+| GET | `/api/insights/{insight_id}` | Single |
+| POST | `/api/insights/{insight_id}/dismiss` | Mark dismissed |
+
+## Barcode scan-info (`/api/barcode/.../scan-info`)
+
+Unified post-scan result for the new catalog+purchases model.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/barcode/{barcode}/scan-info?user_id=` | Returns `{barcode, country_code, user_catalog_match, global_product, user_history: {count_purchased, active_stock, last_bought, avg_price, waste_rate, active_items}, suggested_actions[]}` |
+
+## Feature Flags
+
+Public subset (no auth) used by UI gating; full set (admin) used by `FeatureFlagsTab`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/features/public` | Subset: `ocr_enabled`, `receipt_scan`, `smart_camera`, `recipe_ocr`, `shelf_audit`, `progressive_nudges`, `financial_tracking`, `insights`, `nl_expiry_parser`, `legacy_endpoints_use_new_model` |
+| GET | `/api/admin/features` | Full flag dict (admin-only) |
+| PATCH | `/api/admin/features` | Body: `{<flag>: <value>, ...}`. Rejects unknown flags. Invalidates 60s in-process cache immediately. See `docs/FEATURE_FLAGS.md`. |
+
+## Admin catalog analysis (`/api/admin/catalog-analysis`)
+
+Cross-user aggregations. Cached at `app_config/catalog_analysis_cache` — refreshed weekly (Sun 02:00) or via `?refresh=true`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/admin/catalog-analysis?refresh=false` | `{barcode_to_names[], no_barcode_names[], cleanup_preview[], computed_at}` |
+| POST | `/api/admin/catalog-analysis/promote` | Body: `{barcode, canonical_name}` — writes global `products/{barcode}` + audit log |
+| POST | `/api/admin/catalog-analysis/flag-spam` | Body: `{barcode, reason?}` |
+
+See `docs/ADMIN_CATALOG_ANALYSIS.md`.
+
+## Legacy endpoints (backward-compat shim)
+
+Old mobile endpoints (`/api/inventory/my`, `/api/barcode/{bc}/add-to-inventory`, `/api/barcode/{bc}/use-one`, `/api/barcode/{bc}/inventory`) continue to work. When feature flag `legacy_endpoints_use_new_model=true` (flip after running migration), they serve from the new catalog+purchases model via `app/services/compat/legacy_item_shim.py` — response shape translated back to legacy `grocery_items` format. Default is `false` to preserve pre-migration behaviour.
+
+## OCR-gated endpoints
+
+`/api/receipt/*` and `/api/scan/*` routers are mounted with `Depends(require_flag("ocr_enabled"))`. When OFF → 404. Recipe OCR `/api/meals/scan-recipe` is gated by `recipe_ocr`.

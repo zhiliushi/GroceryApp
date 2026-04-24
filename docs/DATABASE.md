@@ -1,11 +1,330 @@
 # Database Documentation
 
+> **REFACTORED 2026-04:** Data model pivoted to catalog + purchase-events pattern. This document reflects the NEW schema. Legacy `grocery_items` collection is preserved read-only during migration; see `docs/MIGRATION_GUIDE.md`.
+
 ## Overview
 
 GroceryApp uses two database layers:
 
-1. **WatermelonDB (SQLite)** — Local database on the mobile device. Offline-first, reactive queries, automatic change tracking.
-2. **Firebase Firestore** — Cloud database for sync, shared data, and backend queries.
+1. **WatermelonDB (SQLite)** — Local database on the mobile device (mobile app only, deferred refactor). Offline-first, reactive queries, automatic change tracking.
+2. **Firebase Firestore** — Cloud database for sync, shared data, backend queries, and the single source of truth for the refactored web admin.
+
+## Firestore Schema (Refactored)
+
+### Global Collections
+
+#### `catalog_entries/{user_id}__{name_norm}`
+
+Per-user name catalog. Doc ID is composite: `{user_id}__{name_norm}` where `name_norm = re.sub(r"[^\w\s]", "", name.strip().lower()).replace(" ", "_")`. This enforces (user_id, name) uniqueness at the Firestore key level.
+
+```yaml
+user_id: str                      # FK to users, redundant with doc-id prefix
+name_norm: str                    # normalized name, redundant with doc-id suffix
+display_name: str                 # user's preferred casing ("Organic Milk")
+aliases: str[]                    # other casings seen when user re-entered name
+barcode: str | null               # SINGLE barcode (not array), nullable
+country_code: str | null          # inherited from barcode prefix or manual
+default_location: str | null      # last-used location (fridge/pantry/freezer)
+default_category: str | null      # inferred or user-chosen
+image_url: str | null             # from linked product
+total_purchases: int              # all-time count (not decremented)
+active_purchases: int              # current active count (inc/dec by events)
+last_purchased_at: timestamp | null
+needs_review: bool                # flagged by reminder stage-3 or AI dedup
+# Standard metadata:
+created_at: timestamp
+updated_at: timestamp
+schema_version: int = 1
+created_by: str                   # uid or "system" or "migration"
+source: str                       # "api" | "migration" | "barcode_scan" | "admin"
+```
+
+**Uniqueness rules:**
+- `(user_id, name_norm)` — enforced by doc ID
+- `(user_id, barcode)` when barcode != null — enforced by API transaction (409 on conflict)
+
+**Indexes:**
+- `(user_id, barcode)` — scan lookup
+- `(user_id, last_purchased_at DESC)` — recent catalog
+- `(user_id, total_purchases DESC)` — frequently bought
+- `(barcode)` collection-wide — admin barcode→names aggregation
+
+---
+
+#### `products/{barcode}`
+
+Global barcode-keyed product DB (kept from existing).
+
+```yaml
+barcode: str                      # doc id
+product_name: str
+brands: str | null
+categories: str | null
+image_url: str | null
+nutrition_data: object | null
+source: str                       # "openfoodfacts" | "contributed" | "manual" | "unknown"
+# NEW fields (added during refactor):
+country_code: str | null          # ISO alpha-2, detected from GS1 prefix
+country_source: str               # "gs1_prefix" | "off" | "manual" | "unknown"
+name_norm: str                    # normalized product_name for case-insensitive dedup
+barcode_prefix: str               # first 3 digits, cached for fast filter
+verified: bool                    # admin-verified
+last_verified_at: timestamp | null
+# Standard metadata
+cached_at: timestamp
+updated_at: timestamp
+schema_version: int = 1
+```
+
+---
+
+#### `contributed_products/{barcode}`
+
+User-submitted products awaiting admin review (kept from existing).
+
+```yaml
+barcode: str                      # doc id
+product_name: str
+brands: str | null
+categories: str | null
+image_url: str | null
+contributed_by: str               # uid or email
+contributed_at: timestamp
+status: str                       # "pending_review" | "approved" | "rejected"
+reviewed_by: str | null
+reviewed_at: timestamp | null
+rejection_reason: str | null
+```
+
+---
+
+#### `countries/{code}` — NEW
+
+Country definitions with GS1 barcode prefix ranges for auto-detection.
+
+```yaml
+code: str                         # ISO alpha-2, doc id ("MY", "SG", "US")
+name: str                         # "Malaysia"
+currency: str                     # "MYR"
+currency_symbol: str              # "RM"
+gs1_prefix_ranges: object[]       # [{start: "955", end: "955"}, ...]
+flag_emoji: str                   # "🇲🇾"
+locale: str                       # "ms-MY"
+enabled: bool
+# Standard metadata
+created_at: timestamp
+updated_at: timestamp
+```
+
+Seeded once at startup. Referenced by `barcode_service` for country detection on unknown barcodes.
+
+---
+
+#### `foodbanks/{id}` — existing (unchanged)
+
+Foodbank directory with lat/lng, hours, country filtering.
+
+---
+
+#### `households/{id}` — existing (unchanged)
+
+Shared family groupings with member roles and tier-based limits.
+
+---
+
+#### `app_config/*` — global config docs
+
+- `app_config/features` — **NEW** — feature flags:
+  ```yaml
+  ocr_enabled: bool
+  receipt_scan: bool
+  smart_camera: bool
+  recipe_ocr: bool
+  shelf_audit: bool
+  progressive_nudges: bool
+  financial_tracking: bool
+  insights: bool
+  nudge_thresholds: {expiry: 5, price: 10, volume: 20}
+  updated_at: timestamp
+  updated_by: str                 # admin uid
+  ```
+- `app_config/ocr` — OCR provider config (existing, feature-flag gated)
+- `app_config/visibility` — page visibility by tier (existing)
+- `app_config/tiers` — tier definitions (existing)
+- `app_config/locations` — storage locations list (existing)
+- `app_config/map` — map center (existing)
+- `app_config/stores` — manual store list (existing)
+- `app_config/exchange_rates` — currency rates (existing)
+- `app_config/migrations/{name}` — **NEW** — migration progress tracking
+- `app_config/catalog_analysis_cache` — **NEW** — pre-computed admin aggregation
+
+---
+
+### Per-User Subcollections
+
+#### `users/{uid}` — existing profile
+
+```yaml
+uid: str                          # doc id
+email: str
+display_name: str
+role: str                         # "user" | "admin"
+tier: str                         # "free" | "plus" | "pro"
+status: str                       # "active" | "disabled" | "pending"
+approved: bool
+approved_at: timestamp | null
+approved_by: str | null
+selected_tools: str[]             # for plus tier "Smart Cart"
+household_id: str | null
+household_role: str | null        # "owner" | "member"
+country: str | null
+currency: str | null
+# Standard metadata
+created_at: timestamp
+updated_at: timestamp
+```
+
+---
+
+#### `users/{uid}/purchases/{event_id}` — NEW
+
+Individual purchase events. Replaces `users/{uid}/grocery_items`.
+
+```yaml
+catalog_name_norm: str            # FK to catalog_entries
+catalog_display: str              # denormalized for list views
+barcode: str | null               # denormalized at time of purchase
+country_code: str | null
+quantity: float                   # supports 0.5kg etc
+unit: str | null                  # "pcs" | "g" | "kg" | "ml" | "L"
+expiry_date: timestamp | null
+expiry_source: str | null         # "user" | "nlp" | "ocr" | "none"
+expiry_raw: str | null            # original input ("tomorrow")
+price: float | null
+currency: str | null
+payment_method: str | null        # "cash" | "card" | null
+date_bought: timestamp
+location: str | null              # pantry/fridge/freezer/...
+status: str                       # active | used | thrown | transferred
+consumed_date: timestamp | null
+consumed_reason: str | null       # "used_up" | "expired" | "bad" | "gift" | null
+transferred_to: str | null        # uid or foodbank_id
+reminder_stage: int               # 0=none, 1=7d, 2=14d, 3=21d
+last_reminded_at: timestamp | null
+source: str                       # manual | barcode_scan | receipt | migration
+source_ref: str | null            # migration link, scan_id, receipt_id
+household_id: str | null
+# Standard metadata
+created_at: timestamp
+updated_at: timestamp
+schema_version: int = 1
+created_by: str
+```
+
+**Indexes:**
+- `(status, expiry_date ASC)` — expiring soon
+- `(status, date_bought DESC)` — untracked age buckets
+- `(catalog_name_norm, status)` — per-catalog history
+- `(status, date_bought ASC)` — FIFO use
+- Collection-group `purchases` with `(status, expiry_date)` — admin expiry flagging
+
+---
+
+#### `users/{uid}/reminders/{reminder_id}` — NEW
+
+7/14/21-day reminder queue.
+
+```yaml
+purchase_event_id: str
+catalog_name_norm: str
+display_name: str
+stage: int                        # 7 | 14 | 21
+message: str
+created_at: timestamp
+dismissed_at: timestamp | null
+acted_at: timestamp | null
+action_taken: str | null          # "used" | "thrown" | "snooze" | "still_have"
+```
+
+---
+
+#### `users/{uid}/insights/{milestone_id}` — NEW
+
+Milestone analytics output (at 50/100/500/1000 purchases).
+
+```yaml
+milestone: int                    # 50 | 100 | 500 | 1000
+triggered_at: timestamp
+purchase_count_at_trigger: int
+generated_at: timestamp
+top_purchased: [{name, count}]    # top 10
+waste_breakdown: [{name, count, rm_value}]
+spending: {cash: float, card: float, total: float}
+shopping_frequency: {avg_days_between, peak_day}
+avoid_list: [{name, waste_rate}]  # high-waste items
+summary_text: str                 # LLM-generated narrative
+status: str                       # "pending" | "complete" | "failed"
+```
+
+---
+
+#### Existing per-user subcollections (retained)
+
+- `users/{uid}/recipes/{recipe_id}`
+- `users/{uid}/price_records/{record_id}`
+- `users/{uid}/shopping_lists/{list_id}/items/{item_id}`
+- `users/{uid}/analytics_events/{event_id}`
+- `users/{uid}/grocery_items/{id}` — **LEGACY** — kept read-only during migration window, marked `_migrated: true`
+
+---
+
+### Standard Metadata Fields (every document)
+
+Every Firestore document must include:
+
+```yaml
+created_at: timestamp             # SERVER_TIMESTAMP on create
+updated_at: timestamp             # SERVER_TIMESTAMP on every write
+schema_version: int = 1           # for future migrations
+created_by: str                   # uid or "system" | "migration" | "scheduler"
+source: str                       # "api" | "migration" | "scheduler" | "admin" | "telegram"
+```
+
+Enforced by `app/core/metadata.py` helpers `apply_create_metadata()` and `apply_update_metadata()`.
+
+---
+
+## Firestore Security Rules (key rules)
+
+```
+match /catalog_entries/{entry_id} {
+  allow read: if request.auth != null && resource.data.user_id == request.auth.uid;
+  allow create: if request.auth != null 
+                && request.resource.data.user_id == request.auth.uid
+                && entry_id == request.auth.uid + "__" + request.resource.data.name_norm;
+  allow update: if request.auth != null && resource.data.user_id == request.auth.uid;
+  allow delete: if request.auth != null 
+                && resource.data.user_id == request.auth.uid
+                && resource.data.active_purchases == 0;
+}
+
+match /users/{uid}/purchases/{event_id} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}
+
+match /products/{barcode} {
+  allow read: if true;  // public
+  allow write: if request.auth != null && exists(...isAdmin check...);
+}
+```
+
+Admin SDK bypasses rules. Composite `(user_id, barcode)` uniqueness enforced at API layer with transactions (see `BACKEND.md`).
+
+---
+
+## Legacy Sections (pre-refactor, retained for historical reference)
+
+
 
 ## Standardized Enums & Constants
 

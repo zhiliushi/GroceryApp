@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useCreateRecipe, useUpdateRecipe, useScanRecipeImage } from '@/api/mutations/useRecipeMutations';
+import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import type { Recipe, RecipeIngredient } from '@/types/api';
 
 interface FormIngredient extends RecipeIngredient {
@@ -20,6 +21,8 @@ export default function RecipeFormPage() {
   const createMutation = useCreateRecipe();
   const updateMutation = useUpdateRecipe();
   const scanMutation = useScanRecipeImage();
+  const { data: flags } = useFeatureFlags();
+  const recipeOcrEnabled = flags ? flags.recipe_ocr !== false : false;
 
   // Load existing recipe for edit
   const { data: existing } = useQuery({
@@ -132,8 +135,8 @@ export default function RecipeFormPage() {
       )}
 
       <div className="bg-ga-bg-card border border-ga-border rounded-lg p-6 space-y-4">
-        {/* Scan button */}
-        {!isEdit && (
+        {/* Scan button — hidden when recipe_ocr flag is off */}
+        {!isEdit && recipeOcrEnabled && (
           <div className="flex items-center gap-2">
             <label className="bg-ga-accent/20 hover:bg-ga-accent/30 text-ga-accent text-sm font-medium rounded-lg px-4 py-2 cursor-pointer transition-colors">
               📷 Scan Recipe Photo

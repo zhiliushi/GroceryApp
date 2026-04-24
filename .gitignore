@@ -113,3 +113,6 @@ mobile-app/ios/Pods/
 
 # Windows reserved names (shouldn't exist)
 nul
+
+# Claude Code personal memory (not committed)
+.claude/memory/

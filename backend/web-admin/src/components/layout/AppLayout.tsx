@@ -1,10 +1,17 @@
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import FloatingScanButton from '@/components/barcode/FloatingScanButton';
+import StickyAddButton from './StickyAddButton';
+import PrimaryActionFab from './PrimaryActionFab';
+import QuickAddModal from '@/components/quickadd/QuickAddModal';
+import GlobalSearchBar from '@/components/search/GlobalSearchBar';
+import UpdatePrompt from '@/components/pwa/UpdatePrompt';
+import InstallPrompt from '@/components/pwa/InstallPrompt';
 import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/utils/cn';
 
 export default function AppLayout() {
-  const { sidebarCollapsed, setSidebarOpen } = useUiStore();
+  const { sidebarCollapsed, setSidebarOpen, quickAddOpen, closeQuickAdd } = useUiStore();
 
   return (
     <div className="min-h-screen bg-ga-bg-primary">
@@ -27,6 +34,21 @@ export default function AppLayout() {
       >
         <Outlet />
       </main>
+
+      {/* Desktop Add pill + Scan pill (top-right). Mobile uses PrimaryActionFab below. */}
+      <StickyAddButton />
+      <FloatingScanButton />
+      <QuickAddModal open={quickAddOpen} onClose={closeQuickAdd} />
+
+      {/* Mobile-only speed-dial FAB — consolidates Add + Scan into one thumb-zone control. */}
+      <PrimaryActionFab />
+
+      {/* Cmd/Ctrl+K federated search — mounted globally, collapsed by default. */}
+      <GlobalSearchBar />
+
+      {/* PWA: service-worker update toast + mobile "Install" banner. */}
+      <UpdatePrompt />
+      <InstallPrompt />
     </div>
   );
 }

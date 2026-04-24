@@ -1179,3 +1179,96 @@ def _make_group(words: list[dict], block: int, line: int) -> dict:
         "line": line,
         "word_count": len(words),
     }
+
+
+# ---------------------------------------------------------------------------
+# Feature Flags (refactor Phase 2)
+# ---------------------------------------------------------------------------
+
+@router.get("/features")
+async def get_feature_flags(admin: UserInfo = Depends(require_admin)):
+    """Return all feature flags (merged with defaults)."""
+    from app.core import feature_flags
+    return {"flags": feature_flags.get_all_flags()}
+
+
+@router.patch("/features")
+async def update_feature_flags(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Update one or more feature flags. Body is a dict of {flag_name: value}.
+
+    Cache invalidated immediately so change takes effect on next request.
+    """
+    from firebase_admin import firestore as _fs
+    from app.core import feature_flags
+    from app.core.metadata import apply_update_metadata
+
+    if not isinstance(body, dict) or not body:
+        raise HTTPException(status_code=400, detail="Body must be a non-empty dict of flag updates")
+
+    known = set(feature_flags.DEFAULT_FLAGS.keys())
+    unknown = [k for k in body.keys() if k not in known]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown flags: {unknown}")
+
+    db = _fs.client()
+    doc_ref = db.collection("app_config").document("features")
+    payload = apply_update_metadata({**body, "updated_by": admin.uid})
+    doc_ref.set(payload, merge=True)
+    feature_flags.invalidate_cache()
+    logger.info("feature_flags.updated admin=%s fields=%s", admin.uid, list(body.keys()))
+    return {"success": True, "flags": feature_flags.get_all_flags()}
+
+
+# ---------------------------------------------------------------------------
+# Catalog Analysis (refactor Phase 2)
+# ---------------------------------------------------------------------------
+
+@router.get("/catalog-analysis")
+async def get_catalog_analysis(
+    refresh: bool = Query(False, description="force rebuild"),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Aggregated cross-user catalog view (barcode→names, unnamed, cleanup preview).
+
+    Uses cached doc unless refresh=true. Cache refreshed weekly by scheduler.
+    """
+    from app.services import catalog_analysis_service
+    from app.core.exceptions import NotFoundError
+
+    if refresh:
+        return catalog_analysis_service.refresh_cache()
+    try:
+        return catalog_analysis_service.get_cached_analysis()
+    except NotFoundError:
+        # First run — build cache on demand
+        return catalog_analysis_service.refresh_cache()
+
+
+@router.post("/catalog-analysis/promote")
+async def promote_to_global(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Promote a user-named catalog entry to the global products collection.
+
+    Body: {"barcode": "9555012345678", "canonical_name": "Milk"}
+    """
+    from app.services import catalog_analysis_service
+
+    barcode = (body or {}).get("barcode", "").strip()
+    canonical_name = (body or {}).get("canonical_name", "").strip()
+    if not barcode or not canonical_name:
+        raise HTTPException(status_code=400, detail="barcode and canonical_name are required")
+    return catalog_analysis_service.promote_to_global(barcode, canonical_name, admin.uid)
+
+
+@router.post("/catalog-analysis/flag-spam")
+async def flag_spam(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Flag a barcode as spam in the global products catalog.
+
+    Body: {"barcode": "9555012345678", "reason": "optional free text"}
+    """
+    from app.services import catalog_analysis_service
+
+    barcode = (body or {}).get("barcode", "").strip()
+    reason = (body or {}).get("reason", "")
+    if not barcode:
+        raise HTTPException(status_code=400, detail="barcode is required")
+    return catalog_analysis_service.flag_spam(barcode, admin.uid, reason=reason)
