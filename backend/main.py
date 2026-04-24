@@ -178,6 +178,34 @@ async def domain_exception_handler(request: Request, exc: DomainError):
     )
 
 
+# Firestore composite-index-missing — translate the gRPC FailedPrecondition into
+# a clean 503 with the console URL the user can click to create the index.
+# Without this, the 500 traceback leaks to the SPA and just shows a generic error.
+import re as _re
+from google.api_core.exceptions import FailedPrecondition as _FailedPrecondition
+
+
+@app.exception_handler(_FailedPrecondition)
+async def firestore_index_handler(request: Request, exc: _FailedPrecondition):
+    message = str(exc)
+    # Extract the Firebase console URL Firestore embeds in the error.
+    url_match = _re.search(r"https://console\.firebase\.google\.com/[^\s]+", message)
+    index_url = url_match.group(0) if url_match else None
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "Firestore composite index not deployed yet. Either click "
+                "the URL below to auto-create it (Firebase builds in ~2 min), "
+                "or run `firebase deploy --only firestore:indexes` from the "
+                "repo root to push all 16 indexes at once."
+            ),
+            "index_url": index_url,
+            "firestore_error": message[:500],
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Root & Health
 # ---------------------------------------------------------------------------
