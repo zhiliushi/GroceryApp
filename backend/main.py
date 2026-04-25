@@ -387,6 +387,32 @@ class SPAFallbackMiddleware(BaseHTTPMiddleware):
             and not path.startswith("/static/")
             and path != "/health"
         ):
+            # PWA: vite-plugin-pwa emits sw.js, manifest.webmanifest, and
+            # workbox-*.js to the root of static/spa/. They aren't covered by
+            # the /assets mount, so without this branch the SPA catch-all
+            # returns index.html (HTML) for /sw.js, which browsers reject as
+            # a service worker. If the path looks like a file (has a basename
+            # extension), try to serve it from static/spa/ before falling
+            # through to the SPA shell.
+            basename = os.path.basename(path)
+            if path != "/" and "." in basename:
+                candidate = os.path.normpath(os.path.join(_spa_dir, path.lstrip("/")))
+                # Path-traversal guard — must remain inside _spa_dir
+                if candidate.startswith(_spa_dir) and os.path.isfile(candidate):
+                    media_type = None
+                    if basename.endswith(".webmanifest"):
+                        media_type = "application/manifest+json"
+                    elif basename.endswith(".js"):
+                        media_type = "application/javascript"
+                    elif basename.endswith(".css"):
+                        media_type = "text/css"
+                    headers: dict[str, str] = {}
+                    if basename == "sw.js":
+                        # Lets the SW register at root scope without a
+                        # special directory layout. Optional but cheap.
+                        headers["Service-Worker-Allowed"] = "/"
+                    return FileResponse(candidate, media_type=media_type, headers=headers)
+
             index_path = os.path.join(_spa_dir, "index.html")
             if os.path.isfile(index_path):
                 return FileResponse(index_path)
