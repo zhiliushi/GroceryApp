@@ -2,6 +2,10 @@
 
 Supersedes `C:\Users\Shahir\.claude\plans\hidden-yawning-shamir.md` (complete as of 2026-04-23).
 
+**Pre-validation triage docs (use these first):**
+- [`docs/FREE_FIXES_BACKLOG.md`](FREE_FIXES_BACKLOG.md) — code/config improvements that cost nothing. Knock these out before paid work.
+- [`docs/PAID_ENHANCEMENTS.md`](PAID_ENHANCEMENTS.md) — items requiring subscriptions or paid services. Each has trigger criteria so we don't spend prematurely.
+
 ---
 
 ## ✅ Shipped — 2026-04-23 refactor
