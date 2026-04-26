@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,8 @@ def get_user_dispute(barcode: str, user_id: str) -> Optional[Dict[str, Any]]:
     try:
         docs = (
             _collection()
-            .where("barcode", "==", barcode)
-            .where("submitted_by", "==", user_id)
+            .where(filter=FieldFilter("barcode", "==", barcode))
+            .where(filter=FieldFilter("submitted_by", "==", user_id))
             .order_by("submitted_at", direction=firestore.Query.DESCENDING)
             .limit(1)
             .get()
@@ -159,7 +160,7 @@ def count_pending_for_barcode(barcode: str) -> int:
     """Count pending disputes for a specific barcode."""
     count = 0
     try:
-        docs = _collection().where("barcode", "==", barcode).where("status", "==", "pending").get()
+        docs = _collection().where(filter=FieldFilter("barcode", "==", barcode)).where(filter=FieldFilter("status", "==", "pending")).get()
         count = len(list(docs))
     except Exception as e:
         logger.warning("Failed to count disputes for %s: %s", barcode, e)

@@ -17,10 +17,12 @@ import re
 from typing import Any, Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.core.metadata import apply_create_metadata, apply_update_metadata
+from app.core.slow_query import timed
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +99,8 @@ def find_by_barcode(user_id: str, barcode: str) -> Optional[dict]:
     query = (
         _db()
         .collection(_COLLECTION)
-        .where("user_id", "==", user_id)
-        .where("barcode", "==", barcode)
+        .where(filter=FieldFilter("user_id", "==", user_id))
+        .where(filter=FieldFilter("barcode", "==", barcode))
         .limit(1)
     )
     for doc in query.stream():
@@ -115,6 +117,7 @@ _SORT_FIELDS = {
 }
 
 
+@timed("catalog.list_catalog")
 def list_catalog(
     user_id: str,
     query: str = "",
@@ -135,14 +138,14 @@ def list_catalog(
         {"items": [...], "next_cursor": str | None, "count": int}
         next_cursor is None when no further pages exist.
     """
-    q = _db().collection(_COLLECTION).where("user_id", "==", user_id)
+    q = _db().collection(_COLLECTION).where(filter=FieldFilter("user_id", "==", user_id))
 
     # Substring prefix match on name_norm
     if query:
         q_norm = _normalize(query)
         if q_norm:
             # Firestore prefix search via range
-            q = q.where("name_norm", ">=", q_norm).where("name_norm", "<", q_norm + "")
+            q = q.where(filter=FieldFilter("name_norm", ">=", q_norm)).where(filter=FieldFilter("name_norm", "<", q_norm + ""))
 
     # Resolve sort config
     sort_key = sort_by if sort_by in _SORT_FIELDS else "last_purchased_at"
@@ -437,7 +440,7 @@ def merge_catalog(user_id: str, src_name_norm: str, dst_name_norm: str) -> dict:
         .collection("users")
         .document(user_id)
         .collection("purchases")
-        .where("catalog_name_norm", "==", src_name_norm)
+        .where(filter=FieldFilter("catalog_name_norm", "==", src_name_norm))
     )
     batch = _db().batch()
     batch_count = 0
@@ -519,8 +522,8 @@ def cleanup_unlinked_catalog(dry_run: bool = False) -> int:
     query = (
         _db()
         .collection(_COLLECTION)
-        .where("active_purchases", "==", 0)
-        .where("last_purchased_at", "<", cutoff)
+        .where(filter=FieldFilter("active_purchases", "==", 0))
+        .where(filter=FieldFilter("last_purchased_at", "<", cutoff))
     )
 
     deleted = 0

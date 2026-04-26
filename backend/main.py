@@ -144,36 +144,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API Routers
-app.include_router(barcode.router, prefix="/api/barcode", tags=["barcode"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
-app.include_router(foodbank.router, prefix="/api/foodbanks", tags=["foodbanks"])
-app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
-app.include_router(household.router, prefix="/api/household", tags=["household"])
-app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
+# Error-rate alerting (5xx > 5% in 5min sliding window)
+from app.core.error_rate import ErrorRateMiddleware  # noqa: E402
+app.add_middleware(ErrorRateMiddleware)
 
-# OCR-gated routers — 404 when `ocr_enabled` is off (mobile app falls back cleanly)
-app.include_router(
-    receipt.router,
-    prefix="/api/receipt",
-    tags=["receipt"],
-    dependencies=[feature_flags.require_flag("ocr_enabled")],
-)
-app.include_router(
-    scan.router,
-    prefix="/api/scan",
-    tags=["scan"],
-    dependencies=[feature_flags.require_flag("ocr_enabled")],
-)
-
-# Refactored Phase 2 routers — new catalog + purchases + waste model
-app.include_router(catalog.router, prefix="/api/catalog", tags=["catalog"])
-app.include_router(purchases.router, prefix="/api/purchases", tags=["purchases"])
-app.include_router(countries.router, prefix="/api/countries", tags=["countries"])
-app.include_router(reminders.router, prefix="/api/reminders", tags=["reminders"])
-app.include_router(waste.router, prefix="/api/waste", tags=["waste"])
-app.include_router(insights.router, prefix="/api/insights", tags=["insights"])
-app.include_router(search.router, prefix="/api/search", tags=["search"])
+# API Routers — dual-mounted under /api/* (legacy) AND /api/v1/* (versioned).
+# Clients should migrate to /api/v1/*; the unprefixed /api/* stays as an alias
+# until at least 2026-12-31 (90 days post-stabilisation), then becomes 410.
+_OCR_DEP = [feature_flags.require_flag("ocr_enabled")]
+_ROUTERS: list[tuple] = [
+    (barcode.router, "/barcode", ["barcode"], None),
+    (analytics.router, "/analytics", ["analytics"], None),
+    (foodbank.router, "/foodbanks", ["foodbanks"], None),
+    (admin.router, "/admin", ["admin"], None),
+    (household.router, "/household", ["household"], None),
+    (meals.router, "/meals", ["meals"], None),
+    (receipt.router, "/receipt", ["receipt"], _OCR_DEP),
+    (scan.router, "/scan", ["scan"], _OCR_DEP),
+    (catalog.router, "/catalog", ["catalog"], None),
+    (purchases.router, "/purchases", ["purchases"], None),
+    (countries.router, "/countries", ["countries"], None),
+    (reminders.router, "/reminders", ["reminders"], None),
+    (waste.router, "/waste", ["waste"], None),
+    (insights.router, "/insights", ["insights"], None),
+    (search.router, "/search", ["search"], None),
+]
+for _router, _suffix, _tags, _deps in _ROUTERS:
+    _kwargs = {"tags": _tags}
+    if _deps:
+        _kwargs["dependencies"] = _deps
+    app.include_router(_router, prefix=f"/api{_suffix}", **_kwargs)
+    # Versioned alias — same handlers, /api/v1/* prefix
+    app.include_router(_router, prefix=f"/api/v1{_suffix}", **_kwargs)
 
 # SPA catch-all (serves React app for all non-API routes)
 # Replaces the old Jinja2 web.router

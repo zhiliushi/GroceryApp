@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.metadata import apply_create_metadata
 
@@ -143,7 +144,7 @@ def _load_prefix_cache() -> None:
     """Load all prefix ranges into in-memory lookup dict. Called lazily."""
     global _prefix_cache, _prefix_cache_loaded
     try:
-        countries = _db().collection(_COLLECTION).where("enabled", "==", True).stream()
+        countries = _db().collection(_COLLECTION).where(filter=FieldFilter("enabled", "==", True)).stream()
         cache: dict[str, str] = {}
         for doc in countries:
             data = doc.to_dict()
@@ -182,7 +183,7 @@ def list_countries(enabled_only: bool = True) -> list[dict]:
     """List all countries from Firestore."""
     query = _db().collection(_COLLECTION)
     if enabled_only:
-        query = query.where("enabled", "==", True)
+        query = query.where(filter=FieldFilter("enabled", "==", True))
     return [{**doc.to_dict(), "code": doc.id} for doc in query.stream()]
 
 

@@ -1,0 +1,50 @@
+name: Daily Firestore Backup
+
+# Iterates every user, exports their cascade via backup_all_users.py, archives
+# the result as a workflow artifact (90-day retention free).
+#
+# Requires repo secret FIREBASE_CREDENTIALS_JSON containing the full service
+# account JSON (same one Render uses, OR a read-only one with Firestore Viewer).
+
+on:
+  schedule:
+    - cron: '0 17 * * *'  # 17:00 UTC daily = 01:00 MYT (off-peak)
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Export all users
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backup
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: |
+          if [ -z "$FIREBASE_CREDENTIALS_JSON" ]; then
+            echo "::error::FIREBASE_CREDENTIALS_JSON secret not set"
+            exit 1
+          fi
+          python scripts/backup_all_users.py --out-dir backups
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grocery-backup-${{ github.run_id }}
+          path: backend/backups/*.tar.gz
+          retention-days: 90

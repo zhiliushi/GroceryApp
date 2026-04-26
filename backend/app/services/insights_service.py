@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from collections import Counter, defaultdict
 
 import httpx
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.config import settings
 from app.schemas.analytics import Insight, InsightPriority, InsightCategory
@@ -360,7 +361,7 @@ def _aggregate_user_stats(db, uid: str) -> Dict[str, Any]:
 
     # Catalog entries → top_purchased + avoid_list
     catalog_entries: List[Dict[str, Any]] = []
-    for doc in db.collection("catalog_entries").where("user_id", "==", uid).stream():
+    for doc in db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid)).stream():
         data = doc.to_dict() or {}
         catalog_entries.append(data)
 
@@ -549,7 +550,7 @@ def check_user_milestones(uid: str) -> int:
 
     # Cheap first pass: aggregate total from catalog counters only.
     total = 0
-    for doc in db.collection("catalog_entries").where("user_id", "==", uid).stream():
+    for doc in db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid)).stream():
         total += int((doc.to_dict() or {}).get("total_purchases", 0))
 
     # Which milestones are due?

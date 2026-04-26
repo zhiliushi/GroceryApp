@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("export")
@@ -94,7 +95,7 @@ def export_user(uid: str, include_analytics: bool = False, include_receipts: boo
 
     data["user"] = _serialize(user_doc.to_dict() or {})
     data["catalog_entries"] = _collect(
-        db.collection("catalog_entries").where("user_id", "==", uid)
+        db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid))
     )
     data["purchases"] = _collect(db.collection("users").document(uid).collection("purchases"))
     data["reminders"] = _collect(db.collection("users").document(uid).collection("reminders"))

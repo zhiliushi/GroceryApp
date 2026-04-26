@@ -28,6 +28,7 @@ from app.services import (
     inventory_service,
     nudge_service,
     purchase_event_service,
+    waste_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,17 @@ def start():
         replace_existing=True,
     )
 
+    # Daily health-score snapshot (powers /health-score 30-day trend chart)
+    _scheduler.add_job(
+        _health_history_snapshot_job,
+        "cron",
+        hour=23,
+        minute=30,
+        id="health_history_snapshot",
+        name="Daily health score snapshot",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     logger.info("Background scheduler started with %d jobs", len(_scheduler.get_jobs()))
 
@@ -202,3 +214,22 @@ def _catalog_analysis_refresh_job():
         )
     except Exception as exc:
         logger.exception("scheduler.catalog_analysis_refresh failed: %s", exc)
+
+
+def _health_history_snapshot_job():
+    """Snapshot today's health score for every active user."""
+    from firebase_admin import firestore as _fs
+
+    db = _fs.client()
+    snapped = 0
+    failed = 0
+    for user_doc in db.collection("users").stream():
+        try:
+            waste_service.snapshot_health_score(user_doc.id)
+            snapped += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning(
+                "scheduler.health_history_snapshot uid=%s failed: %s", user_doc.id, exc
+            )
+    logger.info("scheduler.health_history_snapshot snapped=%d failed=%d", snapped, failed)

@@ -980,6 +980,17 @@ export interface HealthScore {
   computed_at: string;
 }
 
+export interface HealthHistorySnapshot {
+  date: string;                     // YYYY-MM-DD
+  score: number;                    // 0..100
+  grade: 'green' | 'yellow' | 'red';
+}
+
+export interface HealthHistoryResponse {
+  days: number;
+  snapshots: HealthHistorySnapshot[];
+}
+
 export interface WasteSummaryItem {
   catalog_name_norm: string;
   display_name: string;

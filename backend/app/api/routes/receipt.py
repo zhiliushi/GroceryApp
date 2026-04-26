@@ -413,17 +413,18 @@ def _save_prices_only(uid: str, body: ReceiptConfirmRequest, items: list[dict]) 
 def _get_or_create_store(uid: str, name: str, address: str | None = None) -> str:
     """Find existing store by name (case-insensitive) or create new one."""
     from firebase_admin import firestore
+    from google.cloud.firestore_v1.base_query import FieldFilter
     db = firestore.client()
 
     stores_ref = db.collection("users").document(uid).collection("stores")
 
     # Simple case-insensitive match
-    existing = stores_ref.where("name", "==", name).limit(1).get()
+    existing = stores_ref.where(filter=FieldFilter("name", "==", name)).limit(1).get()
     for doc in existing:
         return doc.id
 
     # Also check lowercase
-    existing_lower = stores_ref.where("name", "==", name.lower()).limit(1).get()
+    existing_lower = stores_ref.where(filter=FieldFilter("name", "==", name.lower())).limit(1).get()
     for doc in existing_lower:
         return doc.id
 

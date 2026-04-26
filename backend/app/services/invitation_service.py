@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
@@ -172,8 +173,8 @@ def get_pending_invites(household_id: str) -> List[Dict[str, Any]]:
     try:
         docs = (
             _invitations()
-            .where("household_id", "==", household_id)
-            .where("status", "==", "pending")
+            .where(filter=FieldFilter("household_id", "==", household_id))
+            .where(filter=FieldFilter("status", "==", "pending"))
             .get()
         )
         for doc in docs:

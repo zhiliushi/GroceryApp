@@ -55,6 +55,17 @@ async def financial_summary(
     return waste_service.get_financial_summary(user.uid, period=period)
 
 
+@router.get("/health-history")
+async def health_history(
+    days: int = Query(30, ge=1, le=365, description="number of days to return"),
+    user: UserInfo = Depends(get_current_user),
+):
+    """Daily health-score snapshots, oldest first. Powers the trend chart on
+    /health-score. Snapshots are written by the `health_history_snapshot`
+    scheduler job — gaps mean the user wasn't active that day."""
+    return {"days": days, "snapshots": waste_service.get_health_history(user.uid, days=days)}
+
+
 @router.get("/health-score")
 async def health_score(
     no_cache: bool = Query(False, description="bypass 5min cache"),

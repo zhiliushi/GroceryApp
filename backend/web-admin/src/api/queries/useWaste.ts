@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { qk } from '@/api/queries/keys';
-import type { FinancialSummary, HealthScore, SpendingSummary, WasteSummary } from '@/types/api';
+import type { FinancialSummary, HealthHistoryResponse, HealthScore, SpendingSummary, WasteSummary } from '@/types/api';
 
 export function useWasteSummary(period: 'week' | 'month' | 'year' | 'all' = 'month') {
   return useQuery({
@@ -49,5 +49,16 @@ export function useHealthScore() {
     queryFn: () =>
       apiClient.get<HealthScore>(API.WASTE_HEALTH_SCORE).then((r) => r.data),
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useHealthHistory(days = 30) {
+  return useQuery({
+    queryKey: qk.waste.healthHistory(days),
+    queryFn: () =>
+      apiClient
+        .get<HealthHistoryResponse>(API.WASTE_HEALTH_HISTORY, { params: { days } })
+        .then((r) => r.data),
+    staleTime: 60 * 60_000, // snapshots only update once a day
   });
 }

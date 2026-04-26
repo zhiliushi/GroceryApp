@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.exceptions import NotFoundError
 from app.core.metadata import apply_update_metadata
@@ -41,7 +42,7 @@ def aggregate_barcode_to_names() -> list[dict]:
 
     entries = (
         _db().collection("catalog_entries")
-        .where("barcode", "!=", None)
+        .where(filter=FieldFilter("barcode", "!=", None))
         .stream()
     )
 
@@ -87,7 +88,7 @@ def aggregate_no_barcode_names() -> list[dict]:
 
     entries = (
         _db().collection("catalog_entries")
-        .where("barcode", "==", None)
+        .where(filter=FieldFilter("barcode", "==", None))
         .stream()
     )
 
@@ -136,8 +137,8 @@ def aggregate_cleanup_preview() -> list[dict]:
     # Firestore needs composite index for this; fallback to client-side filter
     query = (
         _db().collection("catalog_entries")
-        .where("active_purchases", "==", 0)
-        .where("last_purchased_at", "<", cutoff)
+        .where(filter=FieldFilter("active_purchases", "==", 0))
+        .where(filter=FieldFilter("last_purchased_at", "<", cutoff))
     )
 
     result = []

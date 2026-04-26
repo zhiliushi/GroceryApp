@@ -16,6 +16,7 @@ from typing import Optional, List, Dict, Any
 
 import httpx
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.services import foodbank_service
 
@@ -240,7 +241,7 @@ def _refresh_source_entries(source_id: str, source: Dict[str, Any]) -> int:
     # Find foodbanks with matching source_name
     docs = list(
         db.collection("foodbanks")
-        .where("source_name", "==", _source_id_to_name(source_id))
+        .where(filter=FieldFilter("source_name", "==", _source_id_to_name(source_id)))
         .stream()
     )
 

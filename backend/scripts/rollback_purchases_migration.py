@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("rollback")
@@ -49,7 +50,7 @@ def rollback_user(uid: str) -> dict:
     stats = {"uid": uid, "catalog_deleted": 0, "purchases_deleted": 0, "grocery_items_cleared": 0}
 
     # 1. Delete catalog_entries where user_id == uid
-    q = db.collection("catalog_entries").where("user_id", "==", uid)
+    q = db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid))
     batch = db.batch()
     count = 0
     for doc in q.stream():
@@ -81,7 +82,7 @@ def rollback_user(uid: str) -> dict:
     # 3. Clear _migrated markers
     items_ref = (
         db.collection("users").document(uid).collection("grocery_items")
-        .where("_migrated", "==", True)
+        .where(filter=FieldFilter("_migrated", "==", True))
     )
     batch = db.batch()
     count = 0

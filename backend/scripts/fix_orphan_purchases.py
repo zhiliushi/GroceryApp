@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("orphans")
@@ -58,7 +59,7 @@ def fix_user(uid: str, fix: bool = False) -> dict:
     # Existing catalog names for the user
     existing_names = {
         (doc.to_dict() or {}).get("name_norm", "")
-        for doc in db.collection("catalog_entries").where("user_id", "==", uid).stream()
+        for doc in db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid)).stream()
     }
 
     # Aggregate purchase data by catalog_name_norm

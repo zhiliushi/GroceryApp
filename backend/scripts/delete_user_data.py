@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("delete")
@@ -88,7 +89,7 @@ def delete_user(uid: str, keep_profile: bool = False) -> dict:
 
     # 1. Global catalog entries
     stats["catalog_entries"] = _delete_query(
-        db.collection("catalog_entries").where("user_id", "==", uid)
+        db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid))
     )
 
     # 2. User-scoped subcollections

@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ def count_items_at_location(key: str) -> int:
     db = _db()
     try:
         count = 0
-        for doc in db.collection_group("grocery_items").where("location", "==", key).stream():
+        for doc in db.collection_group("grocery_items").where(filter=FieldFilter("location", "==", key)).stream():
             count += 1
         return count
     except Exception as e:

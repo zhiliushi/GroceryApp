@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("consistency")
@@ -61,7 +62,7 @@ def check_user(uid: str, fix: bool = False) -> dict:
     }
 
     # 1. Load all catalog entries for user
-    catalog_docs = list(db.collection("catalog_entries").where("user_id", "==", uid).stream())
+    catalog_docs = list(db.collection("catalog_entries").where(filter=FieldFilter("user_id", "==", uid)).stream())
     summary["catalog_entries"] = len(catalog_docs)
     catalog_by_name: dict[str, dict] = {}
     for doc in catalog_docs:

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.feature_flags import feature_flag
@@ -55,8 +56,8 @@ def scan_reminders() -> int:
     # Collection group over all users' purchases
     query = (
         db.collection_group("purchases")
-        .where("status", "==", "active")
-        .where("reminder_stage", "<", 3)
+        .where(filter=FieldFilter("status", "==", "active"))
+        .where(filter=FieldFilter("reminder_stage", "<", 3))
     )
 
     for doc in query.stream():
@@ -140,7 +141,7 @@ def list_reminders(user_id: str, include_dismissed: bool = False, limit: int = 2
     """List reminders for a user. Active (non-dismissed) first."""
     q = _user_reminders_ref(user_id)
     if not include_dismissed:
-        q = q.where("dismissed_at", "==", None)
+        q = q.where(filter=FieldFilter("dismissed_at", "==", None))
     q = q.order_by("stage", direction=firestore.Query.DESCENDING).limit(limit)
 
     results = []

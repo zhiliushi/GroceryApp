@@ -136,6 +136,7 @@ export const API = {
   WASTE_SUMMARY: '/api/waste/summary',
   WASTE_SPENDING: '/api/waste/spending',
   WASTE_HEALTH_SCORE: '/api/waste/health-score',
+  WASTE_HEALTH_HISTORY: '/api/waste/health-history',
   WASTE_FINANCIAL_SUMMARY: '/api/waste/financial-summary',
 
   BARCODE_SCAN_INFO: (barcode: string) => `/api/barcode/${encodeURIComponent(barcode)}/scan-info`,

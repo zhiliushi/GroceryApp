@@ -66,6 +66,7 @@ export const qk = {
     spending: (period: string) => ['waste', 'spending', period] as const,
     financial: (period: string) => ['waste', 'financial', period] as const,
     health: ['waste', 'health'] as const,
+    healthHistory: (days: number) => ['waste', 'health-history', days] as const,
   },
   featureFlags: ['feature-flags'] as const,
   scanInfo: (barcode: string) => ['scan-info', barcode] as const,

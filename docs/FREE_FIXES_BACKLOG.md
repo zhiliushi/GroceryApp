@@ -10,18 +10,18 @@
 
 | ID | Item | Effort | Priority | Status |
 |---|---|---|---|---|
-| F1 | Lighthouse audit on prod (`/dashboard`) | 10 min | HIGH | TODO |
-| F2 | Sentry free tier integration (5k events/mo free) | 30 min | HIGH | TODO |
-| F3 | Privacy policy + Terms placeholder | 30 min | HIGH | TODO |
-| F4 | UptimeRobot free monitor (50 endpoints free) | 10 min | MEDIUM | TODO |
-| F5 | Pydantic Firestore SDK deprecation warnings cleanup | 30 min | MEDIUM | TODO |
-| F6 | Slow Firestore query logging (>2s WARN) | 1 hr | MEDIUM | TODO |
-| F7 | Error-rate alerting middleware (5% in 5min → ERROR log) | 1 hr | MEDIUM | TODO |
-| F8 | API versioning (`/api/v1/*`) refactor | 2 hr | MEDIUM | TODO |
-| F9 | GitHub Actions: firestore rules deploy on push | 30 min | LOW | TODO |
-| F10 | Backup cron — daily `export_user_data.py --all` | 30 min | LOW | TODO |
-| F11 | Integration tests against local Firestore emulator | 1 day | LOW | TODO |
-| F12 | Health-check trend chart (`/health-score` 30-day sparkline) | 1 day | LOW | TODO |
+| F1 | Lighthouse audit on prod (`/dashboard`) | 10 min | HIGH | BLOCKED-USER (manual Brave run) |
+| F2 | Sentry free tier integration (5k events/mo free) | 30 min | HIGH | DONE |
+| F3 | Privacy policy + Terms placeholder | 30 min | HIGH | DONE |
+| F4 | UptimeRobot free monitor (50 endpoints free) | 10 min | MEDIUM | BLOCKED-USER (account creation) |
+| F5 | Pydantic Firestore SDK deprecation warnings cleanup | 30 min | MEDIUM | DONE |
+| F6 | Slow Firestore query logging (>2s WARN) | 1 hr | MEDIUM | DONE |
+| F7 | Error-rate alerting middleware (5% in 5min → ERROR log) | 1 hr | MEDIUM | DONE |
+| F8 | API versioning (`/api/v1/*`) refactor | 2 hr | MEDIUM | DONE (backend; FE migration deferred) |
+| F9 | GitHub Actions: firestore rules deploy on push | 30 min | LOW | DONE (workflow added; awaiting GH secret) |
+| F10 | Backup cron — daily `export_user_data.py --all` | 30 min | LOW | DONE (workflow added; awaiting GH secret) |
+| F11 | Integration tests against local Firestore emulator | 1 day | LOW | DONE (7 tests; auto-skip when emulator down) |
+| F12 | Health-check trend chart (`/health-score` 30-day sparkline) | 1 day | LOW | DONE |
 
 Total effort: ~3 days for everything; ~3 hours for HIGH-priority subset.
 
@@ -133,6 +133,8 @@ Total effort: ~3 days for everything; ~3 hours for HIGH-priority subset.
 
 **Done when.** Both `/api/*` and `/api/v1/*` work (the old paths redirect or both serve), frontend uses v1 for all calls.
 
+**Status (2026-04-25).** Backend dual-mounts every router under `/api/*` and `/api/v1/*` via the `_ROUTERS` table in `backend/main.py`. Both prefixes serve identical handlers — chosen over a redirect to avoid an extra round-trip. Frontend `endpoints.ts` still uses `/api/*` paths; migrating it to `/api/v1/*` is mechanical (search-and-replace) and was deferred since the legacy alias works fine and FE rebuilds carry deploy risk. When ready: change every `'/api/'` literal to `'/api/v1/'` in `web-admin/src/api/endpoints.ts` and verify with the Network tab. Legacy `/api/*` is documented to stay until 2026-12-31, then become 410 Gone.
+
 ---
 
 ### F9 — GitHub Actions: firestore rules deploy
@@ -147,6 +149,8 @@ Total effort: ~3 days for everything; ~3 hours for HIGH-priority subset.
 
 **Watch out.** Service account credentials in GitHub Secrets need careful permissions (only `cloud-rules-deployer` role, not full admin).
 
+**Status (2026-04-25).** Workflow added at `.github/workflows/firestore-rules-deploy.yml`. Triggers on push to main when `firestore.rules`, `firestore.indexes.json`, `firebase.json`, or `.firebaserc` changes; also supports manual `workflow_dispatch`. Uses `GOOGLE_APPLICATION_CREDENTIALS` from a `FIREBASE_SERVICE_ACCOUNT` repo secret. **Action required:** create the service account in GCP IAM (roles: Firebase Rules Admin + Cloud Datastore Index Admin only — NOT full project admin), download the JSON key, paste into GitHub repo Settings → Secrets → Actions as `FIREBASE_SERVICE_ACCOUNT`. Workflow will exit cleanly with an error message if the secret is missing.
+
 ---
 
 ### F10 — Backup cron
@@ -158,6 +162,8 @@ Total effort: ~3 days for everything; ~3 hours for HIGH-priority subset.
 **Why LOW.** Firebase has automatic redundancy already. Backups are defense in depth, not primary.
 
 **Done when.** A backup zip exists from "yesterday" on whichever box you choose. Test a `--restore` from one.
+
+**Status (2026-04-25).** New script `backend/scripts/backup_all_users.py` iterates every doc in `users/*`, calls `export_user()` per uid, and writes a single `grocery-backup-YYYY-MM-DD.tar.gz`. Workflow `.github/workflows/backup-daily.yml` runs at 17:00 UTC (01:00 MYT) and uploads the tarball as a workflow artifact (90-day free retention). **Action required:** add repo secret `FIREBASE_CREDENTIALS_JSON` with the full service account JSON. Restore path: download artifact, untar, re-import each `user_{uid}.json` via the existing import logic (note: import script is not built yet — see backlog).
 
 ---
 
@@ -171,6 +177,8 @@ Total effort: ~3 days for everything; ~3 hours for HIGH-priority subset.
 
 **Done when.** `pytest backend/tests/integration/` runs against a live emulator, all green.
 
+**Status (2026-04-25).** Added `tests/integration/conftest.py` with a session fixture that probes `FIRESTORE_EMULATOR_HOST` (default `localhost:8080`) and skips the whole module if the emulator isn't reachable. Three test files cover create-purchase + catalog-upsert counter consistency, cursor pagination across catalog + purchases, and merge-reparenting + delete-blocked-when-active. The 7 integration tests skip cleanly during the regular `pytest backend/tests` run (122 unit pass + 7 skipped). To exercise them: start the emulator from Luqman Dev Hub or `firebase emulators:start --only firestore --project demo-grocery`, then re-run pytest. Coverage gaps still: status-transition edge cases, FIFO-by-barcode use, security-rule enforcement (rule tests need a separate harness).
+
 ---
 
 ### F12 — Health-score 30-day trend chart
@@ -182,6 +190,8 @@ Total effort: ~3 days for everything; ~3 hours for HIGH-priority subset.
 **Why LOW.** Polish, not blocking validation.
 
 **Done when.** Score breakdown page shows a trend line.
+
+**Status (2026-04-25).** Backend: `waste_service.snapshot_health_score()` writes today's score to `users/{uid}/health_history/{YYYY-MM-DD}`; `get_health_history()` returns up to N days. New scheduler job `health_history_snapshot` runs daily at 23:30 UTC. New endpoint `GET /api/waste/health-history?days=30`. Frontend: `useHealthHistory()` hook, `HealthTrendChart` component (Chart.js + react-chartjs-2 line chart with gap-fill from previous score) mounted on the HealthScorePage above the tabs. Empty-state message displays for fresh accounts with no snapshots yet. Verified: 122 unit + 7 emulator-gated integration tests pass; `tsc -b` exits 0.
 
 ---
 

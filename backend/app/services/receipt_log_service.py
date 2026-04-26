@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ def get_recent_errors(limit: int = 20) -> list[dict]:
     query = (
         _db()
         .collection_group("receipt_scans")
-        .where("status", "in", ["all_failed", "no_items_parsed"])
+        .where(filter=FieldFilter("status", "in", ["all_failed", "no_items_parsed"]))
         .order_by("created_at", direction=firestore.Query.DESCENDING)
         .limit(limit)
     )
@@ -167,7 +168,7 @@ def get_scan_stats() -> dict:
     query = (
         _db()
         .collection_group("receipt_scans")
-        .where("created_at", ">=", f"{current_month}-01")
+        .where(filter=FieldFilter("created_at", ">=", f"{current_month}-01"))
         .limit(500)
     )
 

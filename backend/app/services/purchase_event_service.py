@@ -17,11 +17,13 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.core.feature_flags import is_enabled
 from app.core.metadata import apply_create_metadata, apply_update_metadata
+from app.core.slow_query import timed
 from app.schemas.purchase import VALID_STATUSES, VALID_CONSUME_REASONS, VALID_PAYMENT_METHODS
 from app.services import catalog_service, country_service, nl_expiry
 
@@ -184,6 +186,7 @@ def get_purchase(user_id: str, event_id: str) -> Optional[dict]:
     return data
 
 
+@timed("purchase_event.list_purchases")
 def list_purchases(
     user_id: str,
     status: Optional[str] = None,
@@ -201,11 +204,11 @@ def list_purchases(
     """
     q = _user_purchases_ref(user_id)
     if status:
-        q = q.where("status", "==", status)
+        q = q.where(filter=FieldFilter("status", "==", status))
     if location:
-        q = q.where("location", "==", location)
+        q = q.where(filter=FieldFilter("location", "==", location))
     if catalog_name_norm:
-        q = q.where("catalog_name_norm", "==", catalog_name_norm)
+        q = q.where(filter=FieldFilter("catalog_name_norm", "==", catalog_name_norm))
 
     # Sort date_bought desc + doc-id tiebreaker for stable cursor pagination
     q = (
@@ -249,8 +252,8 @@ def find_purchases_by_barcode(user_id: str, barcode: str) -> dict:
     """
     q = (
         _user_purchases_ref(user_id)
-        .where("status", "==", "active")
-        .where("barcode", "==", barcode)
+        .where(filter=FieldFilter("status", "==", "active"))
+        .where(filter=FieldFilter("barcode", "==", barcode))
     )
     items = []
     for doc in q.stream():
@@ -435,8 +438,8 @@ def consume_one_by_catalog(user_id: str, catalog_name_norm: str, quantity: int =
     # Actually query by catalog_name_norm directly
     q = (
         _user_purchases_ref(user_id)
-        .where("status", "==", "active")
-        .where("catalog_name_norm", "==", catalog_name_norm)
+        .where(filter=FieldFilter("status", "==", "active"))
+        .where(filter=FieldFilter("catalog_name_norm", "==", catalog_name_norm))
     )
     events = []
     for doc in q.stream():
@@ -519,8 +522,8 @@ def flag_expired_purchases() -> int:
     db = _db()
     query = (
         db.collection_group("purchases")
-        .where("status", "==", "active")
-        .where("expiry_date", "<", now)
+        .where(filter=FieldFilter("status", "==", "active"))
+        .where(filter=FieldFilter("expiry_date", "<", now))
     )
 
     flagged = 0

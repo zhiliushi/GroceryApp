@@ -10,6 +10,9 @@ import time
 from typing import Any, Dict, List, Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+
+from app.core.slow_query import timed
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,7 @@ def sync_events(events: List[Dict[str, Any]]) -> int:
 # Stats
 # ---------------------------------------------------------------------------
 
+@timed("analytics.get_user_stats")
 def get_user_stats(user_id: str, period: str = "month") -> Dict[str, Any]:
     """
     Aggregate analytics stats for a user over the given period.
@@ -75,7 +79,7 @@ def get_user_stats(user_id: str, period: str = "month") -> Dict[str, Any]:
 
     cutoff = _period_cutoff(period)
     if cutoff:
-        query = col_ref.where("timestamp", ">=", cutoff).stream()
+        query = col_ref.where(filter=FieldFilter("timestamp", ">=", cutoff)).stream()
     else:
         query = col_ref.stream()
 
@@ -150,7 +154,7 @@ def get_user_events(user_id: str, period: str = "month") -> List[Dict[str, Any]]
     col_ref = db.collection("users").document(user_id).collection("analytics")
     cutoff = _period_cutoff(period)
     if cutoff:
-        query = col_ref.where("timestamp", ">=", cutoff).stream()
+        query = col_ref.where(filter=FieldFilter("timestamp", ">=", cutoff)).stream()
     else:
         query = col_ref.stream()
 

@@ -14,8 +14,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.metadata import apply_update_metadata
+from app.core.slow_query import timed
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ def _user_cache_ref(user_id: str, key: str):
 # ---------------------------------------------------------------------------
 
 
+@timed("waste.compute_health_score")
 def compute_health_score(user_id: str, use_cache: bool = True) -> dict:
     """Compute or fetch cached health score. See docs/HEALTH_SCORE.md."""
     if use_cache:
@@ -65,7 +68,7 @@ def compute_health_score(user_id: str, use_cache: bool = True) -> dict:
 
     # Query active events (single equality — no composite index required)
     try:
-        q = _user_purchases_ref(user_id).where("status", "==", "active")
+        q = _user_purchases_ref(user_id).where(filter=FieldFilter("status", "==", "active"))
         for doc in q.stream():
             data = doc.to_dict() or {}
             expiry = data.get("expiry_date")
@@ -115,7 +118,7 @@ def compute_health_score(user_id: str, use_cache: bool = True) -> dict:
 
     for status in ("used", "thrown"):
         try:
-            q2 = _user_purchases_ref(user_id).where("status", "==", status)
+            q2 = _user_purchases_ref(user_id).where(filter=FieldFilter("status", "==", status))
             for doc in q2.stream():
                 data = doc.to_dict() or {}
                 consumed = data.get("consumed_date")
@@ -199,10 +202,66 @@ def compute_health_score(user_id: str, use_cache: bool = True) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Health-score history (30-day trend)
+# ---------------------------------------------------------------------------
+
+
+def _user_health_history_ref(user_id: str):
+    return (
+        _db().collection("users").document(user_id).collection("health_history")
+    )
+
+
+def snapshot_health_score(user_id: str) -> dict:
+    """Compute today's score and persist it under users/{uid}/health_history/{YYYY-MM-DD}.
+
+    Idempotent — running twice on the same day overwrites the same doc.
+    Called by the scheduler `health_history_snapshot` job.
+    """
+    score = compute_health_score(user_id, use_cache=False)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    snapshot = {
+        "date": today,
+        "score": score["score"],
+        "grade": score["grade"],
+        "components": score["components"],
+        "waste_rate_month": score["waste_rate_month"],
+        "snapshotted_at": datetime.now(timezone.utc),
+    }
+    _user_health_history_ref(user_id).document(today).set(snapshot)
+    return snapshot
+
+
+def get_health_history(user_id: str, days: int = 30) -> list[dict]:
+    """Return up to `days` most-recent daily snapshots, oldest first.
+
+    Missing days are absent from the list (no interpolation) — frontend chart
+    fills gaps with the previous score.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    docs = (
+        _user_health_history_ref(user_id)
+        .where(filter=FieldFilter("date", ">=", cutoff))
+        .order_by("date")
+        .stream()
+    )
+    out = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        out.append({
+            "date": data.get("date"),
+            "score": data.get("score"),
+            "grade": data.get("grade"),
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Waste summary
 # ---------------------------------------------------------------------------
 
 
+@timed("waste.get_waste_summary")
 def get_waste_summary(user_id: str, period: str = "month") -> dict:
     """Aggregate thrown items for a period.
 
@@ -225,8 +284,8 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
 
     q = (
         _user_purchases_ref(user_id)
-        .where("status", "==", "thrown")
-        .where("consumed_date", ">=", from_date)
+        .where(filter=FieldFilter("status", "==", "thrown"))
+        .where(filter=FieldFilter("consumed_date", ">=", from_date))
     )
 
     by_catalog: dict[str, dict[str, Any]] = {}
@@ -263,6 +322,7 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
     }
 
 
+@timed("waste.get_financial_summary")
 def get_financial_summary(user_id: str, period: str = "month") -> dict:
     """Per-catalog spending vs wasted-money comparison for a period.
 
@@ -289,7 +349,7 @@ def get_financial_summary(user_id: str, period: str = "month") -> dict:
 
     q = (
         _user_purchases_ref(user_id)
-        .where("date_bought", ">=", from_date)
+        .where(filter=FieldFilter("date_bought", ">=", from_date))
     )
 
     rows: dict[str, dict[str, Any]] = {}
@@ -354,6 +414,7 @@ def get_financial_summary(user_id: str, period: str = "month") -> dict:
     }
 
 
+@timed("waste.get_spending_summary")
 def get_spending_summary(user_id: str, period: str = "month") -> dict:
     """Aggregate spending (cash vs card) for a period."""
     now = datetime.now(timezone.utc)
@@ -368,7 +429,7 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
 
     q = (
         _user_purchases_ref(user_id)
-        .where("date_bought", ">=", from_date)
+        .where(filter=FieldFilter("date_bought", ">=", from_date))
     )
 
     cash_total = 0.0

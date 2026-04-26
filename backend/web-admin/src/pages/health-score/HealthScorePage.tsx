@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import HealthBar from '@/components/waste/HealthBar';
+import HealthTrendChart from '@/components/waste/HealthTrendChart';
 import PageHeader from '@/components/shared/PageHeader';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
@@ -69,6 +70,7 @@ export default function HealthScorePage() {
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Health Score' }]} />
       <PageHeader title="Inventory Health" icon="💚" />
       <HealthBar drillToPath="/health-score" />
+      <HealthTrendChart />
 
       <div className="flex border-b border-ga-border overflow-x-auto">
         {TABS.map((t) => (

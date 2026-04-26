@@ -12,6 +12,7 @@ import time
 from typing import Optional, List, Dict, Any
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def get_all(country: Optional[str] = None) -> List[Dict[str, Any]]:
     db = _get_db()
     query = db.collection(COLLECTION)
     if country:
-        query = query.where("country", "==", country.upper())
+        query = query.where(filter=FieldFilter("country", "==", country.upper()))
 
     docs = query.stream()
     results = []
@@ -144,9 +145,9 @@ def refresh_entry(doc_id: str) -> Optional[Dict[str, Any]]:
 def _exists(name: str, address: Optional[str]) -> bool:
     """Check if a foodbank with the same name + address already exists."""
     db = _get_db()
-    query = db.collection(COLLECTION).where("name", "==", name)
+    query = db.collection(COLLECTION).where(filter=FieldFilter("name", "==", name))
     if address:
-        query = query.where("location_address", "==", address)
+        query = query.where(filter=FieldFilter("location_address", "==", address))
     docs = list(query.limit(1).stream())
     return len(docs) > 0
 
