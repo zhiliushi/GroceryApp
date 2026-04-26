@@ -26,7 +26,6 @@ const secondaryNav: NavItem[] = [
   { path: '/storage', label: 'Storage', icon: '🗄️' },
   { path: '/meals', label: 'Meals', icon: '🍳' },
   { path: '/foodbanks', label: 'Foodbanks', icon: '📍' },
-  { path: '/map', label: 'Map', icon: '🗺️' },
   { path: '/waste', label: 'Waste', icon: '🗑️' },
   { path: '/spending', label: 'Spending', icon: '💳' },
   { path: '/reminders', label: 'Reminders', icon: '⏰' },
@@ -41,6 +40,7 @@ const adminNav: NavItem[] = [
   { path: '/contributed-products', label: 'Contributed', icon: '📥' },
   { path: '/needs-review', label: 'Needs Review', icon: '⚠️' },
   { path: '/price-records', label: 'Price Records', icon: '💰' },
+  { path: '/map', label: 'Map (Stores)', icon: '🗺️' },
   { path: '/admin/experimental', label: 'Experimental', icon: '🧪', requiresFlag: 'ocr_enabled' },
   { path: '/admin-settings', label: 'Admin Settings', icon: '🔧' },
 ];
