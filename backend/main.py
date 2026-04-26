@@ -60,6 +60,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Sentry (optional — only activates if SENTRY_DSN env var is set)
+# Free tier: 5k events/month — see docs/PAID_ENHANCEMENTS.md P5 for upgrade.
+# ---------------------------------------------------------------------------
+_sentry_dsn = os.environ.get("SENTRY_DSN", "").strip()
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            environment=settings.ENVIRONMENT,
+            # Send a small sample of transactions for perf tracing.
+            traces_sample_rate=0.1 if settings.ENVIRONMENT == "production" else 1.0,
+            # Send 100% of error events.
+            sample_rate=1.0,
+            # Strip PII — Sentry would otherwise capture request bodies.
+            send_default_pii=False,
+            integrations=[FastApiIntegration(), StarletteIntegration()],
+        )
+        logger.info("sentry: error tracking enabled (env=%s)", settings.ENVIRONMENT)
+    except Exception:
+        logger.exception("sentry: init failed; continuing without error tracking")
+else:
+    logger.info("sentry: SENTRY_DSN not set; error tracking disabled")
+
+# ---------------------------------------------------------------------------
 # Firebase Admin SDK initialization
 # ---------------------------------------------------------------------------
 

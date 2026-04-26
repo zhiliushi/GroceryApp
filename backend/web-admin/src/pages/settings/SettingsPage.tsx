@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useMe } from '@/api/queries/useMe';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -71,6 +72,29 @@ export default function SettingsPage() {
               <span className="text-sm text-ga-text-primary">React SPA</span>
             </div>
           </div>
+        </div>
+
+        {/* Legal */}
+        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
+          <h2 className="text-sm font-semibold text-ga-text-primary mb-3">Legal</h2>
+          <ul className="space-y-2 text-sm">
+            <li>
+              <Link to="/privacy" className="text-ga-accent hover:underline">
+                Privacy Policy →
+              </Link>
+              <span className="text-xs text-ga-text-secondary ml-2">
+                What we collect, why, and your rights
+              </span>
+            </li>
+            <li>
+              <Link to="/terms" className="text-ga-accent hover:underline">
+                Terms of Service →
+              </Link>
+              <span className="text-xs text-ga-text-secondary ml-2">
+                Acceptable use, disclaimers, governing law
+              </span>
+            </li>
+          </ul>
         </div>
 
         {/* FSM Engine card */}

@@ -35,6 +35,8 @@ const RemindersPage = lazy(() => import('@/pages/reminders/RemindersPage'));
 const WastePage = lazy(() => import('@/pages/waste/WastePage'));
 const SpendingPage = lazy(() => import('@/pages/spending/SpendingPage'));
 const SpendingHistoryPage = lazy(() => import('@/pages/spending/SpendingHistoryPage'));
+const PrivacyPage = lazy(() => import('@/pages/legal/PrivacyPage'));
+const TermsPage = lazy(() => import('@/pages/legal/TermsPage'));
 const MyItemsPage = lazy(() => import('@/pages/my-items/MyItemsPage'));
 const PurchaseEventDetailPage = lazy(() => import('@/pages/my-items/PurchaseEventDetailPage'));
 const CatalogListPage = lazy(() => import('@/pages/catalog/CatalogListPage'));
@@ -81,6 +83,23 @@ export const router = createBrowserRouter([
     element: (
       <SuspenseWrapper>
         <JoinPage />
+      </SuspenseWrapper>
+    ),
+  },
+  // Legal pages — publicly accessible, no auth required.
+  {
+    path: '/privacy',
+    element: (
+      <SuspenseWrapper>
+        <PrivacyPage />
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/terms',
+    element: (
+      <SuspenseWrapper>
+        <TermsPage />
       </SuspenseWrapper>
     ),
   },

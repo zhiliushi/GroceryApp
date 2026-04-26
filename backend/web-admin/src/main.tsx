@@ -1,7 +1,25 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as Sentry from '@sentry/react';
 import App from './App';
 import './index.css';
+
+// Sentry — only activates if VITE_SENTRY_DSN is set in .env.
+// Free tier: 5k events/month. Paid upgrade: see docs/PAID_ENHANCEMENTS.md P5.
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: import.meta.env.MODE, // 'development' or 'production'
+    // Capture 10% of transactions in prod, 100% in dev.
+    tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
+    // Send 100% of errors.
+    sampleRate: 1.0,
+    // Don't send PII (cookies, query strings, headers).
+    sendDefaultPii: false,
+    integrations: [Sentry.browserTracingIntegration()],
+  });
+}
 
 // Dev-mode safeguard: if a service worker from a previous config is still
 // registered, unregister it and nuke its caches. Without this, the old SW
