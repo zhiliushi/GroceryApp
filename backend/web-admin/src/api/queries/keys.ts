@@ -75,8 +75,4 @@ export const qk = {
     all: ['insights'] as const,
     detail: (id: string) => ['insights', id] as const,
   },
-  businessMetrics: {
-    all: ['business-metrics'] as const,
-    revenue: ['business-metrics', 'revenue'] as const,
-  },
 };

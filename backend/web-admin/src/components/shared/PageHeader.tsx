@@ -3,7 +3,7 @@ interface PageHeaderProps {
   icon?: string;
   count?: number;
   action?: React.ReactNode;
-  subtitle?: React.ReactNode;
+  subtitle?: string;
 }
 
 export default function PageHeader({ title, icon, count, action, subtitle }: PageHeaderProps) {

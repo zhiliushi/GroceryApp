@@ -25,9 +25,7 @@ from app.services import (
     location_service,
     dispute_service,
     email_config_service,
-    business_metrics_service,
 )
-from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -1274,67 +1272,3 @@ async def flag_spam(body: dict, admin: UserInfo = Depends(require_admin)):
     if not barcode:
         raise HTTPException(status_code=400, detail="barcode is required")
     return catalog_analysis_service.flag_spam(barcode, admin.uid, reason=reason)
-
-
-# ---------------------------------------------------------------------------
-# Business metrics — market-validation dashboard
-# See docs/MARKET_VALIDATION.md for the framework.
-# ---------------------------------------------------------------------------
-
-
-class RevenueEntryCreate(BaseModel):
-    date: str = Field(..., description="YYYY-MM-DD when payment received")
-    source: str = Field(..., description="e.g. ko-fi, buymeacoffee, stripe, manual-transfer")
-    amount_usd: float | None = Field(None, ge=0)
-    amount_myr: float | None = Field(None, ge=0)
-    note: str = ""
-
-
-@router.get("/business-metrics")
-async def get_business_metrics(
-    refresh: bool = Query(False, description="bypass 5-min cache"),
-    admin: UserInfo = Depends(require_admin),
-):
-    """Aggregate market-validation metrics across all users.
-
-    Returns acquisition / activation / engagement / retention / health-trend /
-    revenue / signals — see docs/MARKET_VALIDATION.md.
-    """
-    return business_metrics_service.compute_metrics(use_cache=not refresh)
-
-
-@router.get("/business-metrics/revenue")
-async def list_revenue(admin: UserInfo = Depends(require_admin)):
-    """List revenue log entries (newest first)."""
-    return {"entries": business_metrics_service.list_revenue_entries()}
-
-
-@router.post("/business-metrics/revenue")
-async def add_revenue(
-    body: RevenueEntryCreate,
-    admin: UserInfo = Depends(require_admin),
-):
-    """Append a manual revenue entry (Ko-fi/BMaC payout, transfer, etc.)."""
-    if body.amount_usd is None and body.amount_myr is None:
-        raise HTTPException(400, "Provide amount_usd or amount_myr")
-    try:
-        entry = business_metrics_service.add_revenue_entry(
-            actor_uid=admin.uid,
-            date=body.date,
-            source=body.source,
-            amount_usd=body.amount_usd,
-            amount_myr=body.amount_myr,
-            note=body.note,
-        )
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    return {"entry": entry}
-
-
-@router.delete("/business-metrics/revenue/{entry_id}")
-async def delete_revenue(entry_id: str, admin: UserInfo = Depends(require_admin)):
-    """Remove a revenue entry by id."""
-    deleted = business_metrics_service.delete_revenue_entry(entry_id=entry_id)
-    if not deleted:
-        raise HTTPException(404, "Entry not found")
-    return {"deleted": True}

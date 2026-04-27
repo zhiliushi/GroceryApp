@@ -34,7 +34,6 @@ const secondaryNav: NavItem[] = [
 ];
 
 const adminNav: NavItem[] = [
-  { path: '/admin/business-metrics', label: 'Business Metrics', icon: '📊' },
   { path: '/admin/catalog-analysis', label: 'Catalog Analysis', icon: '🔎' },
   { path: '/products', label: 'Products', icon: '🏷️' },
   { path: '/users', label: 'Users', icon: '👥' },

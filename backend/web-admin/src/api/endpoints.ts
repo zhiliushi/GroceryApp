@@ -137,9 +137,6 @@ export const API = {
   WASTE_SPENDING: '/api/waste/spending',
   WASTE_HEALTH_SCORE: '/api/waste/health-score',
   WASTE_HEALTH_HISTORY: '/api/waste/health-history',
-  BUSINESS_METRICS: '/api/admin/business-metrics',
-  BUSINESS_METRICS_REVENUE: '/api/admin/business-metrics/revenue',
-  BUSINESS_METRICS_REVENUE_DELETE: (id: string) => `/api/admin/business-metrics/revenue/${id}`,
   WASTE_FINANCIAL_SUMMARY: '/api/waste/financial-summary',
 
   BARCODE_SCAN_INFO: (barcode: string) => `/api/barcode/${encodeURIComponent(barcode)}/scan-info`,
