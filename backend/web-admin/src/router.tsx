@@ -44,6 +44,7 @@ const CatalogEntryPage = lazy(() => import('@/pages/catalog/CatalogEntryPage'));
 const InsightsPage = lazy(() => import('@/pages/insights/InsightsPage'));
 const CatalogAnalysisPage = lazy(() => import('@/pages/admin/CatalogAnalysisPage'));
 const ExperimentalPage = lazy(() => import('@/pages/admin/ExperimentalPage'));
+const BusinessMetricsPage = lazy(() => import('@/pages/admin/BusinessMetricsPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -163,6 +164,7 @@ export const router = createBrowserRouter([
           { path: 'admin-settings', element: <SuspenseWrapper><AdminSettingsPage /></SuspenseWrapper> },
           { path: 'admin/catalog-analysis', element: <SuspenseWrapper><CatalogAnalysisPage /></SuspenseWrapper> },
           { path: 'admin/experimental', element: <SuspenseWrapper><ExperimentalPage /></SuspenseWrapper> },
+          { path: 'admin/business-metrics', element: <SuspenseWrapper><BusinessMetricsPage /></SuspenseWrapper> },
           { path: 'map', element: <SuspenseWrapper><MapPage /></SuspenseWrapper> },
           { path: 'foodbanks/new', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },
           { path: 'foodbanks/:foodbankId/edit', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },
