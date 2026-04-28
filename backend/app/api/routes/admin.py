@@ -1272,3 +1272,121 @@ async def flag_spam(body: dict, admin: UserInfo = Depends(require_admin)):
     if not barcode:
         raise HTTPException(status_code=400, detail="barcode is required")
     return catalog_analysis_service.flag_spam(barcode, admin.uid, reason=reason)
+
+
+# ---------------------------------------------------------------------------
+# Test data seed (admin-only, marked source="test_seed" for clean teardown)
+# ---------------------------------------------------------------------------
+
+@router.post("/seed-test-data")
+async def seed_test_data(admin: UserInfo = Depends(require_admin)):
+    """Create a mixed-state set of purchase events for the calling admin user.
+
+    Items are tagged source="test_seed" and span all groups: fresh active,
+    expiring soon, expired, thrown, used. Locations span all four. Use the
+    DELETE counterpart to tear down.
+    """
+    from datetime import datetime, timedelta, timezone
+    from firebase_admin import firestore
+    from app.services import purchase_event_service
+
+    db = firestore.client()
+    now = datetime.now(timezone.utc)
+
+    # Idempotency — clear existing seed events first so re-running doesn't pile up
+    existing = (
+        db.collection("users").document(admin.uid).collection("purchases")
+        .where("source", "==", "test_seed").stream()
+    )
+    cleared = 0
+    for doc in existing:
+        doc.reference.delete()
+        cleared += 1
+
+    # Seed plan — 20 items across all states/locations
+    seed_specs = [
+        # (name, location, expiry_offset_days_from_now, status, reason, days_ago_bought, qty, price)
+        ("Milk",       "fridge",  3,    "active",      None,        1,  1,   3.50),
+        ("Eggs",       "fridge",  10,   "active",      None,        2,  12,  6.20),
+        ("Cheddar",    "fridge",  21,   "active",      None,        4,  1,   8.90),
+        ("Yogurt",     "fridge",  -2,   "active",      None,        9,  1,   4.10),  # expired, still active
+        ("Butter",     "fridge",  60,   "active",      None,        7,  1,   5.50),
+        ("Chicken",    "freezer", 90,   "active",      None,        3,  1,   12.00),
+        ("Frozen peas","freezer", 180,  "active",      None,        14, 1,   3.20),
+        ("Ice cream",  "freezer", 1,    "active",      None,        2,  1,   7.50),  # urgent
+        ("Bread",      "counter", 2,    "active",      None,        1,  1,   3.00),  # urgent
+        ("Bananas",    "counter", -1,   "active",      None,        6,  6,   2.40),  # expired
+        ("Apples",     "counter", 5,    "active",      None,        2,  4,   4.80),  # expiring soon
+        ("Rice",       "pantry",  365,  "active",      None,        20, 1,   8.50),  # fresh, far expiry
+        ("Pasta",      "pantry",  300,  "active",      None,        18, 2,   4.20),
+        ("Coffee",     "pantry",  120,  "active",      None,        10, 1,   15.00),
+        ("Crackers",   "pantry",  None, "active",      None,        3,  1,   None),  # no expiry tracked
+        # Terminal states — for history/insights views
+        ("Tomatoes",   "counter", -3,   "thrown",      "expired",   10, 3,   3.00),
+        ("Lettuce",    "fridge",  -5,   "thrown",      "bad",       11, 1,   2.80),
+        ("Strawberries","fridge", -1,   "thrown",      "bad",       8,  1,   5.50),
+        ("Carrots",    "fridge",  None, "used",        "used_up",   12, 1,   2.20),
+        ("Onions",     "pantry",  None, "used",        "used_up",   15, 3,   1.80),
+    ]
+
+    created = 0
+    for (
+        name, location, expiry_off, target_status, reason,
+        days_ago, qty, price,
+    ) in seed_specs:
+        date_bought = now - timedelta(days=days_ago)
+        expiry_date = (now + timedelta(days=expiry_off)) if expiry_off is not None else None
+
+        event = purchase_event_service.create_purchase(
+            user_id=admin.uid,
+            name=name,
+            quantity=float(qty),
+            expiry_date=expiry_date,
+            price=price,
+            currency="MYR" if price else None,
+            payment_method=None,
+            date_bought=date_bought,
+            location=location,
+            source="test_seed",
+        )
+
+        # If the spec calls for a terminal status, transition right after creation.
+        if target_status != "active":
+            purchase_event_service.update_status(
+                user_id=admin.uid,
+                event_id=event["id"],
+                status=target_status,
+                reason=reason,
+            )
+
+        created += 1
+
+    return {
+        "success": True,
+        "cleared_previous": cleared,
+        "created": created,
+        "uid": admin.uid,
+        "message": f"Seeded {created} test items (cleared {cleared} prior).",
+    }
+
+
+@router.delete("/seed-test-data")
+async def clear_test_data(admin: UserInfo = Depends(require_admin)):
+    """Delete every purchase event in the admin's account tagged source='test_seed'.
+
+    Catalog entries are left in place — the catalog cleanup scheduler prunes
+    zero-purchase entries automatically.
+    """
+    from firebase_admin import firestore
+
+    db = firestore.client()
+    existing = (
+        db.collection("users").document(admin.uid).collection("purchases")
+        .where("source", "==", "test_seed").stream()
+    )
+    deleted = 0
+    for doc in existing:
+        doc.reference.delete()
+        deleted += 1
+
+    return {"success": True, "deleted": deleted, "uid": admin.uid}

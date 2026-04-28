@@ -143,6 +143,71 @@ export default function SystemSettingsTab() {
           </button>
         </div>
       )}
+
+      <SeedTestDataSection />
+    </div>
+  );
+}
+
+function SeedTestDataSection() {
+  const qc = useQueryClient();
+  const seed = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post<{ created: number; cleared_previous: number; message: string }>(
+          '/api/admin/seed-test-data',
+        )
+        .then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res.message);
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['catalog'] });
+      qc.invalidateQueries({ queryKey: ['waste'] });
+      qc.invalidateQueries({ queryKey: ['reminders'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Seed failed');
+    },
+  });
+  const clear = useMutation({
+    mutationFn: () =>
+      apiClient
+        .delete<{ deleted: number }>('/api/admin/seed-test-data')
+        .then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(`Cleared ${res.deleted} test items`);
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['catalog'] });
+      qc.invalidateQueries({ queryKey: ['waste'] });
+    },
+    onError: () => toast.error('Clear failed'),
+  });
+
+  return (
+    <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
+      <h3 className="text-sm font-semibold text-ga-text-primary mb-1">Test Data</h3>
+      <p className="text-xs text-ga-text-secondary mb-3">
+        Seeds 20 mixed-state purchases for your account: fresh active, expiring soon,
+        already expired, thrown, and used. Tagged <code className={cn('text-ga-accent')}>source="test_seed"</code> for
+        clean teardown. Re-running first clears existing seed items.
+      </p>
+      <div className="flex gap-2">
+        <button
+          onClick={() => seed.mutate()}
+          disabled={seed.isPending}
+          className="bg-ga-accent hover:bg-ga-accent/90 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-4 py-2"
+        >
+          {seed.isPending ? 'Seeding…' : 'Seed test data'}
+        </button>
+        <button
+          onClick={() => clear.mutate()}
+          disabled={clear.isPending}
+          className="border border-red-500/40 text-red-500 hover:bg-red-500/10 disabled:opacity-50 text-sm rounded-lg px-4 py-2"
+        >
+          {clear.isPending ? 'Clearing…' : 'Clear test data'}
+        </button>
+      </div>
     </div>
   );
 }

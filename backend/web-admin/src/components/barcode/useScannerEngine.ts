@@ -216,8 +216,18 @@ export function useScannerEngine(): UseScannerEngineReturn {
       { facingMode: 'environment' },
       {
         fps: 10,
-        qrbox: { width: 280, height: 150 },
-        aspectRatio: 1.777,
+        // Responsive qrbox: ~75% of the smaller viewport dimension, capped to
+        // sane bounds. Fixes off-screen scan target on narrow phones where a
+        // 280px-wide hard-coded qrbox sat below the visible frame.
+        qrbox: (vw: number, vh: number) => {
+          const min = Math.min(vw, vh);
+          const side = Math.max(160, Math.min(320, Math.floor(min * 0.75)));
+          return { width: side, height: Math.floor(side * 0.6) };
+        },
+        // Match the modal container's aspect-[4/3] wrapper. Mismatched
+        // aspectRatio (was 16:9) causes html5-qrcode to crop the feed and
+        // shift the scan target outside the visible box.
+        aspectRatio: 4 / 3,
       },
       (decodedText) => {
         if (_shouldEmit(decodedText)) {

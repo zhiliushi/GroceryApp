@@ -36,6 +36,11 @@ interface UiState {
   pwaInstallDismissedAt: number | null;
   dismissPwaInstall: () => void;
   resetPwaInstallDismissal: () => void;
+  // Recently edited purchase event id — set by PurchaseEventDetailPage on save,
+  // consumed by MyItemsPage to scroll-to + pulse-highlight the row so users can
+  // see where the item moved between groups (e.g. Active → Expiring soon).
+  recentlyEditedPurchaseId: string | null;
+  setRecentlyEditedPurchaseId: (id: string | null) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -74,6 +79,8 @@ export const useUiStore = create<UiState>()(
       pwaInstallDismissedAt: null,
       dismissPwaInstall: () => set({ pwaInstallDismissedAt: Date.now() }),
       resetPwaInstallDismissal: () => set({ pwaInstallDismissedAt: null }),
+      recentlyEditedPurchaseId: null,
+      setRecentlyEditedPurchaseId: (id) => set({ recentlyEditedPurchaseId: id }),
     }),
     {
       name: 'ga-ui',

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePurchasesInfinite } from '@/api/queries/usePurchases';
 import { useChangePurchaseStatus, useDeletePurchase } from '@/api/mutations/usePurchaseMutations';
@@ -10,6 +10,7 @@ import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
 import ThrowAwayModal from '@/components/waste/ThrowAwayModal';
 import GiveAwayModal from '@/components/waste/GiveAwayModal';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
+import { useUiStore } from '@/stores/uiStore';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
 import {
   getPurchaseEventActions,
@@ -42,10 +43,28 @@ export default function MyItemsPage() {
   const [throwTarget, setThrowTarget] = useState<PurchaseEvent | null>(null);
   const [giveTarget, setGiveTarget] = useState<PurchaseEvent | null>(null);
 
+  const recentlyEditedId = useUiStore((s) => s.recentlyEditedPurchaseId);
+  const setRecentlyEditedId = useUiStore((s) => s.setRecentlyEditedPurchaseId);
+  const highlightRowRef = useRef<HTMLDivElement | null>(null);
+
+  // After data lands and we have a recently-edited id, scroll the row into view
+  // and clear the marker after the highlight pulse completes.
+  useEffect(() => {
+    if (!recentlyEditedId) return;
+    const node = highlightRowRef.current;
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const t = window.setTimeout(() => setRecentlyEditedId(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [recentlyEditedId, setRecentlyEditedId]);
+
   const events = useMemo(
     () => (data?.pages ?? []).flatMap((p) => p.items),
     [data],
   );
+
+  const recentlyEditedExists = !!recentlyEditedId && events.some((e) => e.id === recentlyEditedId);
 
   const groups = useMemo(() => {
     const now = new Date();
@@ -118,6 +137,11 @@ export default function MyItemsPage() {
         <EmptyState onAdd={() => setQuickAddOpen(true)} />
       ) : (
         <>
+          {recentlyEditedExists && (
+            <div className="text-xs text-ga-text-secondary bg-ga-accent/10 border border-ga-accent/30 rounded px-3 py-2">
+              ✓ Saved — your edited item is highlighted below.
+            </div>
+          )}
           <Group
             title="Expiring soon"
             emoji="⚠️"
@@ -125,6 +149,8 @@ export default function MyItemsPage() {
             events={groups.expiring}
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
+            highlightId={recentlyEditedId}
+            highlightRef={highlightRowRef}
           />
           <Group
             title="Active"
@@ -133,6 +159,8 @@ export default function MyItemsPage() {
             events={groups.active}
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
+            highlightId={recentlyEditedId}
+            highlightRef={highlightRowRef}
           />
           <Group
             title="No expiry tracked"
@@ -141,6 +169,8 @@ export default function MyItemsPage() {
             events={groups.untracked}
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
+            highlightId={recentlyEditedId}
+            highlightRef={highlightRowRef}
           />
           <InfiniteScrollSentinel
             onIntersect={fetchNextPage}
@@ -178,6 +208,8 @@ function Group({
   emptyText,
   onThrow,
   onGive,
+  highlightId,
+  highlightRef,
 }: {
   title: string;
   emoji: string;
@@ -185,6 +217,8 @@ function Group({
   emptyText: string;
   onThrow: (e: PurchaseEvent) => void;
   onGive: (e: PurchaseEvent) => void;
+  highlightId?: string | null;
+  highlightRef?: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   return (
     <section>
@@ -196,7 +230,14 @@ function Group({
       ) : (
         <div className="space-y-2">
           {events.map((e) => (
-            <PurchaseEventRow key={e.id} event={e} onThrow={onThrow} onGive={onGive} />
+            <PurchaseEventRow
+              key={e.id}
+              event={e}
+              onThrow={onThrow}
+              onGive={onGive}
+              highlighted={highlightId === e.id}
+              rowRef={highlightId === e.id ? highlightRef : undefined}
+            />
           ))}
         </div>
       )}
@@ -208,10 +249,14 @@ function PurchaseEventRow({
   event,
   onThrow,
   onGive,
+  highlighted,
+  rowRef,
 }: {
   event: PurchaseEvent;
   onThrow: (e: PurchaseEvent) => void;
   onGive: (e: PurchaseEvent) => void;
+  highlighted?: boolean;
+  rowRef?: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   const actions = getPurchaseEventActions(event);
   const state = getPurchaseEventState(event);
@@ -255,8 +300,9 @@ function PurchaseEventRow({
 
   return (
     <div
+      ref={rowRef}
       className={cn(
-        'bg-ga-bg-card border rounded-lg p-3 flex items-center gap-3',
+        'bg-ga-bg-card border rounded-lg p-3 flex items-center gap-3 transition-shadow',
         state === 'active_expired'
           ? 'border-red-500/30'
           : state === 'active_expiring_urgent'
@@ -264,6 +310,7 @@ function PurchaseEventRow({
           : state === 'active_expiring_soon'
           ? 'border-yellow-500/30'
           : 'border-ga-border',
+        highlighted && 'ring-2 ring-ga-accent ring-offset-2 ring-offset-ga-bg-app animate-pulse',
       )}
     >
       <Link

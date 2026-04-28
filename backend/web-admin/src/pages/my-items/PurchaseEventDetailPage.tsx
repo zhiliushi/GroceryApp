@@ -20,6 +20,7 @@ import {
   getStatusBadge,
   type Action,
 } from '@/utils/actionResolver';
+import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/utils/cn';
 
 const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'];
@@ -33,6 +34,7 @@ export default function PurchaseEventDetailPage() {
   const deleteMutation = useDeletePurchase();
   const updateMutation = useUpdatePurchase();
   const undoable = useUndoableAction();
+  const setRecentlyEditedPurchaseId = useUiStore((s) => s.setRecentlyEditedPurchaseId);
 
   const [editingExpiry, setEditingExpiry] = useState(false);
   const [expiryRaw, setExpiryRaw] = useState('');
@@ -109,7 +111,12 @@ export default function PurchaseEventDetailPage() {
     if (!event) return;
     updateMutation.mutate(
       { id: event.id, data: { expiry_raw: expiryRaw || undefined } },
-      { onSuccess: () => setEditingExpiry(false) },
+      {
+        onSuccess: () => {
+          setEditingExpiry(false);
+          setRecentlyEditedPurchaseId(event.id);
+        },
+      },
     );
   }
 
@@ -117,7 +124,12 @@ export default function PurchaseEventDetailPage() {
     if (!event) return;
     updateMutation.mutate(
       { id: event.id, data: { location: editLocation } },
-      { onSuccess: () => setEditingLocation(false) },
+      {
+        onSuccess: () => {
+          setEditingLocation(false);
+          setRecentlyEditedPurchaseId(event.id);
+        },
+      },
     );
   }
 
