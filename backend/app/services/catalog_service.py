@@ -350,6 +350,11 @@ def update_catalog_entry(
     Allowed fields: display_name, barcode, default_location, default_category,
                     image_url, country_code, needs_review
 
+    `display_name` change cascades to all purchase events linked to this
+    catalog entry — keeps `catalog_display` denormalisation in sync so
+    My Items / history views render the new name immediately. Old casings
+    are preserved in `aliases`.
+
     Raises:
         NotFoundError if entry doesn't exist
         ConflictError if barcode change collides with another entry for this user
@@ -359,6 +364,7 @@ def update_catalog_entry(
     if not snap.exists:
         raise NotFoundError(f"Catalog entry '{name_norm}' not found")
 
+    existing = snap.to_dict() or {}
     allowed = {"display_name", "barcode", "default_location", "default_category",
                "image_url", "country_code", "needs_review"}
     clean_updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
@@ -375,9 +381,61 @@ def update_catalog_entry(
     if clean_updates.get("barcode") == "":
         clean_updates["barcode"] = None
 
+    # If display_name is changing, append the previous casing to aliases so
+    # we don't lose history. _normalize would have collapsed casing differences,
+    # so the entry itself stays at the same name_norm; only the display string
+    # rotates.
+    new_display = clean_updates.get("display_name")
+    old_display = existing.get("display_name")
+    cascade_display = None
+    if new_display and old_display and new_display != old_display:
+        prior_aliases = list(existing.get("aliases") or [])
+        if old_display not in prior_aliases:
+            prior_aliases.append(old_display)
+        clean_updates["aliases"] = prior_aliases
+        cascade_display = new_display
+
     doc_ref.update(apply_update_metadata(clean_updates))
+
+    # Cascade rename to purchase events (denormalised catalog_display field)
+    if cascade_display is not None:
+        _cascade_display_to_purchases(user_id, name_norm, cascade_display)
+
     logger.info("catalog.updated user=%s name_norm=%s fields=%s", user_id, name_norm, list(clean_updates))
     return get_catalog_entry(user_id, name_norm)
+
+
+def _cascade_display_to_purchases(user_id: str, name_norm: str, new_display: str) -> int:
+    """Update `catalog_display` on every purchase event linked to this catalog
+    entry. Returns the count updated. Batched (Firestore caps at 500/commit)."""
+    events_ref = (
+        _db()
+        .collection("users")
+        .document(user_id)
+        .collection("purchases")
+        .where(filter=FieldFilter("catalog_name_norm", "==", name_norm))
+    )
+    batch = _db().batch()
+    batch_count = 0
+    updated = 0
+    for event_doc in events_ref.stream():
+        batch.update(event_doc.reference, apply_update_metadata({
+            "catalog_display": new_display,
+        }))
+        batch_count += 1
+        updated += 1
+        if batch_count >= 400:
+            batch.commit()
+            batch = _db().batch()
+            batch_count = 0
+    if batch_count:
+        batch.commit()
+    if updated:
+        logger.info(
+            "catalog.rename_cascade user=%s name_norm=%s events=%d new=%r",
+            user_id, name_norm, updated, new_display,
+        )
+    return updated
 
 
 def delete_catalog_entry(user_id: str, name_norm: str, force: bool = False) -> None:
@@ -510,19 +568,27 @@ def increment_counters_tx(tx, user_id: str, name_norm: str, active_delta: int, t
 # ---------------------------------------------------------------------------
 
 
-def cleanup_unlinked_catalog(dry_run: bool = False) -> int:
-    """Delete catalog entries where:
-        - barcode IS null (user-created, no product link)
+_CLEANUP_AGE_DAYS = 180  # 6 months — was 365
+
+
+def cleanup_unlinked_catalog(dry_run: bool = False, age_days: int = _CLEANUP_AGE_DAYS) -> int:
+    """Delete user catalog entries that look abandoned:
         - active_purchases == 0
-        - last_purchased_at < now - 365 days
+        - last_purchased_at < now - age_days   (default 180 = 6 months)
+
+    Used to drop ALSO require `barcode IS null`. That excluded scanned-once
+    entries — exactly the kind of clutter the user wants removed. Now any
+    entry with no active purchases and no use in 6 months is fair game.
+
+    Historical purchase events keep their last-known `catalog_display`
+    snapshot (set by the rename cascade), so deleting the catalog entry
+    does NOT corrupt history reads.
 
     Returns count of entries deleted (or would-be-deleted in dry_run).
     """
     from datetime import datetime, timedelta, timezone
-    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=age_days)
 
-    # Firestore can't query "barcode IS null" directly — need to scan
-    # For efficiency, filter by active_purchases first (sparse field)
     query = (
         _db()
         .collection(_COLLECTION)
@@ -534,9 +600,6 @@ def cleanup_unlinked_catalog(dry_run: bool = False) -> int:
     batch = _db().batch()
     batch_count = 0
     for doc in query.stream():
-        data = doc.to_dict() or {}
-        if data.get("barcode"):  # skip if linked to barcode
-            continue
         if dry_run:
             logger.info("cleanup.would_delete id=%s", doc.id)
         else:
@@ -552,7 +615,10 @@ def cleanup_unlinked_catalog(dry_run: bool = False) -> int:
         batch.commit()
 
     if deleted:
-        logger.info("catalog.cleanup deleted=%d dry_run=%s", deleted, dry_run)
+        logger.info(
+            "catalog.cleanup deleted=%d age_days=%d dry_run=%s",
+            deleted, age_days, dry_run,
+        )
     return deleted
 
 

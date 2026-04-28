@@ -4,8 +4,10 @@ import { cn } from '@/utils/cn';
 
 export type ScanResultAction =
   | { kind: 'add_purchase'; nameNorm: string; display: string; barcode: string }
-  | { kind: 'name_unknown'; barcode: string; suggestedName?: string }
+  | { kind: 'name_unknown'; barcode: string; suggestedName?: string; inStoreLabel?: boolean }
   | { kind: 'mark_used'; nameNorm: string; display: string }
+  | { kind: 'move_location'; nameNorm: string; display: string }
+  | { kind: 'tick_list_item'; nameNorm: string; display: string; barcode: string }
   | { kind: 'rescan' };
 
 interface ScanResultPanelProps {
@@ -30,6 +32,7 @@ export default function ScanResultPanel({
   const match = info.user_catalog_match;
   const global = info.global_product;
   const history = info.user_history;
+  const inStore = info.is_in_store_label;
 
   return (
     <div className="space-y-3">
@@ -39,6 +42,18 @@ export default function ScanResultPanel({
           {info.country_code && <span className="ml-2">({info.country_code})</span>}
         </div>
       </header>
+
+      {inStore && !match && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-xs text-amber-700">
+          <div className="font-semibold mb-1">⚠️ Store-internal barcode</div>
+          <div className="text-amber-800/80">
+            This prefix (02xx / 200-299) is reserved for in-store stickers (deli, fresh produce,
+            butcher, weighed items). The same code means different things at different shops, so
+            we won't share the name with the global catalog. You name it; only your inventory
+            sees it.
+          </div>
+        </div>
+      )}
 
       {match ? (
         <>
@@ -76,6 +91,9 @@ export default function ScanResultPanel({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {/* Primary action — context-aware. my-items defaults to mark
+                used; shopping-lists context still adds a purchase (scan-tick
+                requires a list-item toggle endpoint not yet built). */}
             <button
               onClick={() =>
                 onAction({
@@ -89,8 +107,26 @@ export default function ScanResultPanel({
             >
               {context === 'my-items' && history.active_stock > 0
                 ? `Mark one as used (FIFO, ${history.active_stock} in stock)`
+                : context === 'shopping-lists'
+                ? `+ Bought: add purchase`
                 : '+ Add new purchase'}
             </button>
+            {context === 'shopping-lists' && (
+              <button
+                onClick={() =>
+                  onAction({
+                    kind: 'tick_list_item',
+                    nameNorm: match.name_norm,
+                    display: match.display_name,
+                    barcode: info.barcode,
+                  })
+                }
+                className="px-3 py-1.5 text-sm bg-ga-bg-hover text-ga-text-primary rounded hover:bg-ga-bg-card"
+                title="Dispatches a DOM event the list page can listen for. Toggle endpoint pending."
+              >
+                ✓ Tick on list
+              </button>
+            )}
             {context !== 'my-items' && history.active_stock > 0 && (
               <button
                 onClick={() =>
@@ -103,6 +139,22 @@ export default function ScanResultPanel({
                 className="px-3 py-1.5 text-sm bg-ga-bg-hover text-ga-text-primary rounded hover:bg-ga-bg-card"
               >
                 Mark used
+              </button>
+            )}
+            {/* Move-location: available whenever there's at least 1 active event,
+                regardless of context — useful when restocking the fridge. */}
+            {history.active_stock > 0 && (
+              <button
+                onClick={() =>
+                  onAction({
+                    kind: 'move_location',
+                    nameNorm: match.name_norm,
+                    display: match.display_name,
+                  })
+                }
+                className="px-3 py-1.5 text-sm bg-ga-bg-hover text-ga-text-primary rounded hover:bg-ga-bg-card"
+              >
+                Move location
               </button>
             )}
             <button
@@ -149,11 +201,15 @@ export default function ScanResultPanel({
       ) : (
         <>
           <div className="bg-ga-bg-hover rounded p-3 text-sm text-ga-text-secondary">
-            Unknown barcode — not in your catalog, not in the global database. What do you call this?
+            {inStore
+              ? "In-store label. Name it for your inventory only — won't be shared with the global catalog."
+              : 'Unknown barcode — not in your catalog, not in the global database. What do you call this?'}
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => onAction({ kind: 'name_unknown', barcode: info.barcode })}
+              onClick={() =>
+                onAction({ kind: 'name_unknown', barcode: info.barcode, inStoreLabel: inStore })
+              }
               className="px-3 py-1.5 text-sm bg-ga-accent text-white rounded hover:opacity-90 font-medium"
             >
               Name this item

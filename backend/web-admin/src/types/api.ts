@@ -1095,6 +1095,9 @@ export interface SuggestedAction {
 export interface ScanInfo {
   barcode: string;
   country_code: string | null;
+  /** True for in-store / variable-weight prefixes (02xx, 200-299) — barcode
+   *  is NOT globally unique; force per-user-only naming, no OFF contribution. */
+  is_in_store_label: boolean;
   user_catalog_match: CatalogEntry | null;
   global_product: Record<string, unknown> | null;
   user_history: ScanInfoUserHistory;

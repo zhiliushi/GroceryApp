@@ -2,6 +2,11 @@
 Barcode lookup and contribution service.
 
 Lookup workflow:
+  0. Detect in-store / variable-weight labels (02xx, 200-299) — these are NOT
+     globally unique (every supermarket reuses them for deli stickers, fresh
+     produce labels, butcher cuts). Short-circuit: return found=False with
+     source="in_store_label" so the SPA forces per-user naming and does NOT
+     write to the global products cache or submit to OFF.
   1. Check Firestore products collection
   2. Check Firestore contributed_products collection
   3. Query Open Food Facts API
@@ -26,6 +31,31 @@ def _get_db():
     return firestore.client()
 
 
+def is_in_store_label(barcode: str) -> bool:
+    """True if the barcode falls in a GS1-reserved in-store / variable-weight
+    range. Such codes are reused by every retailer for store-internal labels
+    (deli, butcher, fresh produce) and CANNOT be used as a global product key.
+
+    Reserved ranges (GS1 General Specifications):
+      - EAN-13 starting "02"     — variable-measure items, store-internal
+      - EAN-13 / UPC starting "2" with 200-299 — same family, in-store labels
+      - 13-digit codes starting "20" through "29" inclusive
+    """
+    if not barcode:
+        return False
+    bc = barcode.strip()
+    if not bc.isdigit():
+        return False
+    # 13-digit EAN: 02xxx... or 20xxx...29xxx... → in-store
+    if len(bc) >= 2 and bc[:2] in ("02",):
+        return True
+    if len(bc) >= 3 and bc[:1] == "2" and bc[1:3].isdigit():
+        prefix = int(bc[:3])
+        if 200 <= prefix <= 299:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Lookup
 # ---------------------------------------------------------------------------
@@ -36,7 +66,16 @@ async def lookup_barcode(barcode: str) -> BarcodeProduct:
 
     Returns a BarcodeProduct with found=True/False and source tag.
     Always returns a valid object (never None).
+
+    In-store labels (02xx, 200-299) bypass the global lookup chain entirely
+    — they're NOT globally unique, so caching one would corrupt the global
+    catalog. Caller must handle source="in_store_label" by forcing the user
+    to name the item locally only.
     """
+    if is_in_store_label(barcode):
+        logger.info("barcode.in_store_label barcode=%s — skipping global lookup", barcode)
+        return BarcodeProduct(barcode=barcode, found=False, source="in_store_label")
+
     # 1. Check Firestore products collection (previously cached OFF results)
     product = _lookup_firebase(barcode)
     if product:

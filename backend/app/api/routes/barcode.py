@@ -158,6 +158,12 @@ async def get_scan_info(barcode: str, user_id: str = ""):
 
     country_code = country_service.detect_country_by_barcode(barcode)
 
+    # In-store / variable-weight prefixes (02xx, 200-299) are reused by every
+    # retailer for store-internal labels — NOT globally unique. Tag the
+    # response so the SPA can force per-user-only naming and hide the OFF
+    # contribute path.
+    is_in_store = barcode_service.is_in_store_label(barcode)
+
     # Global product (may be None)
     try:
         product = await barcode_service.lookup_barcode(barcode)
@@ -229,6 +235,7 @@ async def get_scan_info(barcode: str, user_id: str = ""):
     return {
         "barcode": barcode,
         "country_code": country_code,
+        "is_in_store_label": is_in_store,
         "user_catalog_match": user_catalog_match,
         "global_product": global_product,
         "user_history": user_history,

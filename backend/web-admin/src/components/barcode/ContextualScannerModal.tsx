@@ -5,7 +5,8 @@ import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { qk } from '@/api/queries/keys';
 import { useAuthStore } from '@/stores/authStore';
-import { useConsumeByCatalog } from '@/api/mutations/usePurchaseMutations';
+import { useConsumeByCatalog, useUpdatePurchase } from '@/api/mutations/usePurchaseMutations';
+import { usePurchases } from '@/api/queries/usePurchases';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import ScanResultPanel, { type ScanResultAction } from './ScanResultPanel';
 import { useScannerEngine } from './useScannerEngine';
@@ -35,10 +36,14 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
   >(null);
   // Plan principle: max 1 modal deep. Instead of opening NameUnknownItemModal
   // on top of this one, we swap this modal's content to a name-entry step.
-  const [namingStep, setNamingStep] = useState<{ barcode: string; suggestedName?: string } | null>(
-    null,
-  );
+  const [namingStep, setNamingStep] = useState<{
+    barcode: string;
+    suggestedName?: string;
+    inStoreLabel: boolean;
+  } | null>(null);
   const [nameInput, setNameInput] = useState('');
+  // Move-location flow: scan picks an active catalog, then user picks a destination.
+  const [moveStep, setMoveStep] = useState<{ nameNorm: string; display: string } | null>(null);
 
   const uid = useAuthStore((s) => s.user?.uid);
   const location = useLocation();
@@ -53,6 +58,7 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
 
   const scanner = useScannerEngine();
   const consumeMutation = useConsumeByCatalog();
+  const updateMutation = useUpdatePurchase();
   const stoppingRef = useRef(false);
   const scannerRef = useRef(scanner);
   scannerRef.current = scanner;
@@ -119,8 +125,30 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
           { onSuccess: () => onClose() },
         );
         break;
+      case 'move_location':
+        setMoveStep({ nameNorm: action.nameNorm, display: action.display });
+        break;
+      case 'tick_list_item':
+        // Resolve in-list match against the current shopping list. The
+        // shopping-list detail page captures `currentListId` into the URL;
+        // the modal forwards via a custom event the page listens for.
+        window.dispatchEvent(
+          new CustomEvent('grocery:scan-tick-list-item', {
+            detail: {
+              barcode: action.barcode,
+              nameNorm: action.nameNorm,
+              display: action.display,
+            },
+          }),
+        );
+        onClose();
+        break;
       case 'name_unknown':
-        setNamingStep({ barcode: action.barcode, suggestedName: action.suggestedName });
+        setNamingStep({
+          barcode: action.barcode,
+          suggestedName: action.suggestedName,
+          inStoreLabel: action.inStoreLabel ?? false,
+        });
         setNameInput(action.suggestedName ?? '');
         break;
       case 'rescan':
@@ -157,6 +185,22 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
           </div>
 
           <div className="px-5 py-4 space-y-4">
+            {/* Move-location step — active when user picks "Move location"
+                on a scanned item with active stock. */}
+            {moveStep && (
+              <MoveLocationStep
+                nameNorm={moveStep.nameNorm}
+                display={moveStep.display}
+                onSubmit={(eventId, newLocation) => {
+                  updateMutation.mutate(
+                    { id: eventId, data: { location: newLocation } },
+                    { onSuccess: () => { setMoveStep(null); onClose(); } },
+                  );
+                }}
+                onCancel={() => setMoveStep(null)}
+              />
+            )}
+
             {/* Inline naming step — active when user chose "name_unknown" on an
                 unknown barcode. Replaces the previous NameUnknownItemModal
                 (plan principle: max 1 modal deep). */}
@@ -170,6 +214,11 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                     Barcode <span className="font-mono text-ga-text-primary">{namingStep.barcode}</span> isn't in your catalog yet.
                     {namingStep.suggestedName && ` Global DB says "${namingStep.suggestedName}".`}
                   </div>
+                  {namingStep.inStoreLabel && (
+                    <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700">
+                      Store-internal label — saved to your inventory only, not shared globally.
+                    </div>
+                  )}
                 </div>
                 <input
                   type="text"
@@ -218,8 +267,8 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
               </div>
             )}
 
-            {/* Scanner area — hidden once we have a barcode OR naming step active */}
-            {!scannedBarcode && !namingStep && (
+            {/* Scanner area — hidden once we have a barcode OR an inline step is active */}
+            {!scannedBarcode && !namingStep && !moveStep && (
               <>
                 {scanner.engine !== 'manual' ? (
                   <div className="relative bg-black rounded-lg overflow-hidden aspect-[4/3]">
@@ -278,13 +327,13 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
               </>
             )}
 
-            {/* Result — suppressed during naming step to keep one context visible */}
-            {!namingStep && scannedBarcode && isLoading && (
+            {/* Result — suppressed during inline naming/move steps */}
+            {!namingStep && !moveStep && scannedBarcode && isLoading && (
               <div className="text-sm text-ga-text-secondary py-8 text-center animate-pulse">
                 Looking up {scannedBarcode}…
               </div>
             )}
-            {!namingStep && scannedBarcode && error && (
+            {!namingStep && !moveStep && scannedBarcode && error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-sm text-red-400">
                 Lookup failed: {(error as Error).message}
                 <button onClick={rescan} className="ml-2 underline">
@@ -292,7 +341,7 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                 </button>
               </div>
             )}
-            {!namingStep && scannedBarcode && info && (
+            {!namingStep && !moveStep && scannedBarcode && info && (
               <ScanResultPanel info={info} onAction={handleAction} onClose={onClose} context={context} />
             )}
           </div>
@@ -310,5 +359,127 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
         defaults={quickAddDefaults ?? undefined}
       />
     </>
+  );
+}
+
+
+const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'] as const;
+
+/**
+ * Move-location step — list this user's active purchases for the scanned
+ * catalog entry; user picks one and chooses the destination location.
+ * If only one active event exists, skip the picker and jump straight to
+ * the destination chooser.
+ */
+function MoveLocationStep({
+  nameNorm,
+  display,
+  onSubmit,
+  onCancel,
+}: {
+  nameNorm: string;
+  display: string;
+  onSubmit: (eventId: string, newLocation: string) => void;
+  onCancel: () => void;
+}) {
+  const { data, isLoading } = usePurchases({
+    catalog_name_norm: nameNorm,
+    status: 'active',
+    limit: 50,
+  });
+
+  const events = data?.items ?? [];
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(
+    events.length === 1 ? events[0].id : null,
+  );
+
+  // Auto-select if exactly one option
+  useEffect(() => {
+    if (!selectedEventId && events.length === 1) {
+      setSelectedEventId(events[0].id);
+    }
+  }, [events, selectedEventId]);
+
+  if (isLoading) {
+    return <div className="text-sm text-ga-text-secondary py-4">Loading active items…</div>;
+  }
+  if (events.length === 0) {
+    return (
+      <div className="space-y-3">
+        <div className="text-sm text-ga-text-primary">No active items for "{display}".</div>
+        <button onClick={onCancel} className="px-3 py-1.5 text-sm border border-ga-border rounded">
+          Back
+        </button>
+      </div>
+    );
+  }
+
+  const selected = events.find((e) => e.id === selectedEventId);
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-sm font-semibold text-ga-text-primary">
+          Move "{display}" to a different location
+        </div>
+        <div className="text-xs text-ga-text-secondary mt-1">
+          {events.length === 1
+            ? `Currently in: ${events[0].location ?? '—'}`
+            : `Pick which one (${events.length} active):`}
+        </div>
+      </div>
+
+      {events.length > 1 && (
+        <div className="space-y-1 max-h-40 overflow-y-auto">
+          {events.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => setSelectedEventId(e.id)}
+              className={cn(
+                'w-full text-left px-3 py-2 rounded border text-xs',
+                selectedEventId === e.id
+                  ? 'border-ga-accent bg-ga-accent/10'
+                  : 'border-ga-border hover:bg-ga-bg-hover',
+              )}
+            >
+              <div className="flex justify-between">
+                <span className="font-medium">{e.location ?? 'no location'}</span>
+                <span className="text-ga-text-secondary">
+                  {e.expiry_date ? new Date(e.expiry_date).toLocaleDateString() : 'no expiry'}
+                </span>
+              </div>
+              {e.date_bought && (
+                <div className="text-ga-text-secondary mt-0.5">
+                  bought {new Date(e.date_bought).toLocaleDateString()}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div>
+          <div className="text-xs text-ga-text-secondary mb-1.5">Move to:</div>
+          <div className="flex flex-wrap gap-2">
+            {LOCATIONS.filter((loc) => loc !== selected.location).map((loc) => (
+              <button
+                key={loc}
+                onClick={() => onSubmit(selected.id, loc)}
+                className="px-3 py-1.5 text-sm bg-ga-bg-hover border border-ga-border rounded hover:bg-ga-accent hover:text-white capitalize"
+              >
+                {loc}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end pt-2 border-t border-ga-border">
+        <button onClick={onCancel} className="text-xs text-ga-text-secondary hover:text-ga-text-primary">
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
