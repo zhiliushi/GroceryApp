@@ -210,10 +210,14 @@ def list_purchases(
     if catalog_name_norm:
         q = q.where(filter=FieldFilter("catalog_name_norm", "==", catalog_name_norm))
 
-    # Sort date_bought desc + doc-id tiebreaker for stable cursor pagination
+    # Sort date_bought desc + doc-id tiebreaker for stable cursor pagination.
+    # The __name__ direction MUST match the primary sort direction — Firestore
+    # auto-builds a composite index covering both, but mismatched directions
+    # demand a separate index that we don't ship. ASC + DESC mix triggers a
+    # FailedPrecondition that the SPA renders as 503.
     q = (
         q.order_by("date_bought", direction=firestore.Query.DESCENDING)
-        .order_by("__name__")
+        .order_by("__name__", direction=firestore.Query.DESCENDING)
     )
 
     if cursor:

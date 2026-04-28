@@ -151,8 +151,12 @@ def list_catalog(
     sort_key = sort_by if sort_by in _SORT_FIELDS else "last_purchased_at"
     sort_field, sort_direction = _SORT_FIELDS[sort_key]
 
-    # Primary order + doc-id tiebreaker for stable pagination
-    q = q.order_by(sort_field, direction=sort_direction).order_by("__name__")
+    # Primary order + doc-id tiebreaker. __name__ direction MUST match the
+    # primary sort to reuse the same composite index (see purchase_event_service
+    # for the same fix).
+    q = q.order_by(sort_field, direction=sort_direction).order_by(
+        "__name__", direction=sort_direction
+    )
 
     # Apply cursor — expected shape: [sort_value, doc_id]
     if cursor:
