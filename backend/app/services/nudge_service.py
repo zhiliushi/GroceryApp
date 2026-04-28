@@ -138,17 +138,23 @@ def scan_reminders() -> int:
 
 
 def list_reminders(user_id: str, include_dismissed: bool = False, limit: int = 20) -> list[dict]:
-    """List reminders for a user. Active (non-dismissed) first."""
+    """List reminders for a user. Active (non-dismissed) first.
+
+    Filter runs server-side; sort by `stage` runs client-side to avoid a
+    composite index on (dismissed_at, stage). User reminder volume is
+    small (single digits), so sorting ≤limit results in Python is free.
+    """
     q = _user_reminders_ref(user_id)
     if not include_dismissed:
         q = q.where(filter=FieldFilter("dismissed_at", "==", None))
-    q = q.order_by("stage", direction=firestore.Query.DESCENDING).limit(limit)
+    q = q.limit(limit)
 
     results = []
     for doc in q.stream():
         data = doc.to_dict()
         data["id"] = doc.id
         results.append(data)
+    results.sort(key=lambda r: r.get("stage") or 0, reverse=True)
     return results
 
 
