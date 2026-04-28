@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCreatePurchase } from '@/api/mutations/usePurchaseMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
+import { apiClient } from '@/api/client';
+import { API } from '@/api/endpoints';
+import { useAuthStore } from '@/stores/authStore';
+import { useScannerEngine } from '@/components/barcode/useScannerEngine';
 import CatalogAutocomplete from './CatalogAutocomplete';
 import ExpiryInput from './ExpiryInput';
 import { cn } from '@/utils/cn';
-import type { CatalogEntry, PaymentMethod } from '@/types/api';
+import type { CatalogEntry, PaymentMethod, ScanInfo } from '@/types/api';
 
 interface QuickAddModalProps {
   open: boolean;
@@ -31,10 +35,20 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   const [showMore, setShowMore] = useState(false);
   const [matchedEntry, setMatchedEntry] = useState<CatalogEntry | undefined>();
 
+  const [scanning, setScanning] = useState(false);
+  const [manualBarcode, setManualBarcode] = useState('');
+  const [lookupBarcode, setLookupBarcode] = useState<string | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const stoppingRef = useRef(false);
+
   const { data: flags } = useFeatureFlags();
   const financialTracking = flags?.financial_tracking !== false;
+  const uid = useAuthStore((s) => s.user?.uid);
 
   const createMutation = useCreatePurchase();
+  const scanner = useScannerEngine();
+  const scannerRef = useRef(scanner);
+  scannerRef.current = scanner;
 
   // Reset on open with defaults
   useEffect(() => {
@@ -48,6 +62,10 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setPaymentMethod('');
       setShowMore(false);
       setMatchedEntry(defaults?.catalogEntry);
+      setScanning(false);
+      setManualBarcode('');
+      setLookupBarcode(null);
+      setLookupError(null);
     }
   }, [open, defaults]);
 
@@ -59,6 +77,69 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
     document.addEventListener('keydown', onEsc);
     return () => document.removeEventListener('keydown', onEsc);
   }, [open, onClose]);
+
+  const handleDetected = useCallback((bc: string) => {
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    scannerRef.current.stopScanning();
+    setLookupBarcode(bc);
+  }, []);
+
+  // Start camera when scanning is toggled on
+  useEffect(() => {
+    if (!open || !scanning) return;
+    stoppingRef.current = false;
+    if (scanner.engine !== 'manual') {
+      scanner.startScanning(handleDetected);
+    }
+    return () => {
+      scanner.stopScanning();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, scanning]);
+
+  // Look up the barcode → populate form
+  useEffect(() => {
+    if (!lookupBarcode) return;
+    let cancelled = false;
+    setLookupError(null);
+    apiClient
+      .get<ScanInfo>(API.BARCODE_SCAN_INFO(lookupBarcode), {
+        params: { user_id: uid || '' },
+      })
+      .then((r) => {
+        if (cancelled) return;
+        const info = r.data;
+        const entry = info.user_catalog_match;
+        const product = info.global_product as
+          | { product_name?: string; name?: string }
+          | null;
+        const resolvedName =
+          entry?.display_name ?? product?.product_name ?? product?.name ?? '';
+
+        setBarcode(info.barcode);
+        if (resolvedName) setName(resolvedName);
+        if (entry?.default_location) setLocation(entry.default_location);
+        setMatchedEntry(entry ?? undefined);
+        if (info.user_history.avg_price != null && !price) {
+          setPrice(String(info.user_history.avg_price));
+        }
+        if (!entry && !product) {
+          setShowMore(true);
+        }
+        setScanning(false);
+        setLookupBarcode(null);
+        setManualBarcode('');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLookupError(err instanceof Error ? err.message : 'Lookup failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupBarcode, uid]);
 
   if (!open) return null;
 
@@ -108,6 +189,51 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
         </div>
 
         <div className="px-5 py-4 space-y-4">
+          {scanning ? (
+            <ScannerView
+              engine={scanner.engine}
+              status={scanner.status}
+              error={scanner.error}
+              hasTorch={scanner.hasTorch}
+              torchOn={scanner.torchOn}
+              onToggleTorch={scanner.toggleTorch}
+              manualBarcode={manualBarcode}
+              setManualBarcode={setManualBarcode}
+              onManualLookup={() => {
+                const bc = manualBarcode.trim();
+                if (bc.length < 4) return;
+                handleDetected(bc);
+              }}
+              looking={!!lookupBarcode && !lookupError}
+              lookupBarcode={lookupBarcode}
+              lookupError={lookupError}
+              onCancel={() => {
+                scanner.stopScanning();
+                setScanning(false);
+                setManualBarcode('');
+                setLookupBarcode(null);
+                setLookupError(null);
+                stoppingRef.current = false;
+              }}
+              onRetry={() => {
+                setLookupError(null);
+                setLookupBarcode(null);
+                stoppingRef.current = false;
+                if (scanner.engine !== 'manual') {
+                  scanner.startScanning(handleDetected);
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setScanning(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-ga-accent/50 text-ga-accent rounded-md hover:bg-ga-accent/10 text-sm"
+            >
+              📷 Scan barcode to autofill
+            </button>
+          )}
+
           <div>
             <label className="block text-xs text-ga-text-secondary mb-1">
               Name <span className="text-red-500">*</span>
@@ -228,6 +354,128 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface ScannerViewProps {
+  engine: 'native' | 'html5-qrcode' | 'manual';
+  status: 'idle' | 'starting' | 'scanning' | 'paused' | 'error';
+  error: string | null;
+  hasTorch: boolean;
+  torchOn: boolean;
+  onToggleTorch: () => Promise<void>;
+  manualBarcode: string;
+  setManualBarcode: (v: string) => void;
+  onManualLookup: () => void;
+  looking: boolean;
+  lookupBarcode: string | null;
+  lookupError: string | null;
+  onCancel: () => void;
+  onRetry: () => void;
+}
+
+function ScannerView({
+  engine,
+  status,
+  error,
+  hasTorch,
+  torchOn,
+  onToggleTorch,
+  manualBarcode,
+  setManualBarcode,
+  onManualLookup,
+  looking,
+  lookupBarcode,
+  lookupError,
+  onCancel,
+  onRetry,
+}: ScannerViewProps) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-ga-text-primary">📷 Scan barcode</div>
+        <button
+          onClick={onCancel}
+          className="text-xs text-ga-text-secondary hover:text-ga-text-primary"
+        >
+          Cancel
+        </button>
+      </div>
+
+      {looking && lookupBarcode && (
+        <div className="text-sm text-ga-text-secondary py-3 text-center animate-pulse">
+          Looking up {lookupBarcode}…
+        </div>
+      )}
+
+      {lookupError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-sm text-red-400">
+          Lookup failed: {lookupError}
+          <button onClick={onRetry} className="ml-2 underline">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!looking && !lookupError && (
+        <>
+          {engine !== 'manual' ? (
+            <div className="relative bg-black rounded-lg overflow-hidden aspect-[4/3]">
+              <div id="barcode-viewfinder" className="absolute inset-0" />
+              <div className="absolute inset-10 border-2 border-white/60 rounded pointer-events-none" />
+              {status === 'error' && (
+                <div className="absolute inset-0 flex items-center justify-center text-white text-sm p-4 text-center bg-black/80">
+                  Camera unavailable: {error}
+                </div>
+              )}
+              {hasTorch && (
+                <button
+                  onClick={() => onToggleTorch()}
+                  className="absolute top-2 right-2 bg-black/50 text-white text-xs rounded px-2 py-1"
+                >
+                  {torchOn ? '🔦 Torch on' : '🔦 Torch off'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-ga-text-secondary italic">
+              Camera unavailable on this device — enter the barcode manually below.
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="block text-xs text-ga-text-secondary">
+              Or type / paste barcode manually
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={manualBarcode}
+                onChange={(e) => setManualBarcode(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onManualLookup();
+                }}
+                placeholder="e.g. 9555012345678"
+                className="flex-1 px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary"
+              />
+              <button
+                onClick={onManualLookup}
+                disabled={manualBarcode.length < 4}
+                className={cn(
+                  'px-4 py-2 text-sm rounded',
+                  manualBarcode.length >= 4
+                    ? 'bg-ga-accent text-white'
+                    : 'bg-ga-bg-hover text-ga-text-secondary cursor-not-allowed',
+                )}
+              >
+                Look up
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
