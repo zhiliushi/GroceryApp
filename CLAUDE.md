@@ -29,20 +29,30 @@ See `docs/DATABASE.md` and `docs/CATALOG_SYSTEM.md` for full schema.
 
 ## Build & Run
 
+**Launching: always use `start.bat` (or Luqman's Developer Dashboard) — never raw `python -m uvicorn` in a cmd window.**
+
+Why: a raw cmd window does not bind its child python.exe to a Win32 Job Object. If the cmd dies (crash, X-button, OS shutdown) before graceful teardown, the uvicorn child orphans and squats on port 8000 indefinitely — survivable only by reboot or admin `taskkill`. We hit this Apr 26 → Apr 29: a backend started Apr 26 from a raw cmd kept blocking port 8000 across two days of "restarts" because no restart actually killed it.
+
+`start.bat` (forwards to `start.ps1`) assigns every spawned process to a `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` job. The OS terminates the entire job the instant the launcher's PowerShell handle closes, however it closes. No race, no orphan possible. Same pattern Luqman uses (`F:\ClaudeProjects\AI-Shaman\luqman\start.ps1`).
+
 ```bash
-# Backend
-cd backend && pip install -r requirements.txt && uvicorn main:app --reload --port 8000
+# Local dev — preferred path
+F:\ClaudeProjects\GroceryApp\start.bat
+# Spawns backend (:8000) + web-admin SPA (:5173), opens http://localhost:5173.
+# Closing the window kills both. Logs at logs/{backend,frontend}.{out,err}.log.
 
-# Web Admin SPA (dev server with HMR)
-cd backend/web-admin && npm install && npm run dev
+# Alternative — launch via Luqman Developer Dashboard (also Job-Object protected)
+# http://localhost:1420 → Dev Hub → Developer Dashboard → GroceryApp → Start
 
-# Web Admin SPA (production build → backend/static/spa)
+# Production build of the SPA → backend/static/spa
 cd backend/web-admin && npx vite build
 
 # Mobile (Android) — SCOPE: mobile refactor deferred, uses backward-compat shim
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.10.7-hotspot"
 cd android && ./gradlew.bat app:installDebug
 ```
+
+Backend interpreter selection (inside `start.ps1`): if `backend\venv\Scripts\python.exe` exists, the launcher uses it; otherwise it falls back to `python` on PATH.
 
 ## Deploy
 
