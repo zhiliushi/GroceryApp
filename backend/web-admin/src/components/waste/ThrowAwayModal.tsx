@@ -43,11 +43,13 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
 
   const fullQty = event.quantity;
   const isPartial = portion < fullQty - 1e-9;
-  // Slider snaps to whole numbers when there's at least one full unit.
-  // Manual typing in the number input always allows 0.1 precision so users
-  // can pick fractional portions (e.g. 0.5 of a 1-litre carton).
+  // Slider snaps to whole numbers when there's at least one full unit so
+  // drag-stops land on 1, 2, 3 ... N (instead of 0.1, 1.1, 2.1 if min < step).
+  // Number input keeps a finer min/step so users can still type 0.5 of a
+  // qty=11 item and get a partial action.
   const sliderStep = fullQty < 1 ? 0.1 : 1;
-  const sliderMin = Math.min(0.1, fullQty);
+  const sliderMin = fullQty < 1 ? Math.min(0.1, fullQty) : 1;
+  const inputMin = Math.min(0.1, fullQty);
 
   function handleConfirm() {
     if (!event) return;
@@ -107,14 +109,14 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
             />
             <input
               type="number"
-              min={sliderMin}
+              min={inputMin}
               max={fullQty}
               step={0.1}
               value={portion}
               onChange={(e) => {
                 const v = Number(e.target.value);
                 if (!Number.isFinite(v)) return;
-                setPortion(Math.max(sliderMin, Math.min(fullQty, v)));
+                setPortion(Math.max(inputMin, Math.min(fullQty, v)));
               }}
               className="w-20 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums"
             />
