@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { usePurchase } from '@/api/queries/usePurchases';
 import { useCatalogEntry } from '@/api/queries/useCatalog';
 import {
-  useChangePurchaseStatus,
   useDeletePurchase,
   useUpdatePurchase,
 } from '@/api/mutations/usePurchaseMutations';
@@ -12,6 +11,7 @@ import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
 import ThrowAwayModal from '@/components/waste/ThrowAwayModal';
 import GiveAwayModal from '@/components/waste/GiveAwayModal';
+import MarkUsedModal from '@/components/waste/MarkUsedModal';
 import ExpiryInput from '@/components/quickadd/ExpiryInput';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
 import {
@@ -30,7 +30,6 @@ export default function PurchaseEventDetailPage() {
   const navigate = useNavigate();
   const { data: event, isLoading, error } = usePurchase(eventId);
   const { data: catalogEntry } = useCatalogEntry(event?.catalog_name_norm);
-  const changeStatus = useChangePurchaseStatus();
   const deleteMutation = useDeletePurchase();
   const updateMutation = useUpdatePurchase();
   const undoable = useUndoableAction();
@@ -42,6 +41,7 @@ export default function PurchaseEventDetailPage() {
   const [editLocation, setEditLocation] = useState('');
   const [throwOpen, setThrowOpen] = useState(false);
   const [giveOpen, setGiveOpen] = useState(false);
+  const [usedOpen, setUsedOpen] = useState(false);
 
   if (isLoading) return <LoadingSpinner text="Loading…" />;
   if (error || !event) {
@@ -63,16 +63,7 @@ export default function PurchaseEventDetailPage() {
     if (action.disabled) return;
     switch (action.id) {
       case 'mark_used':
-        // Plan principle: Undo over confirm — deferred commit with Undo toast
-        undoable.run(
-          () =>
-            changeStatus.mutate({
-              id: event.id,
-              data: { status: 'used', reason: 'used_up' },
-              silent: true,
-            }),
-          `Marked "${event.catalog_display}" as used`,
-        );
+        setUsedOpen(true);
         break;
       case 'mark_thrown':
         setThrowOpen(true);
@@ -137,6 +128,7 @@ export default function PurchaseEventDetailPage() {
     <div className="p-6 max-w-2xl mx-auto space-y-4">
       <ThrowAwayModal open={throwOpen} event={event} onClose={() => setThrowOpen(false)} />
       <GiveAwayModal open={giveOpen} event={event} onClose={() => setGiveOpen(false)} />
+      <MarkUsedModal open={usedOpen} event={event} onClose={() => setUsedOpen(false)} />
       <Breadcrumbs
         items={[
           { label: 'Dashboard', to: '/dashboard' },

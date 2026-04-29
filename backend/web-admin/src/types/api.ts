@@ -857,6 +857,10 @@ export interface PurchaseEvent {
   created_at?: string;
   updated_at?: string;
   source?: string;
+  /** Set on terminal events created via partial-action split. Points to the original purchase event. */
+  split_from_event_id?: string;
+  /** Timestamp when the partial split happened. */
+  split_at?: string;
 }
 
 export interface PurchaseListResponse {
@@ -909,6 +913,13 @@ export interface PurchaseStatusUpdateRequest {
   status: Exclude<PurchaseStatus, 'active'>;
   reason?: ConsumeReason;
   transferred_to?: string;
+  /**
+   * Optional partial portion. When 0 < quantity < event.quantity, the server
+   * splits the event: a new terminal event is created with this portion
+   * (and `split_from_event_id` lineage), and the original event is decremented
+   * but stays active. Omit or pass full quantity for whole-event transition.
+   */
+  quantity?: number;
 }
 
 // === Countries ===

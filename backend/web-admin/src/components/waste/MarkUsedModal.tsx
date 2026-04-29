@@ -1,33 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useChangePurchaseStatus } from '@/api/mutations/usePurchaseMutations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
-import { cn } from '@/utils/cn';
-import type { ConsumeReason, PurchaseEvent } from '@/types/api';
+import type { PurchaseEvent } from '@/types/api';
 
-interface ThrowAwayModalProps {
+interface MarkUsedModalProps {
   open: boolean;
   event: PurchaseEvent | null;
   onClose: () => void;
 }
 
-const REASONS: Array<{ key: ConsumeReason; label: string; description: string }> = [
-  { key: 'expired', label: 'Expired', description: 'Past its expiry date' },
-  { key: 'bad', label: 'Went bad', description: 'Spoiled before expiry' },
-  { key: 'used_up', label: 'Used up', description: 'Actually used — mark as used instead' },
-  { key: 'gift', label: 'Given away', description: 'Gifted to someone' },
-];
-
-export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalProps) {
-  const [reason, setReason] = useState<ConsumeReason>('expired');
+export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalProps) {
   const [portion, setPortion] = useState<number>(1);
   const changeStatus = useChangePurchaseStatus();
   const undoable = useUndoableAction();
 
   useEffect(() => {
-    if (open && event) {
-      setReason('expired');
-      setPortion(event.quantity);
-    }
+    if (open && event) setPortion(event.quantity);
   }, [open, event]);
 
   useEffect(() => {
@@ -48,8 +36,6 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
 
   function handleConfirm() {
     if (!event) return;
-    // Close modal immediately; defer the actual mutation for 5s with Undo toast
-    // (plan principle: Undo over confirm).
     const target = event;
     const qty = portion;
     onClose();
@@ -57,12 +43,12 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
       () =>
         changeStatus.mutate({
           id: target.id,
-          data: { status: 'thrown', reason, quantity: qty },
+          data: { status: 'used', reason: 'used_up', quantity: qty },
           silent: true,
         }),
       isPartial
-        ? `Threw ${qty} of "${target.catalog_display}" (${reason})`
-        : `Threw "${target.catalog_display}" (${reason})`,
+        ? `Used ${qty} of "${target.catalog_display}"`
+        : `Marked "${target.catalog_display}" as used`,
     );
   }
 
@@ -75,12 +61,14 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
       >
         <div className="px-5 py-4 border-b border-ga-border">
           <h3 className="text-base font-semibold text-ga-text-primary">
-            Throw "{event.catalog_display}"
+            Mark "{event.catalog_display}" as used
           </h3>
-          <p className="text-xs text-ga-text-secondary mt-1">Pick a reason — helps build your waste stats</p>
+          <p className="text-xs text-ga-text-secondary mt-1">
+            Pick the portion you used — partial amounts are fine.
+          </p>
         </div>
 
-        <div className="px-5 py-3 border-b border-ga-border space-y-2">
+        <div className="px-5 py-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-ga-text-secondary">
             <span>How many?</span>
             <span className="text-ga-text-primary font-medium tabular-nums">
@@ -100,7 +88,7 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
               step={sliderStep}
               value={portion}
               onChange={(e) => setPortion(Number(e.target.value))}
-              className="flex-1 accent-red-500"
+              className="flex-1 accent-ga-accent"
             />
             <input
               type="number"
@@ -118,32 +106,6 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
           </div>
         </div>
 
-        <div className="px-5 py-4 space-y-2">
-          {REASONS.map((r) => (
-            <button
-              key={r.key}
-              onClick={() => setReason(r.key)}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded border flex items-start gap-3 transition-colors',
-                reason === r.key
-                  ? 'border-ga-accent bg-ga-accent/10'
-                  : 'border-ga-border hover:bg-ga-bg-hover',
-              )}
-            >
-              <div
-                className={cn(
-                  'w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 transition-all',
-                  reason === r.key ? 'border-ga-accent bg-ga-accent' : 'border-ga-border',
-                )}
-              />
-              <div>
-                <div className="text-sm font-medium text-ga-text-primary">{r.label}</div>
-                <div className="text-xs text-ga-text-secondary">{r.description}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-
         <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2">
           <button
             onClick={onClose}
@@ -154,9 +116,9 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
           <button
             onClick={handleConfirm}
             disabled={changeStatus.isPending}
-            className="px-4 py-1.5 text-sm font-medium bg-red-600 text-white rounded-md hover:opacity-90 disabled:opacity-60"
+            className="px-4 py-1.5 text-sm font-medium bg-ga-accent text-white rounded-md hover:opacity-90 disabled:opacity-60"
           >
-            {changeStatus.isPending ? 'Saving…' : 'Throw away'}
+            {changeStatus.isPending ? 'Saving…' : 'Mark used'}
           </button>
         </div>
       </div>

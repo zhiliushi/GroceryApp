@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePurchasesInfinite } from '@/api/queries/usePurchases';
-import { useChangePurchaseStatus, useDeletePurchase } from '@/api/mutations/usePurchaseMutations';
+import { useDeletePurchase } from '@/api/mutations/usePurchaseMutations';
 import PageHeader from '@/components/shared/PageHeader';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import { SkeletonList } from '@/components/shared/Skeleton';
@@ -9,6 +9,7 @@ import InfiniteScrollSentinel from '@/components/shared/InfiniteScrollSentinel';
 import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
 import ThrowAwayModal from '@/components/waste/ThrowAwayModal';
 import GiveAwayModal from '@/components/waste/GiveAwayModal';
+import MarkUsedModal from '@/components/waste/MarkUsedModal';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import { useUiStore } from '@/stores/uiStore';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
@@ -42,6 +43,7 @@ export default function MyItemsPage() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [throwTarget, setThrowTarget] = useState<PurchaseEvent | null>(null);
   const [giveTarget, setGiveTarget] = useState<PurchaseEvent | null>(null);
+  const [usedTarget, setUsedTarget] = useState<PurchaseEvent | null>(null);
 
   const recentlyEditedId = useUiStore((s) => s.recentlyEditedPurchaseId);
   const setRecentlyEditedId = useUiStore((s) => s.setRecentlyEditedPurchaseId);
@@ -126,6 +128,7 @@ export default function MyItemsPage() {
       <QuickAddModal open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <ThrowAwayModal open={!!throwTarget} event={throwTarget} onClose={() => setThrowTarget(null)} />
       <GiveAwayModal open={!!giveTarget} event={giveTarget} onClose={() => setGiveTarget(null)} />
+      <MarkUsedModal open={!!usedTarget} event={usedTarget} onClose={() => setUsedTarget(null)} />
 
       {isLoading ? (
         <SkeletonList count={6} />
@@ -149,6 +152,7 @@ export default function MyItemsPage() {
             events={groups.expiring}
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
+            onUsed={setUsedTarget}
             highlightId={recentlyEditedId}
             highlightRef={highlightRowRef}
           />
@@ -159,6 +163,7 @@ export default function MyItemsPage() {
             events={groups.active}
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
+            onUsed={setUsedTarget}
             highlightId={recentlyEditedId}
             highlightRef={highlightRowRef}
           />
@@ -169,6 +174,7 @@ export default function MyItemsPage() {
             events={groups.untracked}
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
+            onUsed={setUsedTarget}
             highlightId={recentlyEditedId}
             highlightRef={highlightRowRef}
           />
@@ -208,6 +214,7 @@ function Group({
   emptyText,
   onThrow,
   onGive,
+  onUsed,
   highlightId,
   highlightRef,
 }: {
@@ -217,6 +224,7 @@ function Group({
   emptyText: string;
   onThrow: (e: PurchaseEvent) => void;
   onGive: (e: PurchaseEvent) => void;
+  onUsed: (e: PurchaseEvent) => void;
   highlightId?: string | null;
   highlightRef?: React.MutableRefObject<HTMLDivElement | null>;
 }) {
@@ -235,6 +243,7 @@ function Group({
               event={e}
               onThrow={onThrow}
               onGive={onGive}
+              onUsed={onUsed}
               highlighted={highlightId === e.id}
               rowRef={highlightId === e.id ? highlightRef : undefined}
             />
@@ -249,18 +258,19 @@ function PurchaseEventRow({
   event,
   onThrow,
   onGive,
+  onUsed,
   highlighted,
   rowRef,
 }: {
   event: PurchaseEvent;
   onThrow: (e: PurchaseEvent) => void;
   onGive: (e: PurchaseEvent) => void;
+  onUsed: (e: PurchaseEvent) => void;
   highlighted?: boolean;
   rowRef?: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   const actions = getPurchaseEventActions(event);
   const state = getPurchaseEventState(event);
-  const changeStatus = useChangePurchaseStatus();
   const deletePurchase = useDeletePurchase();
   const undoable = useUndoableAction();
 
@@ -268,16 +278,7 @@ function PurchaseEventRow({
     if (action.disabled) return;
     switch (action.id) {
       case 'mark_used':
-        // Plan principle: Undo over confirm. Fire after 5s; user can Undo.
-        undoable.run(
-          () =>
-            changeStatus.mutate({
-              id: event.id,
-              data: { status: 'used', reason: 'used_up' },
-              silent: true,
-            }),
-          `Marked "${event.catalog_display}" as used`,
-        );
+        onUsed(event);
         break;
       case 'mark_thrown':
         onThrow(event);
