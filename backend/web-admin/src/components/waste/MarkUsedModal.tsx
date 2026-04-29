@@ -31,7 +31,9 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
 
   const fullQty = event.quantity;
   const isPartial = portion < fullQty - 1e-9;
-  const sliderStep = fullQty <= 1 ? 0.1 : 1;
+  // Slider snaps to whole numbers when there's at least one full unit.
+  // Manual typing in the number input always allows 0.1 precision.
+  const sliderStep = fullQty < 1 ? 0.1 : 1;
   const sliderMin = Math.min(0.1, fullQty);
 
   function handleConfirm() {
@@ -94,7 +96,7 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
               type="number"
               min={sliderMin}
               max={fullQty}
-              step={sliderStep}
+              step={0.1}
               value={portion}
               onChange={(e) => {
                 const v = Number(e.target.value);

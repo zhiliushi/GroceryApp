@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { usePurchasesInfinite } from '@/api/queries/usePurchases';
 import { useDeletePurchase } from '@/api/mutations/usePurchaseMutations';
 import PageHeader from '@/components/shared/PageHeader';
@@ -273,6 +273,7 @@ function PurchaseEventRow({
   const state = getPurchaseEventState(event);
   const deletePurchase = useDeletePurchase();
   const undoable = useUndoableAction();
+  const navigate = useNavigate();
 
   function handleAction(action: Action) {
     if (action.disabled) return;
@@ -286,6 +287,19 @@ function PurchaseEventRow({
       case 'give_away':
         onGive(event);
         break;
+      case 'move_location':
+      case 'set_location':
+        // Detail page owns the location editor — open it via query param.
+        navigate(`/my-items/${event.id}?edit=location`);
+        break;
+      case 'set_expiry':
+        navigate(`/my-items/${event.id}?edit=expiry`);
+        break;
+      case 'view_history':
+        if (event.catalog_name_norm) {
+          navigate(`/catalog/${event.catalog_name_norm}`);
+        }
+        break;
       case 'delete':
         // No up-front confirm — deferred mutation with Undo (plan principle)
         undoable.run(
@@ -294,7 +308,6 @@ function PurchaseEventRow({
         );
         break;
       default:
-        // set_expiry / set_location / move_location / view_history — navigation handled by parent link
         break;
     }
   }

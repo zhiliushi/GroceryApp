@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePurchase } from '@/api/queries/usePurchases';
 import { useCatalogEntry } from '@/api/queries/useCatalog';
 import {
@@ -42,6 +42,24 @@ export default function PurchaseEventDetailPage() {
   const [throwOpen, setThrowOpen] = useState(false);
   const [giveOpen, setGiveOpen] = useState(false);
   const [usedOpen, setUsedOpen] = useState(false);
+
+  // Auto-open location/expiry editor when arriving with `?edit=location` (or `expiry`),
+  // e.g. from the My Items row's "Move" button. Consumes the param so a refresh
+  // doesn't keep reopening the editor.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (!event) return;
+    const editTarget = searchParams.get('edit');
+    if (editTarget === 'location') {
+      setEditingLocation(true);
+      setEditLocation(event.location || 'pantry');
+      setSearchParams({}, { replace: true });
+    } else if (editTarget === 'expiry') {
+      setEditingExpiry(true);
+      setExpiryRaw(event.expiry_raw || '');
+      setSearchParams({}, { replace: true });
+    }
+  }, [event, searchParams, setSearchParams]);
 
   if (isLoading) return <LoadingSpinner text="Loading…" />;
   if (error || !event) {
