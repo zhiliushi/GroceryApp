@@ -123,19 +123,37 @@ export default function GiveAwayModal({ open, event, onClose }: GiveAwayModalPro
               onChange={(e) => setPortion(Number(e.target.value))}
               className="flex-1 accent-purple-500"
             />
+            <button
+              type="button"
+              onClick={() => setPortion(Math.max(inputMin, Math.ceil(portion) - 1))}
+              disabled={portion <= inputMin + 1e-9}
+              className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
+              aria-label="Decrease by 1 (snaps to whole number)"
+            >
+              −
+            </button>
             <input
               type="number"
               min={inputMin}
               max={fullQty}
-              step={1}
+              step={0.1}
               value={portion}
               onChange={(e) => {
                 const v = Number(e.target.value);
                 if (!Number.isFinite(v)) return;
                 setPortion(Math.max(inputMin, Math.min(fullQty, v)));
               }}
-              className="w-20 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums"
+              className="w-16 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
+            <button
+              type="button"
+              onClick={() => setPortion(Math.min(fullQty, Math.floor(portion) + 1))}
+              disabled={portion >= fullQty - 1e-9}
+              className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
+              aria-label="Increase by 1 (snaps to whole number)"
+            >
+              +
+            </button>
           </div>
         </div>
 

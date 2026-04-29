@@ -257,15 +257,32 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-ga-text-secondary mb-1">Quantity</label>
-              <div className="flex gap-1">
+              <div className="flex gap-1 items-center">
+                <button
+                  type="button"
+                  onClick={() => setQuantity(Math.max(0.1, Math.ceil(quantity) - 1))}
+                  disabled={quantity <= 0.1}
+                  className="w-8 h-9 flex-shrink-0 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
+                  aria-label="Decrease quantity (snaps to whole number)"
+                >
+                  −
+                </button>
                 <input
                   type="number"
                   min="0.1"
-                  step="1"
+                  step="0.1"
                   value={quantity}
                   onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-                  className="w-full min-w-0 px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                  className="w-full min-w-0 px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
+                <button
+                  type="button"
+                  onClick={() => setQuantity(Math.floor(quantity) + 1)}
+                  className="w-8 h-9 flex-shrink-0 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover text-base leading-none"
+                  aria-label="Increase quantity (snaps to whole number)"
+                >
+                  +
+                </button>
                 <select
                   value={unit}
                   onChange={(e) => setUnit(e.target.value)}
