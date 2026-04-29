@@ -130,10 +130,14 @@ def compute_health_score(user_id: str, use_cache: bool = True) -> dict:
                     consumed = consumed.replace(tzinfo=timezone.utc)
                 if consumed < start_of_month:
                     continue
+                # Quantity-based: a partial split that threw 2 of 12 should
+                # contribute 2 to waste, not 1 (which would inflate waste-rate
+                # against the dozen-egg buy that's still mostly active).
+                qty = float(data.get("quantity") or 1)
                 if status == "used":
-                    used_this_month += 1
+                    used_this_month += qty
                 else:
-                    thrown_this_month += 1
+                    thrown_this_month += qty
         except Exception as exc:
             logger.warning(
                 "health_score: %s-events query failed (uid=%s): %s", status, user_id, exc,
@@ -297,6 +301,7 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
         name_norm = data.get("catalog_name_norm", "(unknown)")
         display = data.get("catalog_display", name_norm)
         price = data.get("price") or 0.0
+        qty = float(data.get("quantity") or 1)
 
         if name_norm not in by_catalog:
             by_catalog[name_norm] = {
@@ -305,9 +310,11 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
                 "count": 0,
                 "total_value": 0.0,
             }
-        by_catalog[name_norm]["count"] += 1
+        # `count` here is units thrown, not number of throw events. A partial
+        # split that threw 2 of 12 contributes 2 units, not 1 event.
+        by_catalog[name_norm]["count"] += qty
         by_catalog[name_norm]["total_value"] += price
-        thrown_count += 1
+        thrown_count += qty
         thrown_value += price
 
     top_wasted = sorted(by_catalog.values(), key=lambda x: x["count"], reverse=True)[:10]
@@ -362,6 +369,7 @@ def get_financial_summary(user_id: str, period: str = "month") -> dict:
         display = data.get("catalog_display", name_norm)
         price = float(data.get("price") or 0.0)
         status = data.get("status", "active")
+        qty = float(data.get("quantity") or 1)
 
         row = rows.setdefault(
             name_norm,
@@ -376,15 +384,18 @@ def get_financial_summary(user_id: str, period: str = "month") -> dict:
                 "thrown_value": 0.0,
             },
         )
-        row["total_purchases"] += 1
+        # All counts are unit-based (sum of event.quantity) so waste_pct
+        # reflects "units thrown / units bought", not "throw events / buy
+        # events" — a partial split of 2 from 12 reads as 2/12, not 1/2.
+        row["total_purchases"] += qty
         row["total_spent"] += price
         grand_spent += price
         if status == "active":
-            row["active_count"] += 1
+            row["active_count"] += qty
         elif status == "used":
-            row["used_count"] += 1
+            row["used_count"] += qty
         elif status == "thrown":
-            row["thrown_count"] += 1
+            row["thrown_count"] += qty
             row["thrown_value"] += price
             grand_wasted += price
 

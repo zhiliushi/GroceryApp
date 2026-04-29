@@ -407,9 +407,14 @@ def _aggregate_user_stats(db, uid: str) -> Dict[str, Any]:
 
         name_norm = data.get("catalog_name_norm", "")
         display = data.get("catalog_display") or name_norm
-        per_catalog_counts[name_norm]["total"] += 1
+        # Quantity-based aggregation so partial-split events are counted by
+        # units not by event-rows. A throw of 2 from a 12-pack contributes
+        # 2 to waste totals + the avoid_list waste_rate (= units_thrown /
+        # units_total), instead of inflating it to 1/2 = 50%.
+        qty = float(data.get("quantity") or 1)
+        per_catalog_counts[name_norm]["total"] += qty
         if status == "thrown":
-            per_catalog_counts[name_norm]["thrown"] += 1
+            per_catalog_counts[name_norm]["thrown"] += qty
             if name_norm not in waste_by_name:
                 waste_by_name[name_norm] = {
                     "name": display,
@@ -417,7 +422,7 @@ def _aggregate_user_stats(db, uid: str) -> Dict[str, Any]:
                     "count": 0,
                     "value": 0.0,
                 }
-            waste_by_name[name_norm]["count"] += 1
+            waste_by_name[name_norm]["count"] += qty
             if price is not None:
                 waste_by_name[name_norm]["value"] += float(price)
 
