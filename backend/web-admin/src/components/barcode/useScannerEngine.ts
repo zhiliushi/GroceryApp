@@ -27,7 +27,14 @@ interface UseScannerEngineReturn {
   hasTorch: boolean;
   torchOn: boolean;
   toggleTorch: () => Promise<void>;
+  /** Frames processed since current scan session started — for debug overlay */
+  framesScanned: number;
+  /** True when no detection within 8s on native and we silently switched to html5-qrcode */
+  autoFallback: boolean;
 }
+
+/** 8 seconds with no detection on native engine triggers a silent switch to html5-qrcode. */
+const AUTO_FALLBACK_MS = 8000;
 
 const VIEWFINDER_ID = 'barcode-viewfinder';
 
@@ -39,6 +46,8 @@ export function useScannerEngine(): UseScannerEngineReturn {
   const [error, setError] = useState<string | null>(null);
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [framesScanned, setFramesScanned] = useState(0);
+  const [autoFallback, setAutoFallback] = useState(false);
 
   const scannerRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -46,6 +55,10 @@ export function useScannerEngine(): UseScannerEngineReturn {
   const callbackRef = useRef<((barcode: string) => void) | null>(null);
   const lastBarcodeRef = useRef<string>('');
   const lastTimeRef = useRef<number>(0);
+  const framesScannedRef = useRef(0);
+  const framesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const detectionFoundRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Generation counter — incremented on every cleanup/start. After each async
   // boundary, we check if the generation still matches. If not, the operation
   // is stale (cleanup or a new startScanning call happened) and we abort.
@@ -88,6 +101,18 @@ export function useScannerEngine(): UseScannerEngineReturn {
     videoTrackRef.current = null;
     setHasTorch(false);
     setTorchOn(false);
+    // Stop frames poll + fallback timer
+    if (framesPollRef.current) {
+      clearInterval(framesPollRef.current);
+      framesPollRef.current = null;
+    }
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+    framesScannedRef.current = 0;
+    setFramesScanned(0);
+    detectionFoundRef.current = false;
   }, []);
 
   const startScanning = useCallback(async (onDetected: (barcode: string) => void) => {
@@ -95,10 +120,16 @@ export function useScannerEngine(): UseScannerEngineReturn {
     await _cleanup();
 
     callbackRef.current = onDetected;
+    setAutoFallback(false);
     // Claim a new generation for this scan session
     const gen = ++genRef.current;
     setError(null);
     setStatus('starting');
+
+    // Frames-counter poll — debug overlay reads this. ~3/s is enough.
+    framesPollRef.current = setInterval(() => {
+      setFramesScanned(framesScannedRef.current);
+    }, 333);
 
     try {
       if (engine === 'native') {
@@ -117,6 +148,29 @@ export function useScannerEngine(): UseScannerEngineReturn {
       }
     }
   }, [engine, _cleanup]);
+
+  // Silently fall back from native to html5-qrcode when no detection within 8s.
+  // Bypasses setEngine closure timing by calling _startHtml5Qrcode directly.
+  async function _autoFallbackToHtml5() {
+    if (!callbackRef.current) return;
+    const onDetected = callbackRef.current;
+    await _cleanup();
+    setEngine('html5-qrcode');
+    setAutoFallback(true);
+    const gen = ++genRef.current;
+    setStatus('starting');
+    framesPollRef.current = setInterval(() => {
+      setFramesScanned(framesScannedRef.current);
+    }, 333);
+    try {
+      await _startHtml5Qrcode(onDetected, gen);
+    } catch (err) {
+      if (gen === genRef.current) {
+        setError(_classifyCameraError(err));
+        setStatus('error');
+      }
+    }
+  }
 
   const stopScanning = useCallback(async () => {
     await _cleanup();
@@ -181,16 +235,26 @@ export function useScannerEngine(): UseScannerEngineReturn {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const detector = new (window as any).BarcodeDetector({
-      formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+      formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'],
     });
 
     setStatus('scanning');
 
+    // Auto-fallback to html5-qrcode if we go AUTO_FALLBACK_MS without any detection.
+    // ZXing reads some labels (curved, glossy, ITF-14) that BarcodeDetector misses.
+    fallbackTimerRef.current = setTimeout(() => {
+      if (gen === genRef.current && !detectionFoundRef.current) {
+        _autoFallbackToHtml5();
+      }
+    }, AUTO_FALLBACK_MS);
+
     const scan = async () => {
       if (gen !== genRef.current || !streamRef.current?.active) return;
+      framesScannedRef.current++;
       try {
         const barcodes = await detector.detect(video);
         if (barcodes.length > 0) {
+          detectionFoundRef.current = true;
           const value = barcodes[0].rawValue;
           if (_shouldEmit(value)) {
             onDetected(value);
@@ -230,11 +294,15 @@ export function useScannerEngine(): UseScannerEngineReturn {
         aspectRatio: 4 / 3,
       },
       (decodedText) => {
+        detectionFoundRef.current = true;
         if (_shouldEmit(decodedText)) {
           onDetected(decodedText);
         }
       },
-      () => { /* ignore errors during scanning */ },
+      () => {
+        // html5-qrcode emits this on every frame that didn't decode. Treat as a frame tick.
+        framesScannedRef.current++;
+      },
     );
 
     // If generation changed while scanner.start() was running (it calls getUserMedia
@@ -280,6 +348,8 @@ export function useScannerEngine(): UseScannerEngineReturn {
     hasTorch,
     torchOn,
     toggleTorch,
+    framesScanned,
+    autoFallback,
   };
 }
 

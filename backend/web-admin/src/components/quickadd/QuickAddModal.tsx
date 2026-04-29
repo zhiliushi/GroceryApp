@@ -197,6 +197,8 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
               hasTorch={scanner.hasTorch}
               torchOn={scanner.torchOn}
               onToggleTorch={scanner.toggleTorch}
+              framesScanned={scanner.framesScanned}
+              autoFallback={scanner.autoFallback}
               manualBarcode={manualBarcode}
               setManualBarcode={setManualBarcode}
               onManualLookup={() => {
@@ -365,6 +367,8 @@ interface ScannerViewProps {
   hasTorch: boolean;
   torchOn: boolean;
   onToggleTorch: () => Promise<void>;
+  framesScanned: number;
+  autoFallback: boolean;
   manualBarcode: string;
   setManualBarcode: (v: string) => void;
   onManualLookup: () => void;
@@ -382,6 +386,8 @@ function ScannerView({
   hasTorch,
   torchOn,
   onToggleTorch,
+  framesScanned,
+  autoFallback,
   manualBarcode,
   setManualBarcode,
   onManualLookup,
@@ -391,6 +397,10 @@ function ScannerView({
   onCancel,
   onRetry,
 }: ScannerViewProps) {
+  const debugEnabled =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).has('debug') ||
+      window.localStorage.getItem('scannerDebug') === '1');
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -436,6 +446,18 @@ function ScannerView({
                 >
                   {torchOn ? '🔦 Torch on' : '🔦 Torch off'}
                 </button>
+              )}
+              {debugEnabled && (
+                <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] font-mono rounded px-2 py-1 leading-tight">
+                  {engine} · {status}
+                  <br />
+                  frames: {framesScanned}
+                </div>
+              )}
+              {autoFallback && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs rounded px-3 py-1 whitespace-nowrap">
+                  Trying alternate scanner…
+                </div>
               )}
             </div>
           ) : (

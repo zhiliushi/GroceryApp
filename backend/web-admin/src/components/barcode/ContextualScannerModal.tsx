@@ -287,6 +287,19 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                         {scanner.torchOn ? '🔦 Torch on' : '🔦 Torch off'}
                       </button>
                     )}
+                    {(new URLSearchParams(window.location.search).has('debug') ||
+                      window.localStorage.getItem('scannerDebug') === '1') && (
+                      <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] font-mono rounded px-2 py-1 leading-tight">
+                        {scanner.engine} · {scanner.status}
+                        <br />
+                        frames: {scanner.framesScanned}
+                      </div>
+                    )}
+                    {scanner.autoFallback && (
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs rounded px-3 py-1 whitespace-nowrap">
+                        Trying alternate scanner…
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs text-ga-text-secondary italic">

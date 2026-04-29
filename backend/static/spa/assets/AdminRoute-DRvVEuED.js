@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-DbxlOmJ0.js";import{n as t}from"./index-CrOR5ihy.js";import{t as n}from"./authStore-oY0z0p2n.js";var r=e();function i({children:e}){let{isAdmin:i}=n();return i?(0,r.jsx)(r.Fragment,{children:e}):(0,r.jsx)(t,{to:`/dashboard`,replace:!0})}export{i as default};
