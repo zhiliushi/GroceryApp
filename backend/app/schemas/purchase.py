@@ -94,8 +94,16 @@ class PurchaseUpdate(BaseModel):
 
 
 class PurchaseStatusUpdate(BaseModel):
-    """Change status (used / thrown / transferred). Validated against current state."""
+    """Change status (used / thrown / transferred). Validated against current state.
+
+    `quantity` enables partial actions: if 0 < quantity < event.quantity, the
+    server splits the event — a new terminal event is created with the
+    portion (linked back via `split_from_event_id`), and the original event
+    is decremented and stays active. Omit or pass full quantity for the
+    legacy whole-event transition.
+    """
 
     status: str                                # "used" | "thrown" | "transferred"
     reason: Optional[str] = None               # "used_up" | "expired" | "bad" | "gift"
     transferred_to: Optional[str] = None       # uid or foodbank_id
+    quantity: Optional[float] = None           # partial portion; None = whole event

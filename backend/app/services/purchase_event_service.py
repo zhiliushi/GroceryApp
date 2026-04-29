@@ -365,16 +365,25 @@ def update_status(
     status: str,
     reason: Optional[str] = None,
     transferred_to: Optional[str] = None,
+    quantity: Optional[float] = None,
 ) -> dict:
     """Change status. Validates transition + handles catalog counter.
 
     Valid transitions: active -> used | thrown | transferred.
     Terminal states (used/thrown/transferred) cannot be changed.
 
+    If `quantity` is provided and is strictly less than the event's quantity,
+    the event is SPLIT: a new terminal event is created carrying the portion,
+    linked back via `split_from_event_id`, and the original event's quantity
+    is decremented (status stays active). If `quantity` is None or equal to
+    the event's quantity, the whole event transitions (legacy behaviour).
+
     Args:
         status: New status ("used", "thrown", or "transferred")
         reason: Required for "thrown". Optional for "used".
         transferred_to: Required for "transferred" (foodbank_id or recipient uid)
+        quantity: Optional portion for partial actions. Must satisfy
+            0 < quantity <= event.quantity. None means whole event.
 
     Raises:
         NotFoundError, ValidationError
@@ -396,6 +405,33 @@ def update_status(
     if not catalog_name_norm:
         raise ValidationError(f"Event '{event_id}' missing catalog_name_norm (orphan)")
 
+    event_qty = float(data.get("quantity", 1.0))
+    if quantity is not None:
+        if quantity <= 0:
+            raise ValidationError(f"quantity must be > 0 (got {quantity})")
+        # Allow tiny float slack for UI sliders so 1.0 input doesn't get split-classified.
+        if quantity > event_qty + 1e-9:
+            raise ValidationError(
+                f"quantity {quantity} exceeds event quantity {event_qty}"
+            )
+
+    is_partial = quantity is not None and quantity < event_qty - 1e-9
+
+    if is_partial:
+        return _split_and_terminate(
+            user_id=user_id,
+            doc_ref=doc_ref,
+            data=data,
+            event_id=event_id,
+            catalog_name_norm=catalog_name_norm,
+            event_qty=event_qty,
+            portion=float(quantity),
+            status=status,
+            reason=reason,
+            transferred_to=transferred_to,
+        )
+
+    # Whole-event transition (legacy path).
     now = datetime.now(timezone.utc)
     event_updates: dict[str, Any] = {
         "status": status,
@@ -425,6 +461,106 @@ def update_status(
         user_id, event_id, current_status, status, reason,
     )
     return get_purchase(user_id, event_id)
+
+
+def _split_and_terminate(
+    *,
+    user_id: str,
+    doc_ref,
+    data: dict,
+    event_id: str,
+    catalog_name_norm: str,
+    event_qty: float,
+    portion: float,
+    status: str,
+    reason: Optional[str],
+    transferred_to: Optional[str],
+) -> dict:
+    """Split a purchase event: portion -> new terminal event, original stays active.
+
+    Counter math: original was already counted as 1 active purchase at create
+    time. After split, the original is still active (no active_delta change)
+    and the new terminal event is a NEW purchase row, so total_delta=+1,
+    active_delta=0 (it was born terminal, never active).
+
+    Price is split proportionally so spending aggregates stay accurate.
+    Lineage is recorded on the new event via `split_from_event_id`.
+    """
+    now = datetime.now(timezone.utc)
+    new_qty_original = event_qty - portion
+
+    orig_price = data.get("price")
+    if orig_price is not None and event_qty > 0:
+        portion_price = round(float(orig_price) * portion / event_qty, 4)
+        original_price_remaining = round(float(orig_price) - portion_price, 4)
+    else:
+        portion_price = None
+        original_price_remaining = orig_price
+
+    # Build the new terminal event by cloning provenance fields from the original.
+    # Inherit `source` so test_seed splits stay tagged for clean teardown.
+    inherited_source = data.get("source") or "api"
+    new_event_data: dict[str, Any] = {
+        "catalog_name_norm": catalog_name_norm,
+        "catalog_display": data.get("catalog_display"),
+        "barcode": data.get("barcode"),
+        "country_code": data.get("country_code"),
+        "quantity": float(portion),
+        "unit": data.get("unit"),
+        "expiry_date": data.get("expiry_date"),
+        "expiry_source": data.get("expiry_source"),
+        "expiry_raw": data.get("expiry_raw"),
+        "price": portion_price,
+        "currency": data.get("currency"),
+        "payment_method": data.get("payment_method"),
+        "date_bought": data.get("date_bought"),
+        "location": data.get("location"),
+        "status": status,
+        "consumed_date": now,
+        "consumed_reason": (
+            reason if reason is not None
+            else ("used_up" if status == "used" else None)
+        ),
+        "transferred_to": transferred_to,
+        "reminder_stage": 0,
+        "last_reminded_at": None,
+        "household_id": data.get("household_id"),
+        "source_ref": data.get("source_ref"),
+        "split_from_event_id": event_id,
+        "split_at": now,
+    }
+
+    new_ref = _user_purchases_ref(user_id).document()
+    new_event_id = new_ref.id
+
+    original_updates: dict[str, Any] = {
+        "quantity": new_qty_original,
+        "price": original_price_remaining,
+    }
+
+    transaction = _db().transaction()
+
+    @firestore.transactional
+    def _commit(tx):
+        tx.set(
+            new_ref,
+            apply_create_metadata(new_event_data, uid=user_id, source=inherited_source),
+        )
+        tx.update(doc_ref, apply_update_metadata(original_updates))
+        # Original was already counted as 1 active; it stays active.
+        # New event is born terminal (used/thrown/transferred), never counted as active.
+        # Net counter change: total +1, active 0.
+        catalog_service.increment_counters_tx(
+            tx, user_id, catalog_name_norm, active_delta=0, total_delta=1,
+        )
+
+    _commit(transaction)
+
+    logger.info(
+        "purchase.split user=%s original=%s new=%s portion=%s status=%s reason=%s",
+        user_id, event_id, new_event_id, portion, status, reason,
+    )
+    return get_purchase(user_id, new_event_id)
 
 
 def consume_one_by_catalog(user_id: str, catalog_name_norm: str, quantity: int = 1) -> dict:

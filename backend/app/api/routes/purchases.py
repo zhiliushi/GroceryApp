@@ -134,13 +134,17 @@ async def change_status(
     data: PurchaseStatusUpdate,
     user: UserInfo = Depends(get_current_user),
 ):
-    """Transition status from `active` to a terminal state (used / thrown / transferred)."""
+    """Transition status from `active` to a terminal state (used / thrown / transferred).
+
+    Optional `quantity` enables partial actions — see PurchaseStatusUpdate docstring.
+    """
     return purchase_event_service.update_status(
         user_id=user.uid,
         event_id=event_id,
         status=data.status,
         reason=data.reason,
         transferred_to=data.transferred_to,
+        quantity=data.quantity,
     )
 
 
