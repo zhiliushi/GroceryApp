@@ -43,12 +43,10 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
 
   const fullQty = event.quantity;
   const isPartial = portion < fullQty - 1e-9;
-  // Slider snaps to whole numbers when there's at least one full unit so
-  // drag-stops land on 1, 2, 3 ... N (instead of 0.1, 1.1, 2.1 if min < step).
-  // Number input keeps a finer min/step so users can still type 0.5 of a
-  // qty=11 item and get a partial action.
-  const sliderStep = fullQty < 1 ? 0.1 : 1;
-  const sliderMin = fullQty < 1 ? Math.min(0.1, fullQty) : 1;
+  // Universal rule: slider drag = 0.1 fine control (so 0.5, 0.7 reachable
+  // by drag), number-input arrows = 1 whole unit (so a click on the
+  // up-arrow goes 3 -> 4 not 3 -> 3.1). Manual typing in the number input
+  // accepts any value within bounds, validation is loose on number step.
   const inputMin = Math.min(0.1, fullQty);
 
   function handleConfirm() {
@@ -100,9 +98,9 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
           <div className="flex gap-2 items-center">
             <input
               type="range"
-              min={sliderMin}
+              min={inputMin}
               max={fullQty}
-              step={sliderStep}
+              step={0.1}
               value={portion}
               onChange={(e) => setPortion(Number(e.target.value))}
               className="flex-1 accent-red-500"
@@ -111,7 +109,7 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
               type="number"
               min={inputMin}
               max={fullQty}
-              step={0.1}
+              step={1}
               value={portion}
               onChange={(e) => {
                 const v = Number(e.target.value);

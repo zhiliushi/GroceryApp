@@ -31,11 +31,8 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
 
   const fullQty = event.quantity;
   const isPartial = portion < fullQty - 1e-9;
-  // Slider snaps to whole numbers when there's at least one full unit so
-  // drag-stops land on 1, 2, 3 ... N. Number input keeps finer min/step
-  // so users can still type 0.5 of any quantity for a fractional portion.
-  const sliderStep = fullQty < 1 ? 0.1 : 1;
-  const sliderMin = fullQty < 1 ? Math.min(0.1, fullQty) : 1;
+  // Universal rule: slider drag = 0.1 fine control, number-input arrows
+  // = 1 whole unit. Manual typing accepts any value within bounds.
   const inputMin = Math.min(0.1, fullQty);
 
   function handleConfirm() {
@@ -87,9 +84,9 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
           <div className="flex gap-2 items-center">
             <input
               type="range"
-              min={sliderMin}
+              min={inputMin}
               max={fullQty}
-              step={sliderStep}
+              step={0.1}
               value={portion}
               onChange={(e) => setPortion(Number(e.target.value))}
               className="flex-1 accent-ga-accent"
@@ -98,7 +95,7 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
               type="number"
               min={inputMin}
               max={fullQty}
-              step={0.1}
+              step={1}
               value={portion}
               onChange={(e) => {
                 const v = Number(e.target.value);

@@ -335,8 +335,10 @@ function PurchaseEventRow({
           <span className="text-sm font-medium text-ga-text-primary truncate">
             {event.catalog_display}
           </span>
-          {event.quantity !== 1 && (
-            <span className="text-xs text-ga-text-secondary">× {event.quantity}</span>
+          {(event.quantity !== 1 || (event.unit && event.unit !== 'count')) && (
+            <span className="text-xs text-ga-text-secondary">
+              × {event.quantity}{event.unit && event.unit !== 'count' ? ` ${event.unit}` : ''}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2 mt-1">

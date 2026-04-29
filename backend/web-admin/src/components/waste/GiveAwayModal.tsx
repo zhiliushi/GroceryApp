@@ -16,19 +16,21 @@ export default function GiveAwayModal({ open, event, onClose }: GiveAwayModalPro
   const [selected, setSelected] = useState<string>('');
   const [manual, setManual] = useState<string>('');
   const [mode, setMode] = useState<'foodbank' | 'person'>('foodbank');
+  const [portion, setPortion] = useState<number>(1);
 
   const { data } = useFoodbanks();
   const changeStatus = useChangePurchaseStatus();
   const undoable = useUndoableAction();
 
   useEffect(() => {
-    if (open) {
+    if (open && event) {
       setSearch('');
       setSelected('');
       setManual('');
       setMode('foodbank');
+      setPortion(event.quantity);
     }
-  }, [open]);
+  }, [open, event]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +57,11 @@ export default function GiveAwayModal({ open, event, onClose }: GiveAwayModalPro
 
   if (!open || !event) return null;
 
+  const fullQty = event.quantity;
+  const isPartial = portion < fullQty - 1e-9;
+  // Universal rule: slider drag = 0.1 fine control, number arrows = whole units.
+  const inputMin = Math.min(0.1, fullQty);
+
   const canConfirm =
     mode === 'foodbank' ? !!selected : !!manual.trim();
 
@@ -62,17 +69,19 @@ export default function GiveAwayModal({ open, event, onClose }: GiveAwayModalPro
     if (!event) return;
     const transferredTo = mode === 'foodbank' ? selected : manual.trim();
     if (!transferredTo) return;
-    // Close immediately; defer mutation 5s behind Undo toast (plan principle).
     const target = event;
+    const qty = portion;
     onClose();
     undoable.run(
       () =>
         changeStatus.mutate({
           id: target.id,
-          data: { status: 'transferred', reason: 'gift', transferred_to: transferredTo },
+          data: { status: 'transferred', reason: 'gift', transferred_to: transferredTo, quantity: qty },
           silent: true,
         }),
-      `Gave "${target.catalog_display}" to ${transferredTo}`,
+      isPartial
+        ? `Gave ${qty} of "${target.catalog_display}" to ${transferredTo}`
+        : `Gave "${target.catalog_display}" to ${transferredTo}`,
     );
   }
 
@@ -90,6 +99,44 @@ export default function GiveAwayModal({ open, event, onClose }: GiveAwayModalPro
           <p className="text-xs text-ga-text-secondary mt-1">
             Pick a foodbank or enter a recipient name
           </p>
+        </div>
+
+        <div className="px-5 py-3 border-b border-ga-border space-y-2">
+          <div className="flex items-center justify-between text-xs text-ga-text-secondary">
+            <span>How many?</span>
+            <span className="text-ga-text-primary font-medium tabular-nums">
+              {portion} of {fullQty}
+              {isPartial && (
+                <span className="ml-1 text-ga-text-secondary">
+                  ({(fullQty - portion).toFixed(1)} stays active)
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="flex gap-2 items-center">
+            <input
+              type="range"
+              min={inputMin}
+              max={fullQty}
+              step={0.1}
+              value={portion}
+              onChange={(e) => setPortion(Number(e.target.value))}
+              className="flex-1 accent-purple-500"
+            />
+            <input
+              type="number"
+              min={inputMin}
+              max={fullQty}
+              step={1}
+              value={portion}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isFinite(v)) return;
+                setPortion(Math.max(inputMin, Math.min(fullQty, v)));
+              }}
+              className="w-20 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums"
+            />
+          </div>
         </div>
 
         <div className="px-5 py-4 space-y-3">
