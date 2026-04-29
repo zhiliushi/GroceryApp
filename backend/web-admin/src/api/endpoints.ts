@@ -124,6 +124,7 @@ export const API = {
   PURCHASES: '/api/purchases',
   PURCHASE: (id: string) => `/api/purchases/${id}`,
   PURCHASE_STATUS: (id: string) => `/api/purchases/${id}/status`,
+  PURCHASE_MOVE: (id: string) => `/api/purchases/${id}/move`,
   PURCHASE_CONSUME: '/api/purchases/consume',
 
   COUNTRIES: '/api/countries',

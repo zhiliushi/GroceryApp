@@ -563,6 +563,148 @@ def _split_and_terminate(
     return get_purchase(user_id, new_event_id)
 
 
+def move_to_location(
+    user_id: str,
+    event_id: str,
+    *,
+    location: str,
+    quantity: Optional[float] = None,
+) -> dict:
+    """Move a purchase event to a new storage location.
+
+    If `quantity` is None or equal to the event's quantity, performs a whole-
+    event location update (same as PATCH /purchases/{id} with location). If
+    `quantity` is strictly less than the event's quantity, SPLITS the event:
+    a new ACTIVE event is created at the target location with the portion,
+    linked back via `split_from_event_id`, and the original event is
+    decremented and stays at the original location.
+
+    Counter math (different from _split_and_terminate): the new event is
+    born active, so active_delta=+1, total_delta=+1. The original was
+    already counted; it doesn't change status.
+
+    Raises:
+        NotFoundError, ValidationError
+    """
+    if not location:
+        raise ValidationError("location is required")
+
+    doc_ref = _user_purchases_ref(user_id).document(event_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise NotFoundError(f"Purchase event '{event_id}' not found")
+
+    data = snap.to_dict() or {}
+    if data.get("status", "active") != "active":
+        raise ValidationError(
+            "Only active events can be moved (terminal events are historical records)."
+        )
+
+    catalog_name_norm = data.get("catalog_name_norm")
+    if not catalog_name_norm:
+        raise ValidationError(f"Event '{event_id}' missing catalog_name_norm (orphan)")
+
+    event_qty = float(data.get("quantity") or 1)
+    if quantity is not None:
+        if quantity <= 0:
+            raise ValidationError(f"quantity must be > 0 (got {quantity})")
+        if quantity > event_qty + 1e-9:
+            raise ValidationError(
+                f"quantity {quantity} exceeds event quantity {event_qty}"
+            )
+
+    is_partial = quantity is not None and quantity < event_qty - 1e-9
+
+    if not is_partial:
+        # Whole-event move — equivalent to update_purchase({location: ...})
+        # but lives here so the route can use a single endpoint regardless of
+        # whether the move is partial.
+        transaction = _db().transaction()
+
+        @firestore.transactional
+        def _commit_full(tx):
+            tx.update(doc_ref, apply_update_metadata({"location": location}))
+
+        _commit_full(transaction)
+        logger.info(
+            "purchase.move user=%s event_id=%s location=%s -> %s (full)",
+            user_id, event_id, data.get("location"), location,
+        )
+        return get_purchase(user_id, event_id)
+
+    # Partial move — split into a new active event at the target location.
+    now = datetime.now(timezone.utc)
+    portion = float(quantity)
+    new_qty_original = event_qty - portion
+
+    orig_price = data.get("price")
+    if orig_price is not None and event_qty > 0:
+        portion_price = round(float(orig_price) * portion / event_qty, 4)
+        original_price_remaining = round(float(orig_price) - portion_price, 4)
+    else:
+        portion_price = None
+        original_price_remaining = orig_price
+
+    inherited_source = data.get("source") or "api"
+    new_event_data: dict[str, Any] = {
+        "catalog_name_norm": catalog_name_norm,
+        "catalog_display": data.get("catalog_display"),
+        "barcode": data.get("barcode"),
+        "country_code": data.get("country_code"),
+        "quantity": portion,
+        "unit": data.get("unit"),
+        "expiry_date": data.get("expiry_date"),
+        "expiry_source": data.get("expiry_source"),
+        "expiry_raw": data.get("expiry_raw"),
+        "price": portion_price,
+        "currency": data.get("currency"),
+        "payment_method": data.get("payment_method"),
+        "date_bought": data.get("date_bought"),
+        "location": location,
+        "status": "active",
+        "consumed_date": None,
+        "consumed_reason": None,
+        "transferred_to": None,
+        "reminder_stage": 0,
+        "last_reminded_at": None,
+        "household_id": data.get("household_id"),
+        "source_ref": data.get("source_ref"),
+        "split_from_event_id": event_id,
+        "split_at": now,
+    }
+
+    new_ref = _user_purchases_ref(user_id).document()
+    new_event_id = new_ref.id
+
+    original_updates: dict[str, Any] = {
+        "quantity": new_qty_original,
+        "price": original_price_remaining,
+    }
+
+    transaction = _db().transaction()
+
+    @firestore.transactional
+    def _commit(tx):
+        tx.set(
+            new_ref,
+            apply_create_metadata(new_event_data, uid=user_id, source=inherited_source),
+        )
+        tx.update(doc_ref, apply_update_metadata(original_updates))
+        # Original was 1 active and stays active. New event is born active.
+        # Net counter change: total +1, active +1.
+        catalog_service.increment_counters_tx(
+            tx, user_id, catalog_name_norm, active_delta=1, total_delta=1,
+        )
+
+    _commit(transaction)
+
+    logger.info(
+        "purchase.move-split user=%s original=%s new=%s portion=%s location=%s",
+        user_id, event_id, new_event_id, portion, location,
+    )
+    return get_purchase(user_id, new_event_id)
+
+
 def consume_one_by_catalog(user_id: str, catalog_name_norm: str, quantity: int = 1) -> dict:
     """FIFO consume: find oldest-expiry active event for this catalog entry, mark used.
 

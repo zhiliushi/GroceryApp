@@ -5,6 +5,7 @@ import { API } from '@/api/endpoints';
 import type {
   PurchaseCreateRequest,
   PurchaseEvent,
+  PurchaseMoveRequest,
   PurchaseStatusUpdateRequest,
   PurchaseUpdateRequest,
 } from '@/types/api';
@@ -68,6 +69,23 @@ export function useChangePurchaseStatus() {
       invalidateAll(qc);
     },
     onError: () => toast.error('Failed to change status'),
+  });
+}
+
+export function useMovePurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: {
+      id: string;
+      data: PurchaseMoveRequest;
+      silent?: boolean;
+    }) =>
+      apiClient.post<PurchaseEvent>(API.PURCHASE_MOVE(id), data).then((r) => r.data),
+    onSuccess: (_event, vars) => {
+      if (!vars.silent) toast.success('Moved');
+      invalidateAll(qc);
+    },
+    onError: () => toast.error('Failed to move'),
   });
 }
 

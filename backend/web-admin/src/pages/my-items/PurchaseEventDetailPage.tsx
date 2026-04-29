@@ -12,6 +12,7 @@ import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
 import ThrowAwayModal from '@/components/waste/ThrowAwayModal';
 import GiveAwayModal from '@/components/waste/GiveAwayModal';
 import MarkUsedModal from '@/components/waste/MarkUsedModal';
+import MoveLocationModal from '@/components/waste/MoveLocationModal';
 import ExpiryInput from '@/components/quickadd/ExpiryInput';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
 import {
@@ -22,8 +23,6 @@ import {
 } from '@/utils/actionResolver';
 import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/utils/cn';
-
-const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'];
 
 export default function PurchaseEventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -37,22 +36,21 @@ export default function PurchaseEventDetailPage() {
 
   const [editingExpiry, setEditingExpiry] = useState(false);
   const [expiryRaw, setExpiryRaw] = useState('');
-  const [editingLocation, setEditingLocation] = useState(false);
-  const [editLocation, setEditLocation] = useState('');
   const [throwOpen, setThrowOpen] = useState(false);
   const [giveOpen, setGiveOpen] = useState(false);
   const [usedOpen, setUsedOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
 
-  // Auto-open location/expiry editor when arriving with `?edit=location` (or `expiry`),
-  // e.g. from the My Items row's "Move" button. Consumes the param so a refresh
-  // doesn't keep reopening the editor.
+  // Auto-open the matching editor when arriving with `?edit=location|expiry`
+  // (e.g. from a deep link). The location flow uses the move modal so partial
+  // moves are reachable from the deep link too. Consumes the param so refresh
+  // doesn't keep reopening.
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     if (!event) return;
     const editTarget = searchParams.get('edit');
     if (editTarget === 'location') {
-      setEditingLocation(true);
-      setEditLocation(event.location || 'pantry');
+      setMoveOpen(true);
       setSearchParams({}, { replace: true });
     } else if (editTarget === 'expiry') {
       setEditingExpiry(true);
@@ -95,8 +93,7 @@ export default function PurchaseEventDetailPage() {
         break;
       case 'set_location':
       case 'move_location':
-        setEditingLocation(true);
-        setEditLocation(event.location || 'pantry');
+        setMoveOpen(true);
         break;
       case 'delete':
         // Plan principle: no up-front confirm; deferred mutation with Undo
@@ -129,24 +126,12 @@ export default function PurchaseEventDetailPage() {
     );
   }
 
-  function saveLocation() {
-    if (!event) return;
-    updateMutation.mutate(
-      { id: event.id, data: { location: editLocation } },
-      {
-        onSuccess: () => {
-          setEditingLocation(false);
-          setRecentlyEditedPurchaseId(event.id);
-        },
-      },
-    );
-  }
-
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-4">
       <ThrowAwayModal open={throwOpen} event={event} onClose={() => setThrowOpen(false)} />
       <GiveAwayModal open={giveOpen} event={event} onClose={() => setGiveOpen(false)} />
       <MarkUsedModal open={usedOpen} event={event} onClose={() => setUsedOpen(false)} />
+      <MoveLocationModal open={moveOpen} event={event} onClose={() => setMoveOpen(false)} />
       <Breadcrumbs
         items={[
           { label: 'Dashboard', to: '/dashboard' },
@@ -179,43 +164,12 @@ export default function PurchaseEventDetailPage() {
             {event.date_bought ? new Date(event.date_bought).toLocaleDateString() : '—'}
           </Row>
           <Row label="Location">
-            {editingLocation ? (
-              <div className="flex gap-2 items-center">
-                <select
-                  value={editLocation}
-                  onChange={(e) => setEditLocation(e.target.value)}
-                  className="px-2 py-1 bg-ga-bg-card border border-ga-border rounded text-sm"
-                >
-                  {LOCATIONS.map((l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={saveLocation}
-                  className="text-xs px-2 py-1 bg-ga-accent text-white rounded"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => setEditingLocation(false)}
-                  className="text-xs px-2 py-1 border border-ga-border rounded"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <span
-                className="cursor-pointer hover:underline"
-                onClick={() => {
-                  setEditingLocation(true);
-                  setEditLocation(event.location || 'pantry');
-                }}
-              >
-                📍 {event.location || '(none)'} ✎
-              </span>
-            )}
+            <span
+              className="cursor-pointer hover:underline"
+              onClick={() => setMoveOpen(true)}
+            >
+              📍 {event.location || '(none)'} ✎
+            </span>
           </Row>
           <Row label="Barcode">{event.barcode ?? '—'}</Row>
           <Row label="Price">

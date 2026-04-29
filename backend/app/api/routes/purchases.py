@@ -5,6 +5,7 @@ GET    /api/purchases                      — List purchase events (filter by s
 GET    /api/purchases/{event_id}           — Get a single event
 PATCH  /api/purchases/{event_id}           — Partial update (quantity, expiry, price, location)
 POST   /api/purchases/{event_id}/status    — Change status (used / thrown / transferred)
+POST   /api/purchases/{event_id}/move      — Move to another location (supports partial split)
 DELETE /api/purchases/{event_id}           — Hard delete (rare — prefer status change)
 POST   /api/purchases/consume              — FIFO consume by catalog name (mark oldest as used)
 """
@@ -20,6 +21,7 @@ from app.core.auth import UserInfo, get_current_user
 from app.core.rate_limit import rate_limit
 from app.schemas.purchase import (
     PurchaseCreate,
+    PurchaseMoveRequest,
     PurchaseStatusUpdate,
     PurchaseUpdate,
 )
@@ -144,6 +146,27 @@ async def change_status(
         status=data.status,
         reason=data.reason,
         transferred_to=data.transferred_to,
+        quantity=data.quantity,
+    )
+
+
+@router.post("/{event_id}/move", dependencies=[Depends(rate_limit(60))])
+async def move_purchase(
+    event_id: str,
+    data: PurchaseMoveRequest,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Move the event to a different storage location.
+
+    Optional `quantity` enables partial moves: when 0 < quantity < event.quantity,
+    the event is split — a new active event is created at the target location
+    with the portion (with `split_from_event_id` lineage), and the original
+    event is decremented and stays at its current location.
+    """
+    return purchase_event_service.move_to_location(
+        user_id=user.uid,
+        event_id=event_id,
+        location=data.location,
         quantity=data.quantity,
     )
 

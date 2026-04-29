@@ -922,6 +922,17 @@ export interface PurchaseStatusUpdateRequest {
   quantity?: number;
 }
 
+export interface PurchaseMoveRequest {
+  location: string;
+  /**
+   * Optional partial portion. When 0 < quantity < event.quantity, the server
+   * splits the event into a new active event at the target location (with
+   * `split_from_event_id` lineage); the original stays at the original
+   * location, decremented. Omit or pass full quantity for whole-event move.
+   */
+  quantity?: number;
+}
+
 // === Countries ===
 
 export interface GS1PrefixRange {

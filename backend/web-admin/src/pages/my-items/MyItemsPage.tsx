@@ -10,6 +10,7 @@ import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
 import ThrowAwayModal from '@/components/waste/ThrowAwayModal';
 import GiveAwayModal from '@/components/waste/GiveAwayModal';
 import MarkUsedModal from '@/components/waste/MarkUsedModal';
+import MoveLocationModal from '@/components/waste/MoveLocationModal';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import { useUiStore } from '@/stores/uiStore';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
@@ -44,6 +45,7 @@ export default function MyItemsPage() {
   const [throwTarget, setThrowTarget] = useState<PurchaseEvent | null>(null);
   const [giveTarget, setGiveTarget] = useState<PurchaseEvent | null>(null);
   const [usedTarget, setUsedTarget] = useState<PurchaseEvent | null>(null);
+  const [moveTarget, setMoveTarget] = useState<PurchaseEvent | null>(null);
 
   const recentlyEditedId = useUiStore((s) => s.recentlyEditedPurchaseId);
   const setRecentlyEditedId = useUiStore((s) => s.setRecentlyEditedPurchaseId);
@@ -129,6 +131,7 @@ export default function MyItemsPage() {
       <ThrowAwayModal open={!!throwTarget} event={throwTarget} onClose={() => setThrowTarget(null)} />
       <GiveAwayModal open={!!giveTarget} event={giveTarget} onClose={() => setGiveTarget(null)} />
       <MarkUsedModal open={!!usedTarget} event={usedTarget} onClose={() => setUsedTarget(null)} />
+      <MoveLocationModal open={!!moveTarget} event={moveTarget} onClose={() => setMoveTarget(null)} />
 
       {isLoading ? (
         <SkeletonList count={6} />
@@ -153,6 +156,7 @@ export default function MyItemsPage() {
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
             onUsed={setUsedTarget}
+            onMove={setMoveTarget}
             highlightId={recentlyEditedId}
             highlightRef={highlightRowRef}
           />
@@ -164,6 +168,7 @@ export default function MyItemsPage() {
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
             onUsed={setUsedTarget}
+            onMove={setMoveTarget}
             highlightId={recentlyEditedId}
             highlightRef={highlightRowRef}
           />
@@ -175,6 +180,7 @@ export default function MyItemsPage() {
             onThrow={setThrowTarget}
             onGive={setGiveTarget}
             onUsed={setUsedTarget}
+            onMove={setMoveTarget}
             highlightId={recentlyEditedId}
             highlightRef={highlightRowRef}
           />
@@ -215,6 +221,7 @@ function Group({
   onThrow,
   onGive,
   onUsed,
+  onMove,
   highlightId,
   highlightRef,
 }: {
@@ -225,6 +232,7 @@ function Group({
   onThrow: (e: PurchaseEvent) => void;
   onGive: (e: PurchaseEvent) => void;
   onUsed: (e: PurchaseEvent) => void;
+  onMove: (e: PurchaseEvent) => void;
   highlightId?: string | null;
   highlightRef?: React.MutableRefObject<HTMLDivElement | null>;
 }) {
@@ -244,6 +252,7 @@ function Group({
               onThrow={onThrow}
               onGive={onGive}
               onUsed={onUsed}
+              onMove={onMove}
               highlighted={highlightId === e.id}
               rowRef={highlightId === e.id ? highlightRef : undefined}
             />
@@ -259,6 +268,7 @@ function PurchaseEventRow({
   onThrow,
   onGive,
   onUsed,
+  onMove,
   highlighted,
   rowRef,
 }: {
@@ -266,6 +276,7 @@ function PurchaseEventRow({
   onThrow: (e: PurchaseEvent) => void;
   onGive: (e: PurchaseEvent) => void;
   onUsed: (e: PurchaseEvent) => void;
+  onMove: (e: PurchaseEvent) => void;
   highlighted?: boolean;
   rowRef?: React.MutableRefObject<HTMLDivElement | null>;
 }) {
@@ -289,8 +300,7 @@ function PurchaseEventRow({
         break;
       case 'move_location':
       case 'set_location':
-        // Detail page owns the location editor — open it via query param.
-        navigate(`/my-items/${event.id}?edit=location`);
+        onMove(event);
         break;
       case 'set_expiry':
         navigate(`/my-items/${event.id}?edit=expiry`);

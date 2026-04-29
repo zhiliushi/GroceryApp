@@ -107,3 +107,17 @@ class PurchaseStatusUpdate(BaseModel):
     reason: Optional[str] = None               # "used_up" | "expired" | "bad" | "gift"
     transferred_to: Optional[str] = None       # uid or foodbank_id
     quantity: Optional[float] = None           # partial portion; None = whole event
+
+
+class PurchaseMoveRequest(BaseModel):
+    """Move a purchase event to a different storage location.
+
+    Optional `quantity` enables partial moves: when 0 < quantity < event.quantity,
+    the server splits the event — a new active event is created at the target
+    location with the portion (linked back via `split_from_event_id`), and the
+    original event is decremented and stays at its current location. Omit or
+    pass full quantity for the whole-event move.
+    """
+
+    location: str                              # target location key
+    quantity: Optional[float] = None           # partial portion; None = whole event
