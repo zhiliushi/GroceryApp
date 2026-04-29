@@ -45,12 +45,22 @@ def _firestore_emulator():
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "demo-grocery")
 
     import firebase_admin
-    from firebase_admin import credentials
+    from google.auth import credentials as ga_credentials
 
     if not firebase_admin._apps:
+        # AnonymousCredentials lives in google.auth.credentials, NOT in
+        # firebase_admin.credentials. The Firestore emulator ignores the
+        # token, so any credential object that satisfies the SDK's interface
+        # is fine. Wrapping in firebase_admin.credentials.Base via duck-type:
+        # firebase_admin's _ExternalCredentials accepts any google.auth Credentials.
+        from firebase_admin import credentials as fa_credentials
+
+        class _EmulatorCreds(fa_credentials.Base):
+            def get_credential(self):
+                return ga_credentials.AnonymousCredentials()
+
         firebase_admin.initialize_app(
-            credentials.AnonymousCredentials() if hasattr(credentials, "AnonymousCredentials")
-            else credentials.ApplicationDefault(),
+            _EmulatorCreds(),
             {"projectId": os.environ["GOOGLE_CLOUD_PROJECT"]},
         )
     yield
