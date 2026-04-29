@@ -23,12 +23,14 @@ interface QuickAddModalProps {
 }
 
 const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'];
+const UNITS = ['count', 'pack', 'g', 'kg', 'ml', 'L'];
 
 export default function QuickAddModal({ open, onClose, defaults }: QuickAddModalProps) {
   const [name, setName] = useState('');
   const [barcode, setBarcode] = useState<string>('');
   const [expiryRaw, setExpiryRaw] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [unit, setUnit] = useState<string>('count');
   const [price, setPrice] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
   const [location, setLocation] = useState('pantry');
@@ -58,6 +60,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setLocation(defaults?.location ?? defaults?.catalogEntry?.default_location ?? 'pantry');
       setExpiryRaw('');
       setQuantity(1);
+      setUnit('count');
       setPrice('');
       setPaymentMethod('');
       setShowMore(false);
@@ -163,6 +166,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
         name: name.trim(),
         barcode: barcode.trim() || null,
         quantity,
+        unit: unit || undefined,
         expiry_raw: expiryRaw.trim() || undefined,
         location,
         price: price ? parseFloat(price) : undefined,
@@ -253,14 +257,28 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-ga-text-secondary mb-1">Quantity</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={quantity}
-                onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-                className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-              />
+              <div className="flex gap-1">
+                <input
+                  type="number"
+                  min="0.1"
+                  step="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
+                  className="w-full min-w-0 px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                />
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className="flex-shrink-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                  aria-label="Unit"
+                >
+                  {UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-xs text-ga-text-secondary mb-1">Location</label>
