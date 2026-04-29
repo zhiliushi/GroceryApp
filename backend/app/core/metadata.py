@@ -38,6 +38,7 @@ VALID_SOURCES = frozenset({
     "barcode_scan",
     "receipt",
     "manual",
+    "test_seed",  # admin /seed-test-data endpoint tag, used for idempotent teardown
 })
 
 
