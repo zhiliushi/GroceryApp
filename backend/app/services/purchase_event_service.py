@@ -851,6 +851,125 @@ def move_to_location(
     return get_purchase(user_id, new_event_id)
 
 
+def restore_event(user_id: str, event_id: str) -> dict:
+    """Restore a terminal-status event back to active.
+
+    Flips status from used/thrown/given/transferred → active.
+    Clears consumed_date, consumed_reason, transferred_to.
+    Re-increments the catalog's active_purchases counter.
+
+    Use-cases:
+      - Mis-click recovery beyond the 7-day Undo window
+      - Disaster recovery (the "Use 1 wiped my eggs" incident)
+      - Testing / manual data correction
+
+    Doesn't reason about split lineage — restoring a split-child doesn't touch
+    its parent. If the user restores a child that was already partially used,
+    they may end up with two overlapping active events; that's intentional
+    (their call to merge / re-throw / leave it).
+
+    Raises:
+        NotFoundError: event doesn't exist
+        ValidationError: event is already active (nothing to restore)
+    """
+    doc_ref = _user_purchases_ref(user_id).document(event_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise NotFoundError(f"Purchase event '{event_id}' not found")
+    data = snap.to_dict() or {}
+    current_status = data.get("status", "active")
+    if current_status == "active":
+        raise ValidationError(
+            f"Event '{event_id}' is already active — nothing to restore",
+            details={"current_status": current_status},
+        )
+    catalog_name_norm = data.get("catalog_name_norm")
+    if not catalog_name_norm:
+        raise ValidationError(f"Event '{event_id}' missing catalog_name_norm (orphan)")
+
+    transaction = _db().transaction()
+
+    @firestore.transactional
+    def _commit(tx):
+        tx.update(doc_ref, apply_update_metadata({
+            "status": "active",
+            "consumed_date": None,
+            "consumed_reason": None,
+            "transferred_to": None,
+            "_restored_at": datetime.now(timezone.utc),
+            "_restored_from_status": current_status,
+        }))
+        catalog_service.increment_counters_tx(
+            tx, user_id, catalog_name_norm, active_delta=1, total_delta=0,
+        )
+
+    _commit(transaction)
+    logger.info(
+        "purchase.restored user=%s event_id=%s from_status=%s",
+        user_id, event_id, current_status,
+    )
+    return get_purchase(user_id, event_id)
+
+
+def restore_recent_terminal_by_catalog(
+    user_id: str,
+    catalog_name_norm: str,
+    limit: int = 10,
+    since_minutes: Optional[int] = None,
+) -> dict:
+    """Bulk restore: most-recently-terminated events for a catalog.
+
+    Disaster-recovery surface — the operator picks a catalog and a count, gets
+    that many of the most-recent terminal events flipped back to active.
+    Sorted by consumed_date desc (or updated_at as fallback). Optionally
+    constrained to a time window via since_minutes.
+
+    Returns: {restored: [event_id...], from_statuses: {used: N, thrown: M},
+              skipped: int}
+    """
+    q = (
+        _user_purchases_ref(user_id)
+        .where(filter=FieldFilter("catalog_name_norm", "==", catalog_name_norm))
+    )
+    candidates: list[tuple[Optional[datetime], str, str]] = []
+    for snap in q.stream():
+        data = snap.to_dict() or {}
+        status = data.get("status", "active")
+        if status == "active":
+            continue
+        cd = data.get("consumed_date") or data.get("updated_at")
+        if hasattr(cd, "to_datetime"):
+            cd = cd.to_datetime()
+        if cd is not None and getattr(cd, "tzinfo", None) is None:
+            cd = cd.replace(tzinfo=timezone.utc)
+        candidates.append((cd, snap.id, status))
+
+    candidates.sort(key=lambda x: x[0] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+    if since_minutes:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+        candidates = [c for c in candidates if c[0] and c[0] >= cutoff]
+
+    candidates = candidates[:limit]
+    restored: list[str] = []
+    from_statuses: dict[str, int] = {}
+    skipped = 0
+    for _cd, eid, prev_status in candidates:
+        try:
+            restore_event(user_id, eid)
+            restored.append(eid)
+            from_statuses[prev_status] = from_statuses.get(prev_status, 0) + 1
+        except Exception as e:
+            logger.warning("bulk restore failed user=%s event=%s err=%s", user_id, eid, e)
+            skipped += 1
+    return {
+        "restored": restored,
+        "count": len(restored),
+        "from_statuses": from_statuses,
+        "skipped": skipped,
+    }
+
+
 def consume_one_by_catalog(
     user_id: str,
     catalog_name_norm: str,

@@ -6,6 +6,7 @@ import { useStores } from '@/api/queries/useStores';
 import {
   useDeletePurchase,
   useUpdatePurchase,
+  useRestoreEvent,
 } from '@/api/mutations/usePurchaseMutations';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
@@ -38,6 +39,7 @@ export default function PurchaseEventDetailPage() {
   }, [event?.store_id, stores]);
   const deleteMutation = useDeletePurchase();
   const updateMutation = useUpdatePurchase();
+  const restoreMutation = useRestoreEvent();
   const undoable = useUndoableAction();
   const setRecentlyEditedPurchaseId = useUiStore((s) => s.setRecentlyEditedPurchaseId);
 
@@ -278,6 +280,20 @@ export default function PurchaseEventDetailPage() {
                 {action.label}
               </button>
             ))}
+            {/* Restore button — only visible for terminal events. The 7-day
+                Undo toast handles in-session mistakes; this is for older
+                mis-clicks (e.g. "I marked this thrown last week, want it
+                back") and disaster recovery. */}
+            {event.status !== 'active' && (
+              <button
+                onClick={() => restoreMutation.mutate(event.id)}
+                disabled={restoreMutation.isPending}
+                title="Flip this event back to active"
+                className="px-3 py-1.5 text-sm rounded border border-green-500/40 bg-green-500/10 text-green-500 hover:bg-green-500/20 disabled:opacity-50"
+              >
+                {restoreMutation.isPending ? 'Restoring…' : '↺ Restore to active'}
+              </button>
+            )}
           </div>
           <p className="text-xs text-ga-text-secondary mt-2">State: {state}</p>
         </div>

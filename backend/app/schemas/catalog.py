@@ -44,6 +44,9 @@ class CatalogUpdate(BaseModel):
     barcode: Optional[str] = None  # use empty string to unlink
     default_location: Optional[str] = None
     default_category: Optional[str] = None
+    # Catalog evolution post-deploy: re-classify item type
+    # (count / volume / weight / container) — drives Use modal input shape.
+    unit_type: Optional[str] = None
 
 
 class CatalogMergeRequest(BaseModel):

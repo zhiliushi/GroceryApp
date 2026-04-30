@@ -22,6 +22,7 @@ export function useUpdateCatalogEntry() {
         barcode?: string | null;
         default_location?: string;
         default_category?: string;
+        unit_type?: 'count' | 'volume' | 'weight' | 'container' | null;
       };
     }) =>
       apiClient.patch<CatalogEntry>(API.CATALOG_ENTRY(nameNorm), data).then((r) => r.data),

@@ -342,6 +342,12 @@ def upsert_catalog_entry(
         if not _is_paid_user(user_id):
             idle_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
 
+    # Unit-type classification (count / volume / weight / container).
+    # Stored on the catalog row so every event inherits — the right input
+    # shape for the Use modal, the right label noun, etc.
+    from app.services import unit_type_service
+    inferred_unit_type = unit_type_service.infer_unit_type(name=display_name)
+
     new_data = {
         "user_id": user_id,
         "name_norm": name_norm,
@@ -360,6 +366,7 @@ def upsert_catalog_entry(
         "catalog_mode": catalog_mode,
         "canonical_name": display_name,
         "idle_expires_at": idle_expires_at,
+        "unit_type": inferred_unit_type,
     }
     doc_ref.set(apply_create_metadata(new_data, uid=actor_uid or user_id, source=source, schema_version=2))
     logger.info("catalog.created user=%s name_norm=%s mode=%s", user_id, name_norm, catalog_mode)
@@ -387,12 +394,18 @@ def update_catalog_entry(
     """Partial update on a catalog entry.
 
     Allowed fields: display_name, barcode, default_location, default_category,
-                    image_url, country_code, needs_review
+                    image_url, country_code, needs_review, unit_type
 
     `display_name` change cascades to all purchase events linked to this
     catalog entry — keeps `catalog_display` denormalisation in sync so
     My Items / history views render the new name immediately. Old casings
     are preserved in `aliases`.
+
+    `unit_type` change is rare — used on the catalog page's Manage Entry
+    section to re-classify (e.g. switch milk from container to volume). It
+    does NOT rewrite past events; the modal honors per-event base_unit_label
+    + pack_size. This setting governs FUTURE events + the Use modal's input
+    shape on this catalog.
 
     Raises:
         NotFoundError if entry doesn't exist
@@ -405,8 +418,15 @@ def update_catalog_entry(
 
     existing = snap.to_dict() or {}
     allowed = {"display_name", "barcode", "default_location", "default_category",
-               "image_url", "country_code", "needs_review"}
+               "image_url", "country_code", "needs_review", "unit_type"}
     clean_updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
+
+    # Coerce unit_type to a valid enum value on write
+    if "unit_type" in clean_updates:
+        from app.services import unit_type_service
+        clean_updates["unit_type"] = unit_type_service.normalize_unit_type(
+            clean_updates["unit_type"],
+        )
 
     # Barcode uniqueness check
     if "barcode" in clean_updates and clean_updates["barcode"]:

@@ -143,9 +143,23 @@ def compute_overview(user_id: str, name_norm: str) -> dict[str, Any]:
 
 
 def _serialize_entry(entry: dict) -> dict:
-    """Strip Firestore-only timestamps to ISO strings for JSON safety."""
+    """Strip Firestore-only timestamps to ISO strings for JSON safety.
+
+    Also lazy-backfills `unit_type` for entries created before that field
+    existed — the read path infers from base_unit_label + name. The catalog
+    row itself isn't written; the inferred value just rides along in the
+    response. Save happens via the catalog edit endpoint (Manage entry
+    dropdown) or on the next overview-driving write.
+    """
+    from app.services import unit_type_service
+    unit_type = entry.get("unit_type")
+    if not unit_type:
+        # Pull base_unit_label from any event of this catalog if available.
+        # Without an event, fall back to name-based inference.
+        unit_type = unit_type_service.infer_unit_type(name=entry.get("display_name"))
     return {
         **entry,
+        "unit_type": unit_type_service.normalize_unit_type(unit_type),
         "last_purchased_at": _iso(entry.get("last_purchased_at")),
         "idle_expires_at": _iso(entry.get("idle_expires_at")),
         "created_at": _iso(entry.get("created_at")),

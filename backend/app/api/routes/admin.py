@@ -1478,6 +1478,39 @@ async def refresh_fx_rates(admin: UserInfo = Depends(require_admin)):
     return fx_rate_service.refresh_common_rates()
 
 
+@router.post("/purchases/restore-recent")
+async def restore_recent_purchases(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Bulk restore the most-recently-terminated events for a catalog.
+
+    Body: {
+      catalog_name_norm: "eggs",  # required
+      user_id: "...",             # optional, defaults to caller (the admin)
+      limit: 10,                  # optional, max events to restore
+      since_minutes: 60           # optional, only events terminated within window
+    }
+
+    Disaster-recovery surface — built after the "Use 1 wiped a whole batch"
+    incident. Per-event Restore on the event detail page is the user-friendly
+    path; this is for sweeping a recent mistake.
+    """
+    from app.services import purchase_event_service
+
+    catalog = (body or {}).get("catalog_name_norm", "").strip()
+    if not catalog:
+        raise HTTPException(status_code=400, detail="catalog_name_norm required")
+    user_id = (body or {}).get("user_id") or admin.uid
+    limit = int((body or {}).get("limit", 10))
+    since_minutes = (body or {}).get("since_minutes")
+    if since_minutes is not None:
+        try:
+            since_minutes = int(since_minutes)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="since_minutes must be int")
+    return purchase_event_service.restore_recent_terminal_by_catalog(
+        user_id, catalog, limit=limit, since_minutes=since_minutes,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Test data seed (admin-only, marked source="test_seed" for clean teardown)
 # ---------------------------------------------------------------------------

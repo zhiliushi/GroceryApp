@@ -501,6 +501,146 @@ def test_current_locations_mixed_pack_sizes_flagged(fresh_uid):
 
 
 # ---------------------------------------------------------------------------
+# Restore — flip a terminal event back to active
+# ---------------------------------------------------------------------------
+
+
+def test_restore_flips_used_back_to_active(fresh_uid):
+    """A used event flipped back to active increments the catalog active counter."""
+    from app.services import catalog_service as _cat_svc
+    _set_user_doc(fresh_uid, tier="free")
+    p = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=12,
+    )
+    purchase_event_service.update_status(
+        user_id=fresh_uid, event_id=p["id"], status="used",
+    )
+    cat_before = _cat_svc.get_catalog_entry(fresh_uid, "eggs")
+    active_before = int(cat_before["active_purchases"])
+
+    restored = purchase_event_service.restore_event(fresh_uid, p["id"])
+    assert restored["status"] == "active"
+    assert restored["consumed_date"] is None
+    assert restored["consumed_reason"] is None
+    assert restored.get("_restored_from_status") == "used"
+
+    cat_after = _cat_svc.get_catalog_entry(fresh_uid, "eggs")
+    assert int(cat_after["active_purchases"]) == active_before + 1
+
+
+def test_restore_flips_thrown_back_to_active(fresh_uid):
+    _set_user_doc(fresh_uid, tier="free")
+    p = purchase_event_service.create_purchase(user_id=fresh_uid, name="Bananas", quantity=6)
+    purchase_event_service.update_status(
+        user_id=fresh_uid, event_id=p["id"], status="thrown", reason="bad",
+    )
+    restored = purchase_event_service.restore_event(fresh_uid, p["id"])
+    assert restored["status"] == "active"
+
+
+def test_restore_already_active_raises(fresh_uid):
+    from app.core.exceptions import ValidationError
+    _set_user_doc(fresh_uid, tier="free")
+    p = purchase_event_service.create_purchase(user_id=fresh_uid, name="Bread", quantity=1)
+    with pytest.raises(ValidationError):
+        purchase_event_service.restore_event(fresh_uid, p["id"])
+
+
+def test_restore_missing_event_raises(fresh_uid):
+    from app.core.exceptions import NotFoundError
+    _set_user_doc(fresh_uid, tier="free")
+    with pytest.raises(NotFoundError):
+        purchase_event_service.restore_event(fresh_uid, "no_such_event")
+
+
+def test_bulk_restore_recent_terminal_by_catalog(fresh_uid):
+    """Bulk restore picks the most-recently-terminated events for the catalog,
+    up to limit, and flips them all back to active."""
+    _set_user_doc(fresh_uid, tier="free")
+    # Create + terminate 5 events
+    ids = []
+    for _ in range(5):
+        p = purchase_event_service.create_purchase(
+            user_id=fresh_uid, name="Eggs", quantity=12,
+        )
+        purchase_event_service.update_status(
+            user_id=fresh_uid, event_id=p["id"], status="used",
+        )
+        ids.append(p["id"])
+    # All 5 now used. Bulk-restore 3.
+    result = purchase_event_service.restore_recent_terminal_by_catalog(
+        fresh_uid, "eggs", limit=3,
+    )
+    assert result["count"] == 3
+    assert result["from_statuses"]["used"] == 3
+    # Three events should now be active again
+    active_count = 0
+    for eid in ids:
+        ev = purchase_event_service.get_purchase(fresh_uid, eid)
+        if ev["status"] == "active":
+            active_count += 1
+    assert active_count == 3
+
+
+def test_unit_type_inferred_from_name(fresh_uid):
+    """unit_type heuristic uses item name when no base_unit_label is set yet."""
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Eggs", quantity=12)
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Milk", quantity=1, price=3.0, currency="SGD")
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Beef Steak", quantity=1)
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Sourdough Bread", quantity=1)
+
+    eggs = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+    milk = catalog_overview_service.compute_overview(fresh_uid, "milk")
+    beef = catalog_overview_service.compute_overview(fresh_uid, "beef_steak")
+    bread = catalog_overview_service.compute_overview(fresh_uid, "sourdough_bread")
+
+    assert eggs["entry"]["unit_type"] == "count"
+    assert milk["entry"]["unit_type"] == "volume"
+    assert beef["entry"]["unit_type"] == "weight"
+    assert bread["entry"]["unit_type"] == "container"
+
+
+def test_unit_type_user_override_via_update(fresh_uid):
+    """User can re-classify via update_catalog_entry — Manage Entry dropdown."""
+    from app.services import catalog_service as _cs
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Mystery Item", quantity=1)
+    # Default classification is "count"
+    o1 = catalog_overview_service.compute_overview(fresh_uid, "mystery_item")
+    assert o1["entry"]["unit_type"] == "count"
+    # User flips to volume
+    _cs.update_catalog_entry(fresh_uid, "mystery_item", {"unit_type": "volume"})
+    o2 = catalog_overview_service.compute_overview(fresh_uid, "mystery_item")
+    assert o2["entry"]["unit_type"] == "volume"
+    # Garbage gets coerced to default
+    _cs.update_catalog_entry(fresh_uid, "mystery_item", {"unit_type": "garbage"})
+    o3 = catalog_overview_service.compute_overview(fresh_uid, "mystery_item")
+    assert o3["entry"]["unit_type"] == "count"
+
+
+def test_bulk_restore_skips_active_events(fresh_uid):
+    """Bulk restore over a catalog with both active + terminal events only
+    targets the terminal ones."""
+    _set_user_doc(fresh_uid, tier="free")
+    p_active = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=12,
+    )
+    p_used = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=12,
+    )
+    purchase_event_service.update_status(
+        user_id=fresh_uid, event_id=p_used["id"], status="used",
+    )
+    result = purchase_event_service.restore_recent_terminal_by_catalog(
+        fresh_uid, "eggs", limit=10,
+    )
+    assert result["count"] == 1
+    assert p_active["id"] not in result["restored"]
+    assert p_used["id"] in result["restored"]
+
+
+# ---------------------------------------------------------------------------
 # FX cache pre-warm (refresh_common_rates)
 # ---------------------------------------------------------------------------
 

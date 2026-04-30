@@ -822,6 +822,11 @@ export interface CatalogEntry {
   active_purchases: number;
   last_purchased_at: string | null;
   needs_review: boolean;
+  /** Phase H: classifies the item so the Use modal picks the right input shape.
+   *  count = integer spinner (eggs, bottles); volume = ml/L slider; weight =
+   *  g/kg slider; container = whole-pack toggle. Inferred from name + base
+   *  unit on first save; user can override on the catalog entry page. */
+  unit_type?: 'count' | 'volume' | 'weight' | 'container' | null;
   created_at?: string;
   updated_at?: string;
   history?: PurchaseEvent[];

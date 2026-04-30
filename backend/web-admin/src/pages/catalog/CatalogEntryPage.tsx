@@ -345,6 +345,7 @@ export default function CatalogEntryPage() {
             title="Manage this item"
             hint="Edit name, merge into another item, or remove. Rare actions — daily ones live at the top."
           />
+          <UnitTypeEditor entry={entry} />
           <div className="flex flex-wrap gap-2">
             {actions
               .filter((a) => a.id !== 'new_purchase') /* already in Hero bar as "Buy more" */
@@ -657,6 +658,51 @@ function buildHeroBanner(o: CatalogOverview): HeroBanner {
         ? `You buy these every ~${o.cadence.avg_days_between_buys} days.`
         : undefined,
   };
+}
+
+/**
+ * Unit-type editor — surfaces the catalog row's unit_type so the user can
+ * re-classify mis-inferred items (e.g. "milk" inferred as count when it's
+ * really volume). The Use modal reads this to pick its input shape:
+ *   count     → integer spinner ("3 eggs")
+ *   volume    → ml/L slider with adaptive step
+ *   weight    → g/kg slider with adaptive step
+ *   container → whole-pack toggle (mark the carton, not its contents)
+ *
+ * Editor is one-line, save-on-change. Lives in "Manage this item" because
+ * it's a rare per-item config knob, not a daily action.
+ */
+function UnitTypeEditor({ entry }: { entry: CatalogEntry }) {
+  const update = useUpdateCatalogEntry();
+  const current: 'count' | 'volume' | 'weight' | 'container' =
+    (entry.unit_type as 'count' | 'volume' | 'weight' | 'container' | null | undefined) ??
+    'count';
+  return (
+    <div className="mb-3 flex items-center gap-2 text-xs text-ga-text-secondary">
+      <span>Unit type:</span>
+      <select
+        value={current}
+        disabled={update.isPending}
+        onChange={(e) =>
+          update.mutate({
+            nameNorm: entry.name_norm,
+            data: {
+              unit_type: e.target.value as 'count' | 'volume' | 'weight' | 'container',
+            },
+          })
+        }
+        className="px-2 py-1 text-xs bg-ga-bg-card border border-ga-border rounded text-ga-text-primary focus:outline-none focus:border-ga-accent"
+      >
+        <option value="count">Count (eggs, bottles)</option>
+        <option value="volume">Volume (ml, L)</option>
+        <option value="weight">Weight (g, kg)</option>
+        <option value="container">Container (whole pack)</option>
+      </select>
+      <span className="text-[10px] text-ga-text-secondary">
+        Drives the input shape on the "Use" dialog.
+      </span>
+    </div>
+  );
 }
 
 function MergeModal({

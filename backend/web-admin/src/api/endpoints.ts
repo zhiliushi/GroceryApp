@@ -160,6 +160,10 @@ export const API = {
   ADMIN_MIGRATION_AUDIT_LOG_DETAIL: (runId: string) =>
     `/api/admin/migration/audit-log/${encodeURIComponent(runId)}`,
 
+  // Catalog evolution post-deploy: restore a terminal-status event
+  PURCHASE_RESTORE: (id: string) => `/api/purchases/${encodeURIComponent(id)}/restore`,
+  ADMIN_PURCHASES_RESTORE_RECENT: '/api/admin/purchases/restore-recent',
+
   // Catalog evolution Phase B — pricing + currency + multi-pack
   PURCHASES_MULTI_PACK: '/api/purchases/multi-pack',
   ME_CURRENCY_PREFERENCE: '/api/me/currency-preference',

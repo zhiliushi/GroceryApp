@@ -9,14 +9,41 @@ interface MarkUsedModalProps {
   onClose: () => void;
 }
 
+/**
+ * Mark used — operates in BASE UNITS (eggs, ml, g) not event-qty.
+ *
+ * The bug fixed: an event with quantity=1, pack_size=6 represented "1 pack of
+ * 6 eggs". The old modal asked for event-qty (1.0) so users couldn't ask for
+ * "use 3 eggs" without doing the 0.5 math themselves. New behaviour:
+ *   totalBaseUnits = event.quantity × event.pack_size
+ *   user picks N base units via slider (step adapts to unit_type / unit label)
+ *   on submit: event_qty_to_use = N / pack_size  (sent to update_status)
+ *
+ * The split logic in update_status already handles fractional event-qty via
+ * partial-action splits, so a "use 250 ml of a 1L carton" becomes one
+ * 750 ml active event + one 250 ml used event.
+ *
+ * Step heuristic (in base units):
+ *   - "ml":  10 if total <=200, 50 if <=2000, else 100
+ *   - "g" / "gram": 10 if total <=500, 50 if <=5000, else 100
+ *   - "L" / "kg": 0.1 (decimal step)
+ *   - else (count / container): 1 (integer)
+ */
 export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalProps) {
   const [portion, setPortion] = useState<number>(1);
   const changeStatus = useChangePurchaseStatus();
   const undoable = useUndoableAction();
 
+  const packSize = Math.max(1, event?.pack_size ?? 1);
+  const baseUnit = (event?.base_unit_label || event?.unit || 'unit').toLowerCase();
+  const totalBaseUnits = (event?.quantity ?? 0) * packSize;
+  const { step, decimal } = stepForUnit(baseUnit, totalBaseUnits);
+  const inputMin = step;
+
   useEffect(() => {
-    if (open && event) setPortion(event.quantity);
-  }, [open, event]);
+    if (open && event) setPortion(totalBaseUnits);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, event?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -29,27 +56,26 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
 
   if (!open || !event) return null;
 
-  const fullQty = event.quantity;
-  const isPartial = portion < fullQty - 1e-9;
-  // Universal rule: slider drag = 0.1 fine control, number-input arrows
-  // = 1 whole unit. Manual typing accepts any value within bounds.
-  const inputMin = Math.min(0.1, fullQty);
+  const isPartial = portion < totalBaseUnits - step / 2;
 
   function handleConfirm() {
     if (!event) return;
     const target = event;
-    const qty = portion;
+    const baseUnitsToUse = portion;
+    // Convert base units → event-qty for the API. update_status splits the
+    // event correctly when this is fractional.
+    const eventQtyToUse = baseUnitsToUse / packSize;
     onClose();
     undoable.run(
       () =>
         changeStatus.mutate({
           id: target.id,
-          data: { status: 'used', reason: 'used_up', quantity: qty },
+          data: { status: 'used', reason: 'used_up', quantity: eventQtyToUse },
           silent: true,
         }),
       isPartial
-        ? `Used ${qty} of "${target.catalog_display}"`
-        : `Marked "${target.catalog_display}" as used`,
+        ? `Used ${formatNum(baseUnitsToUse, decimal)} ${baseUnit}${baseUnitsToUse === 1 ? '' : 's'} of "${target.catalog_display}"`
+        : `Marked all of "${target.catalog_display}" as used`,
     );
   }
 
@@ -65,18 +91,22 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
             Mark "{event.catalog_display}" as used
           </h3>
           <p className="text-xs text-ga-text-secondary mt-1">
-            Pick the portion you used — partial amounts are fine.
+            Available: {formatNum(totalBaseUnits, decimal)} {baseUnit}
+            {totalBaseUnits === 1 ? '' : 's'}
+            {packSize > 1 && (
+              <span className="ml-1">({event.quantity} pack{event.quantity === 1 ? '' : 's'} × {packSize} {baseUnit}{packSize === 1 ? '' : 's'}/pack)</span>
+            )}
           </p>
         </div>
 
         <div className="px-5 py-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-ga-text-secondary">
-            <span>How many?</span>
+            <span>How many to use?</span>
             <span className="text-ga-text-primary font-medium tabular-nums">
-              {portion} of {fullQty}
+              {formatNum(portion, decimal)} {baseUnit}{portion === 1 ? '' : 's'}
               {isPartial && (
                 <span className="ml-1 text-ga-text-secondary">
-                  ({fullQty - portion} stays active)
+                  ({formatNum(totalBaseUnits - portion, decimal)} stays active)
                 </span>
               )}
             </span>
@@ -85,40 +115,40 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
             <input
               type="range"
               min={inputMin}
-              max={fullQty}
-              step={0.1}
+              max={totalBaseUnits}
+              step={step}
               value={portion}
               onChange={(e) => setPortion(Number(e.target.value))}
               className="flex-1 accent-ga-accent"
             />
             <button
               type="button"
-              onClick={() => setPortion(Math.max(inputMin, Math.ceil(portion) - 1))}
+              onClick={() => setPortion(Math.max(inputMin, portion - step))}
               disabled={portion <= inputMin + 1e-9}
               className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
-              aria-label="Decrease by 1 (snaps to whole number)"
+              aria-label={`Decrease by ${step}`}
             >
               −
             </button>
             <input
               type="number"
               min={inputMin}
-              max={fullQty}
-              step={0.1}
+              max={totalBaseUnits}
+              step={step}
               value={portion}
               onChange={(e) => {
                 const v = Number(e.target.value);
                 if (!Number.isFinite(v)) return;
-                setPortion(Math.max(inputMin, Math.min(fullQty, v)));
+                setPortion(Math.max(inputMin, Math.min(totalBaseUnits, v)));
               }}
-              className="w-16 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="w-20 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
             <button
               type="button"
-              onClick={() => setPortion(Math.min(fullQty, Math.floor(portion) + 1))}
-              disabled={portion >= fullQty - 1e-9}
+              onClick={() => setPortion(Math.min(totalBaseUnits, portion + step))}
+              disabled={portion >= totalBaseUnits - 1e-9}
               className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
-              aria-label="Increase by 1 (snaps to whole number)"
+              aria-label={`Increase by ${step}`}
             >
               +
             </button>
@@ -143,4 +173,27 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
       </div>
     </div>
   );
+}
+
+function stepForUnit(baseUnit: string, total: number): { step: number; decimal: boolean } {
+  const u = baseUnit.toLowerCase();
+  if (u === 'ml') {
+    if (total <= 200) return { step: 10, decimal: false };
+    if (total <= 2000) return { step: 50, decimal: false };
+    return { step: 100, decimal: false };
+  }
+  if (u === 'g' || u === 'gram' || u === 'grams') {
+    if (total <= 500) return { step: 10, decimal: false };
+    if (total <= 5000) return { step: 50, decimal: false };
+    return { step: 100, decimal: false };
+  }
+  if (u === 'l' || u === 'liter' || u === 'litre' || u === 'kg') {
+    return { step: 0.1, decimal: true };
+  }
+  return { step: 1, decimal: false };
+}
+
+function formatNum(n: number, decimal: boolean): string {
+  if (decimal) return (Math.round(n * 10) / 10).toFixed(1);
+  return String(Math.round(n));
 }

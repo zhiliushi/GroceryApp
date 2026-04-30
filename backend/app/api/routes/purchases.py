@@ -273,3 +273,17 @@ async def delete_purchase(event_id: str, user: UserInfo = Depends(get_current_us
     """Hard-delete a purchase event. Prefer status=thrown to preserve history."""
     purchase_event_service.delete_purchase(user.uid, event_id)
     return {"success": True, "id": event_id}
+
+
+@router.post("/{event_id}/restore", dependencies=[Depends(rate_limit(60))])
+async def restore_purchase(event_id: str, user: UserInfo = Depends(get_current_user)):
+    """Restore a terminal-status (used / thrown / given / transferred) event
+    back to active. The 7-day Undo toast handles in-session mistakes; this is
+    for older mis-clicks and disaster recovery."""
+    from app.core.exceptions import NotFoundError, ValidationError
+    try:
+        return purchase_event_service.restore_event(user.uid, event_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))

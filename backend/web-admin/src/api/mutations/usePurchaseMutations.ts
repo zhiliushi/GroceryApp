@@ -113,6 +113,27 @@ export function useUpdatePurchase() {
   });
 }
 
+/**
+ * Restore a terminal-status event back to active. The 7-day Undo toast
+ * handles in-session mistakes; this is for older mis-clicks and disaster
+ * recovery (the "Use 1 wiped my eggs" incident).
+ */
+export function useRestoreEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post<PurchaseEvent>(API.PURCHASE_RESTORE(id)).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Restored to active');
+      invalidateAll(qc);
+    },
+    onError: (error: unknown) => {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || 'Restore failed');
+    },
+  });
+}
+
 export function useChangePurchaseStatus() {
   const qc = useQueryClient();
   return useMutation({
