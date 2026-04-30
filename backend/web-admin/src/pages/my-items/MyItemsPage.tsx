@@ -245,21 +245,67 @@ function Group({
         <p className="text-xs text-ga-text-secondary italic px-3 py-2">{emptyText}</p>
       ) : (
         <div className="space-y-2">
-          {events.map((e) => (
-            <PurchaseEventRow
-              key={e.id}
-              event={e}
-              onThrow={onThrow}
-              onGive={onGive}
-              onUsed={onUsed}
-              onMove={onMove}
-              highlighted={highlightId === e.id}
-              rowRef={highlightId === e.id ? highlightRef : undefined}
-            />
-          ))}
+          {groupByParent(events).map((entry) =>
+            entry.kind === 'group' ? (
+              <MultiPackGroupCard
+                key={`mpg_${entry.parentId}`}
+                events={entry.events}
+                onThrow={onThrow}
+                onGive={onGive}
+                onUsed={onUsed}
+                onMove={onMove}
+                highlightId={highlightId ?? undefined}
+                highlightRef={highlightRef}
+              />
+            ) : (
+              <PurchaseEventRow
+                key={entry.event.id}
+                event={entry.event}
+                onThrow={onThrow}
+                onGive={onGive}
+                onUsed={onUsed}
+                onMove={onMove}
+                highlighted={highlightId === entry.event.id}
+                rowRef={highlightId === entry.event.id ? highlightRef : undefined}
+              />
+            ),
+          )}
         </div>
       )}
     </section>
+  );
+}
+
+type GroupedEntry =
+  | { kind: 'single'; event: PurchaseEvent }
+  | { kind: 'group'; parentId: string; events: PurchaseEvent[] };
+
+/** Cluster events sharing a `multi_pack_parent_id` (≥2 siblings). Single-event
+ *  groups stay as singletons so they render the regular row UI. Preserves
+ *  insertion order: a group sits where its first member would have. */
+function groupByParent(events: PurchaseEvent[]): GroupedEntry[] {
+  const out: GroupedEntry[] = [];
+  const indexByParent = new Map<string, number>();
+  for (const e of events) {
+    const pid = e.multi_pack_parent_id || null;
+    if (!pid) {
+      out.push({ kind: 'single', event: e });
+      continue;
+    }
+    const existing = indexByParent.get(pid);
+    if (existing !== undefined) {
+      const slot = out[existing];
+      if (slot.kind === 'group') slot.events.push(e);
+    } else {
+      indexByParent.set(pid, out.length);
+      out.push({ kind: 'group', parentId: pid, events: [e] });
+    }
+  }
+  // Demote single-member "groups" back to singletons.
+  return out.map((entry) =>
+    entry.kind === 'group' && entry.events.length === 1
+      ? { kind: 'single', event: entry.events[0] }
+      : entry,
   );
 }
 
@@ -326,7 +372,10 @@ function PurchaseEventRow({
     <div
       ref={rowRef}
       className={cn(
-        'bg-ga-bg-card border rounded-lg p-3 flex items-center gap-3 transition-shadow',
+        'bg-ga-bg-card border rounded-lg p-3 transition-shadow',
+        // Stack vertically on phones, side-by-side from sm: up. The 3-action
+        // row was getting squeezed against the title on narrow screens.
+        'flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3',
         state === 'active_expired'
           ? 'border-red-500/30'
           : state === 'active_expiring_urgent'
@@ -341,7 +390,7 @@ function PurchaseEventRow({
         to={`/my-items/${event.id}`}
         className="flex-1 min-w-0 hover:opacity-90"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-ga-text-primary truncate">
             {event.catalog_display}
           </span>
@@ -351,7 +400,7 @@ function PurchaseEventRow({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
           <ExpiryCountdownChip expiryDate={event.expiry_date} />
           {event.location && (
             <span className="text-xs text-ga-text-secondary">📍 {event.location}</span>
@@ -364,7 +413,7 @@ function PurchaseEventRow({
           )}
         </div>
       </Link>
-      <div className="flex flex-wrap gap-1 justify-end">
+      <div className="flex flex-wrap gap-1 sm:justify-end -mx-1 sm:mx-0">
         {actions.slice(0, 3).map((action) => (
           <button
             key={action.id}
@@ -384,6 +433,117 @@ function PurchaseEventRow({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Multi-pack sibling group card. When 2+ events share `multi_pack_parent_id`
+ * they collapse into one card showing total pack count + summary, expandable
+ * to per-pack rows. Surfaces "I added 6 packs" without flooding the list with
+ * 6 visually-identical rows (which prior to this fix users mistook for "only
+ * one shown" because the cards looked the same).
+ */
+function MultiPackGroupCard({
+  events,
+  onThrow,
+  onGive,
+  onUsed,
+  onMove,
+  highlightId,
+  highlightRef,
+}: {
+  events: PurchaseEvent[];
+  onThrow: (e: PurchaseEvent) => void;
+  onGive: (e: PurchaseEvent) => void;
+  onUsed: (e: PurchaseEvent) => void;
+  onMove: (e: PurchaseEvent) => void;
+  highlightId?: string;
+  highlightRef?: React.MutableRefObject<HTMLDivElement | null>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // Use the most-urgent expiry for the headline state coloring
+  const sorted = [...events].sort((a, b) => {
+    const ax = a.expiry_date ? new Date(a.expiry_date).getTime() : Infinity;
+    const bx = b.expiry_date ? new Date(b.expiry_date).getTime() : Infinity;
+    return ax - bx;
+  });
+  const head = sorted[0];
+  const headState = getPurchaseEventState(head);
+  const isHighlighted = events.some((e) => e.id === highlightId);
+  const groupRef = isHighlighted ? highlightRef : undefined;
+
+  const totalUnits = events.reduce((sum, e) => sum + (e.quantity || 1) * (e.pack_size || 1), 0);
+  const baseUnit = head.base_unit_label || head.unit || 'unit';
+  const allSameLocation = events.every((e) => e.location === head.location);
+
+  return (
+    <div
+      ref={groupRef}
+      className={cn(
+        'bg-ga-bg-card border rounded-lg transition-shadow',
+        headState === 'active_expired'
+          ? 'border-red-500/30'
+          : headState === 'active_expiring_urgent'
+          ? 'border-orange-500/30'
+          : headState === 'active_expiring_soon'
+          ? 'border-yellow-500/30'
+          : 'border-ga-border',
+        isHighlighted && 'ring-2 ring-ga-accent ring-offset-2 ring-offset-ga-bg-app animate-pulse',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 text-left hover:bg-ga-bg-hover/40 rounded-lg"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-ga-text-primary truncate">
+              {head.catalog_display}
+            </span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-ga-accent/15 text-ga-accent">
+              {events.length} packs
+            </span>
+            <span className="text-xs text-ga-text-secondary">
+              · {totalUnits} {baseUnit}{totalUnits === 1 ? '' : 's'} total
+            </span>
+          </div>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <ExpiryCountdownChip expiryDate={head.expiry_date} />
+            {allSameLocation && head.location && (
+              <span className="text-xs text-ga-text-secondary">📍 {head.location}</span>
+            )}
+            {!allSameLocation && (
+              <span className="text-xs text-ga-text-secondary">📍 multiple locations</span>
+            )}
+            {head.price !== null && head.price !== undefined && (
+              <span className="text-xs text-ga-text-secondary">
+                {head.currency ? `${head.currency} ` : ''}
+                {head.price.toFixed(2)} / pack
+              </span>
+            )}
+          </div>
+        </div>
+        <span className="text-xs text-ga-text-secondary self-start sm:self-center">
+          {expanded ? '▾ collapse' : '▸ expand'}
+        </span>
+      </button>
+      {expanded && (
+        <div className="border-t border-ga-border/50 px-3 py-2 space-y-2">
+          {events.map((e) => (
+            <PurchaseEventRow
+              key={e.id}
+              event={e}
+              onThrow={onThrow}
+              onGive={onGive}
+              onUsed={onUsed}
+              onMove={onMove}
+              highlighted={highlightId === e.id}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
