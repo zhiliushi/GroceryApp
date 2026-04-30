@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePurchasesInfinite } from '@/api/queries/usePurchases';
+import { useConsumeByCatalog } from '@/api/mutations/usePurchaseMutations';
 import PageHeader from '@/components/shared/PageHeader';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import { SkeletonList } from '@/components/shared/Skeleton';
@@ -329,6 +330,7 @@ function CatalogClusterRow({
   highlighted?: boolean;
   rowRef?: React.MutableRefObject<HTMLAnchorElement | null>;
 }) {
+  const consumeMutation = useConsumeByCatalog();
   const expiry = cluster.mostUrgentExpiry;
   const daysToExpiry = expiry
     ? Math.round((expiry.getTime() - Date.now()) / 86400000)
@@ -367,7 +369,7 @@ function CatalogClusterRow({
         highlighted && 'ring-2 ring-ga-accent ring-offset-2 ring-offset-ga-bg-app animate-pulse',
       )}
     >
-      {/* Headline: Name · total qty · most-urgent expiry pill */}
+      {/* Headline: Name · total qty · most-urgent expiry pill · Use 1 quick action */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-baseline gap-2 min-w-0 flex-1">
           <span className="text-sm font-medium text-ga-text-primary truncate">
@@ -383,18 +385,46 @@ function CatalogClusterRow({
             </span>
           )}
         </div>
-        <span
-          className={cn(
-            'text-[11px] tabular-nums px-2 py-0.5 rounded-full whitespace-nowrap',
-            tone === 'red' && 'bg-red-500/15 text-red-400',
-            tone === 'orange' && 'bg-orange-500/15 text-orange-400',
-            tone === 'yellow' && 'bg-yellow-500/15 text-yellow-500',
-            tone === 'green' && 'bg-green-500/15 text-green-400',
-            tone === 'gray' && 'bg-ga-bg-hover text-ga-text-secondary',
-          )}
-        >
-          {expiryLabel}
-        </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span
+            className={cn(
+              'text-[11px] tabular-nums px-2 py-0.5 rounded-full whitespace-nowrap',
+              tone === 'red' && 'bg-red-500/15 text-red-400',
+              tone === 'orange' && 'bg-orange-500/15 text-orange-400',
+              tone === 'yellow' && 'bg-yellow-500/15 text-yellow-500',
+              tone === 'green' && 'bg-green-500/15 text-green-400',
+              tone === 'gray' && 'bg-ga-bg-hover text-ga-text-secondary',
+            )}
+          >
+            {expiryLabel}
+          </span>
+          {/* Quick "Use 1" — FIFO consume of the oldest-expiry active batch.
+              Stops navigation propagation so clicking this doesn't also fire
+              the row's <Link>. Plain button (not <Link>) because it's an
+              action, not navigation. */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (consumeMutation.isPending) return;
+              consumeMutation.mutate({
+                catalog_name_norm: cluster.catalogNameNorm,
+                quantity: 1,
+              });
+            }}
+            disabled={consumeMutation.isPending}
+            title="Mark the oldest-expiry batch as used (FIFO)"
+            className={cn(
+              'px-2 py-1 text-[11px] rounded border whitespace-nowrap transition',
+              consumeMutation.isPending
+                ? 'border-ga-border text-ga-text-secondary cursor-wait'
+                : 'border-ga-accent/40 bg-ga-accent/10 text-ga-accent hover:bg-ga-accent/20',
+            )}
+          >
+            {consumeMutation.isPending ? '…' : '✓ Use 1'}
+          </button>
+        </div>
       </div>
 
       {/* Locations breakdown — primary view per user spec: "show all places" */}

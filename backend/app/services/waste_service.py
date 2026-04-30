@@ -443,6 +443,16 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
         .where(filter=FieldFilter("date_bought", ">=", from_date))
     )
 
+    # Read-time currency conversion: honor user's CURRENT preference rather than
+    # the display_amount locked at save. Real-feedback fix — users expect their
+    # spending dashboard to reflect their preferred currency.
+    from app.services import currency_service
+    user_snap = _db().collection("users").document(user_id).get()
+    user_pref = (
+        (user_snap.to_dict() or {}).get("currency_preference") or "SGD"
+        if user_snap.exists else "SGD"
+    )
+
     cash_total = 0.0
     card_total = 0.0
     other_total = 0.0  # has price, no payment_method recorded
@@ -450,17 +460,11 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
 
     for doc in q.stream():
         data = doc.to_dict() or {}
-        # Phase B: prefer display_amount (in user's display currency); fall back
-        # to amount/price for un-migrated rows.
-        amount = data.get("display_amount")
-        if amount is None:
-            amount = data.get("amount")
-        if amount is None:
-            amount = data.get("price")
-        method = data.get("payment_method")
+        amount = currency_service.display_amount_for_user(data, user_pref)
         if amount is None:
             untracked += 1
             continue
+        method = data.get("payment_method")
         if method == "cash":
             cash_total += amount
         elif method == "card":
@@ -472,6 +476,7 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
         "period": period,
         "from_date": from_date,
         "to_date": now,
+        "display_currency": user_pref,
         "cash_total": round(cash_total, 2),
         "card_total": round(card_total, 2),
         "other_total": round(other_total, 2),

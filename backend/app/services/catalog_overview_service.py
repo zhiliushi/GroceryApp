@@ -51,14 +51,31 @@ def _iso(v: Any) -> Optional[str]:
 def compute_overview(user_id: str, name_norm: str) -> dict[str, Any]:
     """Compute the full overview payload for one catalog entry.
 
+    Honors the user's CURRENT `currency_preference` for all monetary fields —
+    historical events stored with a different display_currency get reconverted
+    at read time via fx_rate_service. The save-time lock from Phase B is
+    bypassed because users intuit "I changed my currency, show me everything
+    in my currency" rather than "show me what I paid back when in the
+    historical local rate."
+
     Raises NotFoundError if the catalog row doesn't exist.
     """
+    from app.services import currency_service
+
     db = _db()
     cat_snap = db.collection(_CATALOG_COLLECTION).document(_doc_id(user_id, name_norm)).get()
     if not cat_snap.exists:
         raise NotFoundError(f"Catalog entry '{name_norm}' not found")
     entry = cat_snap.to_dict() or {}
     entry["id"] = cat_snap.id
+
+    # User's CURRENT display-currency preference. Pre-migration users default
+    # to SGD (matches the migration default).
+    user_snap = db.collection("users").document(user_id).get()
+    user_currency_pref = (
+        (user_snap.to_dict() or {}).get("currency_preference") or "SGD"
+        if user_snap.exists else "SGD"
+    )
 
     # Load all events for this catalog
     events: list[dict] = []
@@ -73,6 +90,23 @@ def compute_overview(user_id: str, name_norm: str) -> dict[str, Any]:
 
     # Sort by date_bought ascending for timelines
     events.sort(key=lambda e: e.get("date_bought") or datetime.min.replace(tzinfo=timezone.utc))
+
+    # Read-time currency rewrite. We mutate each event's display_amount /
+    # display_currency in-place so downstream aggregations naturally pick up
+    # the user's current preference. unit_price is recomputed from the new
+    # display_amount.
+    for ev in events:
+        derived = currency_service.display_amount_for_user(ev, user_currency_pref)
+        if derived is not None:
+            ev["display_amount"] = derived
+            ev["display_currency"] = user_currency_pref
+            qty = ev.get("quantity")
+            pack_size = ev.get("pack_size") or 1
+            if qty:
+                try:
+                    ev["unit_price"] = float(derived) / float(qty) / pack_size
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
 
     counters = _compute_counters(events)
     lifetime = _compute_lifetime_breakdown(events)

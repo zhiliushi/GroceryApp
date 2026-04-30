@@ -287,3 +287,92 @@ def test_waste_cost_zero_when_no_prices(fresh_uid):
     assert cost["spent_total"] == 0.0
     assert cost["thrown_total"] == 0.0
     assert cost["waste_pct_by_value"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Read-time currency conversion (user changed currency_preference after the
+# event was saved — overview should still display in the new pref).
+# ---------------------------------------------------------------------------
+
+
+def test_overview_honors_user_currency_pref_at_read_time(fresh_uid, monkeypatch):
+    """Event saved with display_currency=SGD; user changes pref to MYR; overview
+    must show MYR amounts using the current FX rate, not the locked SGD."""
+    from app.services import fx_rate_service
+
+    _set_user_doc(fresh_uid, tier="free", currency_preference="SGD")
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=12, price=6.0, currency="SGD",
+    )
+
+    # User flips preference to MYR. Stub FX so SGD→MYR = 3.30.
+    db = firestore.client()
+    db.collection("users").document(fresh_uid).set(
+        {"currency_preference": "MYR"}, merge=True,
+    )
+    monkeypatch.setattr(
+        fx_rate_service,
+        "get_rate",
+        lambda f, t, d=None: {
+            "rate": 3.30 if (f, t) == ("SGD", "MYR") else 1.0,
+            "from": f, "to": t, "date": "2026-01-05", "source": "stub", "is_stale": False,
+        },
+    )
+
+    overview = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+
+    # waste_cost should report MYR
+    assert overview["waste_cost"]["display_currency"] == "MYR"
+    assert overview["waste_cost"]["spent_total"] == pytest.approx(6.0 * 3.30, abs=0.01)
+
+    # price-history sample should be in MYR
+    samples = overview["price_history_per_store"][0]["samples"]
+    assert samples[0]["display_currency"] == "MYR"
+    assert samples[0]["display_amount"] == pytest.approx(6.0 * 3.30, abs=0.01)
+    # unit_price = display_amount / qty / pack_size = 19.80 / 12 / 1 = 1.65 MYR/egg
+    assert samples[0]["unit_price"] == pytest.approx(1.65, abs=0.01)
+
+
+def test_overview_passthrough_when_event_currency_matches_pref(fresh_uid, monkeypatch):
+    """When event.currency == user.pref, no FX call is made — pure passthrough."""
+    from app.services import fx_rate_service
+
+    called = {"count": 0}
+    def boom(*a, **kw):
+        called["count"] += 1
+        raise AssertionError("FX should not be called for same-currency events")
+
+    _set_user_doc(fresh_uid, tier="free", currency_preference="SGD")
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Bread", quantity=1, price=3.50, currency="SGD",
+    )
+
+    monkeypatch.setattr(fx_rate_service, "get_rate", boom)
+
+    overview = catalog_overview_service.compute_overview(fresh_uid, "bread")
+    assert overview["waste_cost"]["spent_total"] == pytest.approx(3.50, abs=0.01)
+    assert overview["waste_cost"]["display_currency"] == "SGD"
+    assert called["count"] == 0
+
+
+def test_overview_handles_fx_unavailable(fresh_uid, monkeypatch):
+    """When FX returns None for a cross-currency pair, the event is still
+    counted but its display_amount stays as whatever was stored at save
+    (graceful fallback) — we don't blow up the overview."""
+    from app.services import fx_rate_service
+
+    _set_user_doc(fresh_uid, tier="free", currency_preference="JPY")
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Imported", quantity=1, price=10.0, currency="MYR",
+    )
+
+    monkeypatch.setattr(
+        fx_rate_service, "get_rate",
+        lambda f, t, d=None: {"rate": None, "from": f, "to": t, "date": "x",
+                              "source": "none", "is_stale": False},
+    )
+
+    overview = catalog_overview_service.compute_overview(fresh_uid, "imported")
+    # No conversion possible; spent_total is whatever fell back (0 or the saved
+    # display_amount). Important is that we didn't crash.
+    assert "waste_cost" in overview

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useCatalogEntry, useCatalog } from '@/api/queries/useCatalog';
 import { useCatalogOverview } from '@/api/queries/useCatalogOverview';
@@ -7,6 +7,7 @@ import {
   useMergeCatalogEntry,
   useUpdateCatalogEntry,
 } from '@/api/mutations/useCatalogMutations';
+import { useConsumeByCatalog } from '@/api/mutations/usePurchaseMutations';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
@@ -19,7 +20,7 @@ import CurrentLocations from '@/components/items/CurrentLocations';
 import ItemPatterns from '@/components/items/ItemPatterns';
 import { getCatalogEntryActions, type Action } from '@/utils/actionResolver';
 import { cn } from '@/utils/cn';
-import type { CatalogEntry } from '@/types/api';
+import type { CatalogEntry, CatalogOverview } from '@/types/api';
 
 export default function CatalogEntryPage() {
   const { nameNorm } = useParams<{ nameNorm: string }>();
@@ -30,11 +31,15 @@ export default function CatalogEntryPage() {
   const deleteMutation = useDeleteCatalogEntry();
   const mergeMutation = useMergeCatalogEntry();
 
+  const consumeMutation = useConsumeByCatalog();
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [showLifetime, setShowLifetime] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [showLineage, setShowLineage] = useState(false);
 
   if (isLoading) return <LoadingSpinner text="Loading…" />;
   if (error || !entry) {
@@ -151,13 +156,38 @@ export default function CatalogEntryPage() {
           </div>
         </div>
 
+        {/* Hero action bar — surfaces the most-pressing thing about this item
+            and the obvious next move, so common actions don't require scrolling
+            past read-out sections. */}
+        {overview && (
+          <HeroActionBar
+            overview={overview}
+            entryName={entry.display_name}
+            onBuyMore={() => setAddOpen(true)}
+            onUseOne={() =>
+              consumeMutation.mutate({
+                catalog_name_norm: entry.name_norm,
+                quantity: 1,
+              })
+            }
+            consumeBusy={consumeMutation.isPending}
+          />
+        )}
+
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
           <Stat
-            label="Logical purchases"
+            label="Times bought"
             value={overview?.counters.logical_purchase_count ?? entry.total_purchases}
           />
-          <Stat label="Active" value={entry.active_purchases} />
-          <Stat label="Location" value={entry.default_location || '—'} />
+          <Stat label="Active batches" value={entry.active_purchases} />
+          <Stat
+            label="Total on hand"
+            value={
+              overview
+                ? `${formatQty(overview.lifetime_breakdown.active_qty)}`
+                : entry.active_purchases
+            }
+          />
           <Stat
             label="Last bought"
             value={
@@ -172,7 +202,7 @@ export default function CatalogEntryPage() {
             <p className="text-[10px] text-ga-text-secondary -mt-1">
               {overview.counters.total_event_count - overview.counters.logical_purchase_count}{' '}
               additional split event{overview.counters.total_event_count - overview.counters.logical_purchase_count === 1 ? '' : 's'}{' '}
-              from partial actions (used / thrown / moved). Visible in lineage tree below.
+              from partial actions (used / thrown / moved) — visible in lineage tree below.
             </p>
           )}
 
@@ -200,14 +230,8 @@ export default function CatalogEntryPage() {
               />
             </div>
 
-            <div className="border-t border-ga-border pt-4">
-              <LifetimeUnitBreakdown
-                lifetime={overview.lifetime_breakdown}
-                wasteRate={overview.waste_rate}
-                baseUnitLabel="unit"
-              />
-            </div>
-
+            {/* Price by store — kept above-fold when present, since cross-store
+                price comparison is the most actionable financial insight. */}
             {overview.price_history_per_store.length > 0 && (
               <div className="border-t border-ga-border pt-4">
                 <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
@@ -220,46 +244,100 @@ export default function CatalogEntryPage() {
               </div>
             )}
 
+            {/* Lifetime breakdown — reference data, collapsed by default. */}
             <div className="border-t border-ga-border pt-4">
-              <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
-                Movement timeline
-              </h3>
-              <MovementTimeline timeline={overview.movement_timeline} />
+              <button
+                onClick={() => setShowLifetime((v) => !v)}
+                className="flex items-center justify-between w-full text-sm font-semibold text-ga-text-primary"
+              >
+                <span>Lifetime breakdown</span>
+                <span className="text-xs text-ga-text-secondary">
+                  {showLifetime ? '▾' : '▸'} {showLifetime ? 'hide' : 'show'}
+                </span>
+              </button>
+              {showLifetime && (
+                <div className="mt-3">
+                  <LifetimeUnitBreakdown
+                    lifetime={overview.lifetime_breakdown}
+                    wasteRate={overview.waste_rate}
+                    baseUnitLabel="unit"
+                  />
+                </div>
+              )}
             </div>
 
+            {/* Activity timeline — history view, collapsed. */}
+            <div className="border-t border-ga-border pt-4">
+              <button
+                onClick={() => setShowTimeline((v) => !v)}
+                className="flex items-center justify-between w-full text-sm font-semibold text-ga-text-primary"
+              >
+                <span>
+                  Activity timeline
+                  <span className="ml-2 text-xs text-ga-text-secondary font-normal">
+                    ({overview.movement_timeline.length} events)
+                  </span>
+                </span>
+                <span className="text-xs text-ga-text-secondary">
+                  {showTimeline ? '▾' : '▸'} {showTimeline ? 'hide' : 'show'}
+                </span>
+              </button>
+              {showTimeline && (
+                <div className="mt-3">
+                  <MovementTimeline timeline={overview.movement_timeline} />
+                </div>
+              )}
+            </div>
+
+            {/* Split lineage — only show when splits exist. Auto-expand because
+                its presence is itself the signal worth seeing. */}
             {overview.split_lineage.some((p) => p.children.length > 0) && (
               <div className="border-t border-ga-border pt-4">
-                <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
-                  Split lineage
-                </h3>
-                <SplitLineageTree lineage={overview.split_lineage} />
+                <button
+                  onClick={() => setShowLineage((v) => !v)}
+                  className="flex items-center justify-between w-full text-sm font-semibold text-ga-text-primary"
+                >
+                  <span>Split lineage</span>
+                  <span className="text-xs text-ga-text-secondary">
+                    {showLineage ? '▾' : '▸'} {showLineage ? 'hide' : 'show'}
+                  </span>
+                </button>
+                {showLineage && (
+                  <div className="mt-3">
+                    <SplitLineageTree lineage={overview.split_lineage} />
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
 
+        {/* Manage entry — admin / rare actions. Common actions (buy more, use)
+            are surfaced in the Hero bar above so this stays out of the way. */}
         <div className="border-t border-ga-border pt-4">
-          <h3 className="text-sm font-semibold text-ga-text-primary mb-2">Actions</h3>
+          <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
+            Manage entry
+          </h3>
           <div className="flex flex-wrap gap-2">
-            {actions.map((action) => (
-              <button
-                key={action.id}
-                disabled={action.disabled}
-                onClick={() => handleAction(action)}
-                title={action.disabledReason}
-                className={cn(
-                  'px-3 py-1.5 text-sm rounded',
-                  action.severity === 'primary' && 'bg-ga-accent text-white hover:opacity-90',
-                  action.severity === 'secondary' && 'bg-ga-bg-hover text-ga-text-primary hover:bg-ga-bg-card',
-                  action.severity === 'tertiary' &&
-                    'text-ga-text-secondary hover:bg-ga-bg-hover border border-ga-border',
-                  action.severity === 'danger' && 'bg-red-500/10 text-red-500 hover:bg-red-500/20',
-                  action.disabled && 'cursor-not-allowed opacity-50',
-                )}
-              >
-                {action.label}
-              </button>
-            ))}
+            {actions
+              .filter((a) => a.id !== 'new_purchase') // already in Hero bar as "Buy more"
+              .map((action) => (
+                <button
+                  key={action.id}
+                  disabled={action.disabled}
+                  onClick={() => handleAction(action)}
+                  title={action.disabledReason}
+                  className={cn(
+                    'px-3 py-1.5 text-sm rounded border',
+                    action.severity === 'danger'
+                      ? 'border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                      : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+                    action.disabled && 'cursor-not-allowed opacity-50',
+                  )}
+                >
+                  {action.label}
+                </button>
+              ))}
             {/* Phase G: transfer history into another catalog row */}
             <button
               onClick={() => setTransferOpen(true)}
@@ -311,6 +389,175 @@ function Stat({ label, value }: { label: string; value: number | string }) {
       <div className="text-lg font-semibold text-ga-text-primary">{value}</div>
     </div>
   );
+}
+
+function formatQty(n: number): string {
+  if (n === Math.floor(n)) return n.toString();
+  return n.toFixed(1);
+}
+
+/**
+ * Hero action bar — picks the most-pressing situation about this item and
+ * surfaces a contextual primary CTA, plus quick "+ Buy more" / "Use 1 (FIFO)"
+ * always-on actions. Sits directly under the header so the user doesn't have
+ * to scroll past read-out tables to act.
+ *
+ * Decision order (most urgent first):
+ *   1. Anything expired   → red banner + "1 expired — review batches"
+ *   2. Expiring ≤3 days   → orange banner + "Use soon — N expire in Xd"
+ *   3. Predicted next buy ≤0 → accent banner + "Restock due"
+ *   4. Active inventory low (<= 1 unit) → "Almost out"
+ *   5. All fresh          → quiet banner + "Buy more"
+ */
+function HeroActionBar({
+  overview,
+  entryName,
+  onBuyMore,
+  onUseOne,
+  consumeBusy,
+}: {
+  overview: CatalogOverview;
+  entryName: string;
+  onBuyMore: () => void;
+  onUseOne: () => void;
+  consumeBusy: boolean;
+}) {
+  const banner = useMemo(() => buildHeroBanner(overview), [overview]);
+  const hasActiveBatches =
+    overview.lifetime_breakdown.active_qty > 0 || overview.counters.active_count > 0;
+
+  return (
+    <div
+      className={cn(
+        'rounded-md p-3 flex flex-col sm:flex-row sm:items-center gap-3',
+        banner.tone === 'red' && 'bg-red-500/10 border border-red-500/30',
+        banner.tone === 'orange' && 'bg-orange-500/10 border border-orange-500/30',
+        banner.tone === 'accent' && 'bg-ga-accent/10 border border-ga-accent/30',
+        banner.tone === 'quiet' && 'bg-ga-bg-hover/40 border border-ga-border',
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <div
+          className={cn(
+            'text-sm flex items-baseline gap-2',
+            banner.tone === 'red' && 'text-red-400',
+            banner.tone === 'orange' && 'text-orange-400',
+            banner.tone === 'accent' && 'text-ga-accent',
+            banner.tone === 'quiet' && 'text-ga-text-primary',
+          )}
+        >
+          <span className="text-base">{banner.icon}</span>
+          <span className="font-medium">{banner.headline}</span>
+        </div>
+        {banner.detail && (
+          <p className="text-xs text-ga-text-secondary mt-0.5 ml-6">{banner.detail}</p>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2 sm:flex-shrink-0">
+        <button
+          onClick={onBuyMore}
+          className="px-3 py-1.5 text-sm rounded bg-ga-accent text-white hover:opacity-90"
+          title={`Buy more ${entryName}`}
+        >
+          + Buy more
+        </button>
+        {hasActiveBatches && (
+          <button
+            onClick={onUseOne}
+            disabled={consumeBusy}
+            className="px-3 py-1.5 text-sm rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-50"
+            title="Mark the oldest-expiry active batch as used (FIFO)"
+          >
+            {consumeBusy ? 'Marking…' : 'Use 1'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface HeroBanner {
+  tone: 'red' | 'orange' | 'accent' | 'quiet';
+  icon: string;
+  headline: string;
+  detail?: string;
+}
+
+function buildHeroBanner(o: CatalogOverview): HeroBanner {
+  // Find the soonest-expiring active location for "expired" / "expiring soon"
+  const now = Date.now();
+  let soonestExpiry: { loc: string; days: number; qty: number } | null = null;
+  for (const loc of o.current_locations) {
+    if (!loc.soonest_expiry) continue;
+    const days = Math.round((new Date(loc.soonest_expiry).getTime() - now) / 86400000);
+    if (!soonestExpiry || days < soonestExpiry.days) {
+      soonestExpiry = { loc: loc.location, days, qty: loc.active_qty };
+    }
+  }
+
+  if (soonestExpiry && soonestExpiry.days < 0) {
+    return {
+      tone: 'red',
+      icon: '⚠',
+      headline: `${formatQty(soonestExpiry.qty)} units expired at ${soonestExpiry.loc}`,
+      detail: `${Math.abs(soonestExpiry.days)} day${
+        Math.abs(soonestExpiry.days) === 1 ? '' : 's'
+      } past expiry — review batches and throw if needed.`,
+    };
+  }
+  if (soonestExpiry && soonestExpiry.days <= 3) {
+    return {
+      tone: 'orange',
+      icon: '⏰',
+      headline: `Use soon — ${formatQty(soonestExpiry.qty)} expire in ${
+        soonestExpiry.days === 0 ? 'today' : `${soonestExpiry.days}d`
+      }`,
+      detail: `At ${soonestExpiry.loc}. Tap "Use 1" to mark the oldest-expiry batch consumed.`,
+    };
+  }
+  // Predicted restock due
+  const next = o.cadence.predicted_next_buy_in_days;
+  if (next != null && next <= 0) {
+    return {
+      tone: 'accent',
+      icon: '🛒',
+      headline: `Restock due — ${Math.abs(next).toFixed(0)} day${
+        Math.abs(next) >= 2 ? 's' : ''
+      } overdue`,
+      detail: `You buy these every ~${o.cadence.avg_days_between_buys} days; last ${o.cadence.days_since_last_buy} days ago.`,
+    };
+  }
+  // Almost out — small active inventory
+  const totalActive = o.lifetime_breakdown.active_qty;
+  if (totalActive > 0 && totalActive <= 1) {
+    return {
+      tone: 'orange',
+      icon: '🪫',
+      headline: 'Almost out',
+      detail: `Only ${formatQty(totalActive)} on hand — consider buying soon.`,
+    };
+  }
+  if (totalActive === 0) {
+    return {
+      tone: 'accent',
+      icon: '📦',
+      headline: 'Out of stock',
+      detail:
+        next != null && next > 0
+          ? `Last bought ${o.cadence.days_since_last_buy ?? '?'}d ago — next buy expected in ~${next.toFixed(0)}d.`
+          : `No active batches. Buy more when you need them.`,
+    };
+  }
+  // Healthy
+  return {
+    tone: 'quiet',
+    icon: '✓',
+    headline: `${formatQty(totalActive)} on hand · all fresh`,
+    detail:
+      o.cadence.avg_days_between_buys != null
+        ? `You buy these every ~${o.cadence.avg_days_between_buys} days.`
+        : undefined,
+  };
 }
 
 function MergeModal({
