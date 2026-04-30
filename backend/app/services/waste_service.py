@@ -445,21 +445,28 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
 
     cash_total = 0.0
     card_total = 0.0
-    untracked = 0
+    other_total = 0.0  # has price, no payment_method recorded
+    untracked = 0      # has no price at all
 
     for doc in q.stream():
         data = doc.to_dict() or {}
-        price = data.get("price")
+        # Phase B: prefer display_amount (in user's display currency); fall back
+        # to amount/price for un-migrated rows.
+        amount = data.get("display_amount")
+        if amount is None:
+            amount = data.get("amount")
+        if amount is None:
+            amount = data.get("price")
         method = data.get("payment_method")
-        if price is None:
+        if amount is None:
             untracked += 1
             continue
         if method == "cash":
-            cash_total += price
+            cash_total += amount
         elif method == "card":
-            card_total += price
+            card_total += amount
         else:
-            untracked += 1
+            other_total += amount
 
     return {
         "period": period,
@@ -467,6 +474,10 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
         "to_date": now,
         "cash_total": round(cash_total, 2),
         "card_total": round(card_total, 2),
-        "grand_total": round(cash_total + card_total, 2),
+        "other_total": round(other_total, 2),
+        # grand_total now sums ALL price-bearing events regardless of payment
+        # method — events without a price are the only thing that "untracked"
+        # really means now.
+        "grand_total": round(cash_total + card_total + other_total, 2),
         "untracked_count": untracked,
     }

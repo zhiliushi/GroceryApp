@@ -161,30 +161,54 @@ def update_user_tools(uid: str, selected_tools: list) -> bool:
 # ---------------------------------------------------------------------------
 
 def get_dashboard_stats() -> Dict[str, Any]:
-    """Aggregate counts for the admin dashboard."""
+    """Aggregate counts for the admin dashboard.
+
+    Counts purchase events from the v2 `purchases` collection-group (all users).
+    Pre-v2 the source was `grocery_items` — that collection still exists for
+    the mobile-app legacy shim but is no longer the source of truth.
+
+    `expired_items` here means *active events whose expiry_date is in the past*
+    — there is no terminal "expired" status (status="active" stays until the
+    user explicitly throws/uses).
+    """
+    from datetime import datetime, timezone
     db = _get_db()
 
     total_users = count_users()
 
-    # Count inventory items across all users (collection group)
     total_items = 0
     active_items = 0
     expired_items = 0
     needs_review_count = 0
+    now = datetime.now(timezone.utc)
     try:
-        items = list(db.collection_group("grocery_items").select(["needsReview", "status"]).stream())
-        total_items = len(items)
-        for i in items:
-            d = i.to_dict()
-            if d.get("needsReview", False):
-                needs_review_count += 1
-            s = d.get("status", "")
-            if s == "active":
+        for snap in db.collection_group("purchases").stream():
+            d = snap.to_dict() or {}
+            total_items += 1
+            status = d.get("status", "")
+            if status == "active":
                 active_items += 1
-            elif s == "expired":
-                expired_items += 1
+                expiry = d.get("expiry_date")
+                if expiry is not None:
+                    if hasattr(expiry, "to_datetime"):
+                        expiry = expiry.to_datetime()
+                    if hasattr(expiry, "tzinfo") and expiry.tzinfo is None:
+                        expiry = expiry.replace(tzinfo=timezone.utc)
+                    if expiry < now:
+                        expired_items += 1
     except Exception as e:
-        logger.warning("Failed to query collection group: %s", e)
+        logger.warning("Failed to query purchases collection group: %s", e)
+    # Catalog rows flagged for review
+    try:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        for snap in (
+            db.collection("catalog_entries")
+            .where(filter=FieldFilter("needs_review", "==", True))
+            .stream()
+        ):
+            needs_review_count += 1
+    except Exception as e:
+        logger.warning("Failed to count needs_review catalog entries: %s", e)
 
     # Count foodbanks
     foodbank_count = 0

@@ -21,14 +21,21 @@ export default function WasteSummaryCard() {
         {data ? `${data.thrown_value.toFixed(2)} total value` : 'No data yet'}
       </p>
       {data?.top_wasted && data.top_wasted.length > 0 && (
-        <ul className="mt-2 space-y-0.5">
-          {data.top_wasted.slice(0, 3).map((t) => (
-            <li key={t.catalog_name_norm} className="text-xs text-ga-text-secondary flex justify-between">
-              <span>{t.display_name}</span>
-              <span>{t.count}×</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-2 space-y-0.5">
+            {data.top_wasted.slice(0, 5).map((t) => (
+              <li key={t.catalog_name_norm} className="text-xs text-ga-text-secondary flex justify-between">
+                <span>{t.display_name}</span>
+                <span>{t.count}×</span>
+              </li>
+            ))}
+          </ul>
+          {data.top_wasted.length > 5 && (
+            <p className="mt-1 text-[10px] text-ga-text-secondary">
+              +{data.top_wasted.length - 5} more — see Waste page
+            </p>
+          )}
+        </>
       )}
     </Link>
   );

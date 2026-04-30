@@ -1054,7 +1054,10 @@ export interface SpendingSummary {
   to_date: string;
   cash_total: number;
   card_total: number;
+  /** Price-bearing events without a payment_method tag. Counts toward grand_total. */
+  other_total?: number;
   grand_total: number;
+  /** Events with no price recorded at all. */
   untracked_count: number;
 }
 

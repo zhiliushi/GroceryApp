@@ -25,11 +25,23 @@ export default function SpendingCard() {
         )}
       </div>
       {data && (
-        <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-          <Stat label="💵 Cash" value={data.cash_total} />
-          <Stat label="💳 Card" value={data.card_total} />
-          <Stat label="? Untracked" value={data.untracked_count} suffix=" items" />
-        </div>
+        <>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+            <Stat label="💵 Cash" value={data.cash_total} />
+            <Stat label="💳 Card" value={data.card_total} />
+            <Stat
+              label={data.other_total ? '? No method' : '? No price'}
+              value={data.other_total || data.untracked_count}
+              suffix={data.other_total ? '' : ' items'}
+            />
+          </div>
+          {/* Show the no-method total separately when both kinds exist */}
+          {!!data.other_total && data.untracked_count > 0 && (
+            <p className="mt-1 text-[10px] text-ga-text-secondary">
+              {data.untracked_count} items have no price recorded
+            </p>
+          )}
+        </>
       )}
     </Link>
   );
