@@ -31,10 +31,20 @@ interface UseScannerEngineReturn {
   framesScanned: number;
   /** True when no detection within 8s on native and we silently switched to html5-qrcode */
   autoFallback: boolean;
+  /** True when html5-qrcode has been the active engine for >12s with zero
+   * detections — surface a UX hint suggesting manual entry / better lighting.
+   * On iOS Safari (no native BarcodeDetector), this is the only feedback users
+   * get that scanning is "live but not finding anything." */
+  html5NoDetectionHint: boolean;
 }
 
 /** 8 seconds with no detection on native engine triggers a silent switch to html5-qrcode. */
 const AUTO_FALLBACK_MS = 8000;
+
+/** 12 seconds on html5-qrcode with no detection surfaces a UX hint.
+ * Longer than the native fallback because html5-qrcode is already the last-
+ * resort engine — there's nothing to fall back to except manual entry. */
+const HTML5_HINT_MS = 12000;
 
 const VIEWFINDER_ID = 'barcode-viewfinder';
 
@@ -48,6 +58,7 @@ export function useScannerEngine(): UseScannerEngineReturn {
   const [torchOn, setTorchOn] = useState(false);
   const [framesScanned, setFramesScanned] = useState(0);
   const [autoFallback, setAutoFallback] = useState(false);
+  const [html5NoDetectionHint, setHtml5NoDetectionHint] = useState(false);
 
   const scannerRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -59,6 +70,7 @@ export function useScannerEngine(): UseScannerEngineReturn {
   const framesPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detectionFoundRef = useRef(false);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const html5HintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Generation counter — incremented on every cleanup/start. After each async
   // boundary, we check if the generation still matches. If not, the operation
   // is stale (cleanup or a new startScanning call happened) and we abort.
@@ -110,9 +122,14 @@ export function useScannerEngine(): UseScannerEngineReturn {
       clearTimeout(fallbackTimerRef.current);
       fallbackTimerRef.current = null;
     }
+    if (html5HintTimerRef.current) {
+      clearTimeout(html5HintTimerRef.current);
+      html5HintTimerRef.current = null;
+    }
     framesScannedRef.current = 0;
     setFramesScanned(0);
     detectionFoundRef.current = false;
+    setHtml5NoDetectionHint(false);
   }, []);
 
   const startScanning = useCallback(async (onDetected: (barcode: string) => void) => {
@@ -314,6 +331,17 @@ export function useScannerEngine(): UseScannerEngineReturn {
     }
 
     setStatus('scanning');
+
+    // No native fallback when html5-qrcode is already the engine — instead,
+    // arm a UX hint timer. After 12s with zero detections, show "still
+    // searching, try X / use manual entry below" so iOS users (where
+    // BarcodeDetector is unavailable) aren't left staring at a frozen-looking
+    // viewfinder.
+    html5HintTimerRef.current = setTimeout(() => {
+      if (gen === genRef.current && !detectionFoundRef.current) {
+        setHtml5NoDetectionHint(true);
+      }
+    }, HTML5_HINT_MS);
   }
 
   // --- Debounce: ignore same barcode within 3 seconds ---
@@ -350,6 +378,7 @@ export function useScannerEngine(): UseScannerEngineReturn {
     toggleTorch,
     framesScanned,
     autoFallback,
+    html5NoDetectionHint,
   };
 }
 

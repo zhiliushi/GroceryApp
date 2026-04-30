@@ -273,7 +273,15 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                 {scanner.engine !== 'manual' ? (
                   <div className="relative bg-black rounded-lg overflow-hidden aspect-[4/3]">
                     <div id="barcode-viewfinder" className="absolute inset-0" />
-                    <div className="absolute inset-10 border-2 border-white/60 rounded pointer-events-none" />
+                    {/* Visual guide. Sized to roughly match html5-qrcode's qrbox
+                        region (75% of min video dim, 0.6 height ratio) — the
+                        previous inset-10 box was substantially larger than the
+                        actual scan zone, leading users to align barcodes
+                        outside where the decoder was looking. */}
+                    <div
+                      aria-hidden
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3/5 h-1/3 border-2 border-white/70 rounded pointer-events-none"
+                    />
                     {scanner.status === 'error' && (
                       <div className="absolute inset-0 flex items-center justify-center text-white text-sm p-4 text-center bg-black/80">
                         Camera unavailable: {scanner.error}
@@ -287,8 +295,13 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                         {scanner.torchOn ? '🔦 Torch on' : '🔦 Torch off'}
                       </button>
                     )}
+                    {/* Debug overlay — explicit opt-in via ?debug or
+                        localStorage.scannerDebug. Always visible if the
+                        no-detection hint is firing (helps diagnose iOS
+                        Safari issues without needing a query-string toggle). */}
                     {(new URLSearchParams(window.location.search).has('debug') ||
-                      window.localStorage.getItem('scannerDebug') === '1') && (
+                      window.localStorage.getItem('scannerDebug') === '1' ||
+                      scanner.html5NoDetectionHint) && (
                       <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] font-mono rounded px-2 py-1 leading-tight">
                         {scanner.engine} · {scanner.status}
                         <br />
@@ -298,6 +311,12 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                     {scanner.autoFallback && (
                       <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs rounded px-3 py-1 whitespace-nowrap">
                         Trying alternate scanner…
+                      </div>
+                    )}
+                    {scanner.html5NoDetectionHint && !scanner.autoFallback && (
+                      <div className="absolute bottom-2 left-2 right-2 bg-black/75 text-white text-[11px] rounded px-3 py-2 leading-snug">
+                        Still searching — try moving closer, holding steady,
+                        or improving lighting. Or enter the barcode manually below.
                       </div>
                     )}
                   </div>
