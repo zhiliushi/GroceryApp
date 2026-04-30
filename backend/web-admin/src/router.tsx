@@ -43,6 +43,11 @@ const CatalogListPage = lazy(() => import('@/pages/catalog/CatalogListPage'));
 const CatalogEntryPage = lazy(() => import('@/pages/catalog/CatalogEntryPage'));
 const InsightsPage = lazy(() => import('@/pages/insights/InsightsPage'));
 const CatalogAnalysisPage = lazy(() => import('@/pages/admin/CatalogAnalysisPage'));
+const CatalogCountersDiagnosticPage = lazy(
+  () => import('@/pages/admin/CatalogCountersDiagnosticPage'),
+);
+const MigrationDryRunPage = lazy(() => import('@/pages/admin/MigrationDryRunPage'));
+const AdminMigrationPage = lazy(() => import('@/pages/admin/AdminMigrationPage'));
 const ExperimentalPage = lazy(() => import('@/pages/admin/ExperimentalPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
@@ -162,6 +167,9 @@ export const router = createBrowserRouter([
           { path: 'price-records', element: <SuspenseWrapper><PriceRecordsPage /></SuspenseWrapper> },
           { path: 'admin-settings', element: <SuspenseWrapper><AdminSettingsPage /></SuspenseWrapper> },
           { path: 'admin/catalog-analysis', element: <SuspenseWrapper><CatalogAnalysisPage /></SuspenseWrapper> },
+          { path: 'admin/catalog-counters', element: <SuspenseWrapper><CatalogCountersDiagnosticPage /></SuspenseWrapper> },
+          { path: 'admin/migration-dry-run', element: <SuspenseWrapper><MigrationDryRunPage /></SuspenseWrapper> },
+          { path: 'admin/migration-run', element: <SuspenseWrapper><AdminMigrationPage /></SuspenseWrapper> },
           { path: 'admin/experimental', element: <SuspenseWrapper><ExperimentalPage /></SuspenseWrapper> },
           { path: 'map', element: <SuspenseWrapper><MapPage /></SuspenseWrapper> },
           { path: 'foodbanks/new', element: <SuspenseWrapper><FoodbankFormPage /></SuspenseWrapper> },

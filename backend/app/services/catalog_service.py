@@ -327,6 +327,21 @@ def upsert_catalog_entry(
     if barcode:
         _check_barcode_not_linked_elsewhere(user_id, barcode)
 
+    # v2 catalog mode (catalog_evolution.md §2.1): barcode-tied → global_linked,
+    # no barcode → user_custom. Quota gates user_custom create.
+    catalog_mode = "global_linked" if barcode else "user_custom"
+    if catalog_mode == "user_custom":
+        from app.services import quota_service  # local import to avoid cycles
+        quota_service.check_or_raise(user_id, would_be_user_custom=True)
+
+    # Idle clock: 30d for new user_custom rows on free-tier users; null for
+    # global_linked OR paid users.
+    idle_expires_at = None
+    if catalog_mode == "user_custom":
+        from datetime import datetime, timezone, timedelta
+        if not _is_paid_user(user_id):
+            idle_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+
     new_data = {
         "user_id": user_id,
         "name_norm": name_norm,
@@ -341,10 +356,27 @@ def upsert_catalog_entry(
         "active_purchases": 0,
         "last_purchased_at": None,
         "needs_review": False,
+        # v2 fields (catalog_evolution.md Phase A schema, Phase C write-path)
+        "catalog_mode": catalog_mode,
+        "canonical_name": display_name,
+        "idle_expires_at": idle_expires_at,
     }
-    doc_ref.set(apply_create_metadata(new_data, uid=actor_uid or user_id, source=source))
-    logger.info("catalog.created user=%s name_norm=%s", user_id, name_norm)
+    doc_ref.set(apply_create_metadata(new_data, uid=actor_uid or user_id, source=source, schema_version=2))
+    logger.info("catalog.created user=%s name_norm=%s mode=%s", user_id, name_norm, catalog_mode)
+
+    if catalog_mode == "user_custom":
+        from app.services import quota_service
+        quota_service.consume(user_id, amount=1)
+
     return get_catalog_entry(user_id, name_norm)
+
+
+def _is_paid_user(user_id: str) -> bool:
+    """Check user.tier in {plus, pro} → paid (no quota counter, no idle clock)."""
+    snap = _db().collection("users").document(user_id).get()
+    if not snap.exists:
+        return False
+    return ((snap.to_dict() or {}).get("tier") or "free") in ("plus", "pro")
 
 
 def update_catalog_entry(

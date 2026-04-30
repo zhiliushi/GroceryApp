@@ -43,6 +43,7 @@ from app.api.routes import (
     reminders,
     scan,
     search,
+    stores,
     waste,
 )
 from app.core import feature_flags
@@ -168,6 +169,7 @@ _ROUTERS: list[tuple] = [
     (waste.router, "/waste", ["waste"], None),
     (insights.router, "/insights", ["insights"], None),
     (search.router, "/search", ["search"], None),
+    (stores.router, "/stores", ["stores"], None),
 ]
 for _router, _suffix, _tags, _deps in _ROUTERS:
     _kwargs = {"tags": _tags}
@@ -291,7 +293,58 @@ async def get_current_user_info(request: Request):
         "selected_tools": profile.get("selected_tools", []),
         "country": profile.get("country"),
         "currency": profile.get("currency"),
+        "currency_preference": profile.get("currency_preference"),
+        "schema_version": profile.get("schema_version", 1),
     }
+
+
+@app.get("/api/me/quota")
+async def get_my_quota(request: Request):
+    """Return the calling user's catalog quota status + eviction candidates.
+
+    Phase C of catalog_evolution.md. The picker UI uses this to render a list
+    when the user has hit (or is approaching) the cap, so they can pre-emptively
+    remove a user_custom item before trying to add a new one.
+
+    Query params:
+      sort_by: "oldest" (default) | "expiry"
+    """
+    from app.core.auth import get_current_user
+    from app.services import quota_service
+
+    user = await get_current_user(request)
+    sort_by = request.query_params.get("sort_by") or "oldest"
+    if sort_by not in ("oldest", "expiry"):
+        sort_by = "oldest"
+    status = quota_service.get_quota_status(user.uid)
+    candidates = quota_service.list_eviction_candidates(user.uid, sort_by=sort_by)
+    return {**status, "eviction_candidates": candidates, "sort_by": sort_by}
+
+
+@app.put("/api/me/currency-preference")
+async def update_my_currency_preference(request: Request):
+    """Set the calling user's display currency preference.
+
+    Body: {"currency": "SGD"}  — 3-letter ISO code, uppercased.
+    Phase B of catalog_evolution.md. Does NOT re-aggregate historical events.
+    """
+    from app.core.auth import get_current_user
+    from app.core.metadata import apply_update_metadata
+    from firebase_admin import firestore
+
+    user = await get_current_user(request)
+    body = await request.json()
+    currency = (body or {}).get("currency", "").strip().upper()
+    if not currency or len(currency) != 3 or not currency.isalpha():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="currency must be a 3-letter ISO code")
+
+    db = firestore.client()
+    db.collection("users").document(user.uid).set(
+        apply_update_metadata({"currency_preference": currency}),
+        merge=True,
+    )
+    return {"success": True, "currency_preference": currency}
 
 
 @app.get("/api/inventory/my")

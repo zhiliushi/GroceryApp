@@ -5,6 +5,8 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import HouseholdSection from '@/components/settings/HouseholdSection';
 import SecuritySection from '@/components/settings/SecuritySection';
+import DisplayCurrencySection from '@/components/settings/DisplayCurrencySection';
+import MergeNudgeWidget from '@/components/settings/MergeNudgeWidget';
 
 const FSM_DATA = [
   {
@@ -55,6 +57,12 @@ export default function SettingsPage() {
 
         {/* Household */}
         <HouseholdSection />
+
+        {/* Display currency (Phase B of catalog_evolution.md) */}
+        <DisplayCurrencySection />
+
+        {/* Catalog cleanup — likely duplicates + transfer audit log (Phase G) */}
+        <MergeNudgeWidget />
 
         {/* Security */}
         <SecuritySection />

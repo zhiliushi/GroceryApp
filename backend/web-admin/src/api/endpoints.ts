@@ -148,6 +148,49 @@ export const API = {
   ADMIN_CATALOG_PROMOTE: '/api/admin/catalog-analysis/promote',
   ADMIN_CATALOG_FLAG_SPAM: '/api/admin/catalog-analysis/flag-spam',
 
+  // Catalog evolution Phase F — counter diagnostic
+  ADMIN_DIAGNOSTIC_CATALOG_COUNTERS: '/api/admin/diagnostic/catalog-counters',
+
+  // Catalog evolution Phase 0 — migration v2 dry-run (read-only)
+  ADMIN_MIGRATION_DRY_RUN_V2: '/api/admin/migration/dry-run-v2',
+
+  // Catalog evolution Phase A — migration v2 run + audit log
+  ADMIN_MIGRATION_RUN_V2: '/api/admin/migration/run-v2',
+  ADMIN_MIGRATION_AUDIT_LOG: '/api/admin/migration/audit-log',
+  ADMIN_MIGRATION_AUDIT_LOG_DETAIL: (runId: string) =>
+    `/api/admin/migration/audit-log/${encodeURIComponent(runId)}`,
+
+  // Catalog evolution Phase B — pricing + currency + multi-pack
+  PURCHASES_MULTI_PACK: '/api/purchases/multi-pack',
+  ME_CURRENCY_PREFERENCE: '/api/me/currency-preference',
+  ADMIN_FX_RATES: '/api/admin/fx-rates',
+  ADMIN_FX_RATES_LOOKUP: '/api/admin/fx-rates/lookup',
+
+  // Catalog evolution Phase C — quota + idle TTL + cascade
+  ME_QUOTA: '/api/me/quota',
+  ADMIN_IDLE_CLOCK_EXPIRED: '/api/admin/idle-clock/expired',
+  ADMIN_IDLE_CLOCK_CASCADE: '/api/admin/idle-clock/cascade',
+  ADMIN_IDLE_CLOCK_AUDIT_LOG: '/api/admin/idle-clock/audit-log',
+
+  // Catalog evolution Phase D — store catalog
+  STORES_LIST: '/api/stores',
+  STORES_SEARCH: '/api/stores/search',
+  STORES_QUOTA: '/api/stores/quota',
+  STORE_DETAIL: (storeId: string) => `/api/stores/${encodeURIComponent(storeId)}`,
+
+  // Catalog evolution Phase E — catalog overview
+  CATALOG_OVERVIEW: (nameNorm: string) =>
+    `/api/catalog/${encodeURIComponent(nameNorm)}/overview`,
+
+  // Catalog evolution Phase G — similarity + transfer
+  CATALOG_SIMILAR: '/api/catalog/_/similar',
+  CATALOG_DUPLICATES: '/api/catalog/_/duplicates',
+  CATALOG_TRANSFER_PREVIEW: '/api/catalog/_/transfer/preview',
+  CATALOG_TRANSFER_EXECUTE: '/api/catalog/_/transfer/execute',
+  CATALOG_TRANSFER_REVERSE: (transferId: string) =>
+    `/api/catalog/_/transfer/${encodeURIComponent(transferId)}/reverse`,
+  CATALOG_TRANSFER_LOG: '/api/catalog/_/transfer/log',
+
   // Public subset of flags — safe for unauthenticated dashboard reads
   PUBLIC_FEATURES: '/api/features/public',
 

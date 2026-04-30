@@ -7,6 +7,7 @@ import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import GlobalSearchBar from '@/components/search/GlobalSearchBar';
 import UpdatePrompt from '@/components/pwa/UpdatePrompt';
 import InstallPrompt from '@/components/pwa/InstallPrompt';
+import CatalogCleanupBanner from '@/components/banners/CatalogCleanupBanner';
 import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/utils/cn';
 
@@ -32,6 +33,7 @@ export default function AppLayout() {
           'ml-0 pt-12 md:pt-0',
         )}
       >
+        <CatalogCleanupBanner />
         <Outlet />
       </main>
 

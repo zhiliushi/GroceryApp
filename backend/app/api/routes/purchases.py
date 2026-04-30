@@ -72,10 +72,73 @@ async def create_purchase(
         payment_method=data.payment_method,
         date_bought=data.date_bought,
         location=data.location,
+        store_id=data.store_id,
         source="api",
     )
     background_tasks.add_task(_check_milestones_safe, user.uid)
     return event
+
+
+@router.post("/multi-pack", dependencies=[Depends(rate_limit(60))])
+async def create_multi_pack(
+    body: dict,
+    background_tasks: BackgroundTasks,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Create N events sharing a `multi_pack_parent_id` (catalog_evolution.md §2.2 #5).
+
+    Body: {
+      name: str,
+      pack_count: int,
+      units_per_pack: int,
+      price_per_pack: float | null,
+      currency: str | null,
+      barcode: str | null,
+      expiry_raw: str | null,
+      expiry_date: ISO str | null,
+      location: str | null,
+      base_unit_label: str | null,
+    }
+    """
+    from app.core.exceptions import ValidationError
+    from datetime import datetime
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    try:
+        pack_count = int(body.get("pack_count") or 0)
+        units_per_pack = int(body.get("units_per_pack") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="pack_count and units_per_pack must be integers")
+
+    expiry_date = None
+    if body.get("expiry_date"):
+        try:
+            expiry_date = datetime.fromisoformat(str(body["expiry_date"]).replace("Z", "+00:00"))
+        except Exception:
+            raise HTTPException(status_code=400, detail="expiry_date must be ISO-8601")
+
+    try:
+        result = purchase_event_service.create_multi_pack(
+            user_id=user.uid,
+            name=name,
+            pack_count=pack_count,
+            units_per_pack=units_per_pack,
+            price_per_pack=body.get("price_per_pack"),
+            currency=body.get("currency"),
+            barcode=body.get("barcode"),
+            expiry_raw=body.get("expiry_raw"),
+            expiry_date=expiry_date,
+            location=body.get("location"),
+            base_unit_label=body.get("base_unit_label"),
+            store_id=body.get("store_id"),
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    background_tasks.add_task(_check_milestones_safe, user.uid)
+    return result
 
 
 # ---------------------------------------------------------------------------

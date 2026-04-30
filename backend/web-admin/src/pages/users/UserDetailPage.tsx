@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useUser } from '@/api/queries/useUsers';
 import { useInventory } from '@/api/queries/useInventory';
 import { useShoppingLists } from '@/api/queries/useShoppingLists';
+import { useChangeTier } from '@/api/mutations/useUserMutations';
 import DataTable, { type Column } from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -216,7 +217,7 @@ export default function UserDetailPage() {
               </div>
               <div>
                 <span className="text-ga-text-secondary block">Tier</span>
-                <span className="text-ga-text-primary capitalize">{user.tier || '—'}</span>
+                <TierToggle uid={user.uid} currentTier={user.tier || 'free'} />
               </div>
               <div>
                 <span className="text-ga-text-secondary block">Created</span>
@@ -253,6 +254,38 @@ export default function UserDetailPage() {
       {/* Tab content */}
       {activeTab === 'inventory' && <UserInventoryTab uid={uid!} />}
       {activeTab === 'shopping-lists' && <UserShoppingListsTab uid={uid!} />}
+    </div>
+  );
+}
+
+/**
+ * Inline tier toggle (catalog_evolution.md Phase D admin paid-tier flag).
+ * Paid tiers (`plus`, `pro`) drive `is_paid` in the rest of the app — they
+ * skip the catalog idle clock and are exempt from cascade.
+ */
+function TierToggle({ uid, currentTier }: { uid: string; currentTier: string }) {
+  const mutation = useChangeTier();
+  const tiers = ['free', 'plus', 'pro'];
+  return (
+    <div className="flex items-center gap-1">
+      {tiers.map((t) => (
+        <button
+          key={t}
+          onClick={() => {
+            if (t === currentTier || mutation.isPending) return;
+            mutation.mutate({ uid, tier: t });
+          }}
+          disabled={mutation.isPending}
+          className={cn(
+            'px-2 py-0.5 text-[11px] rounded border capitalize',
+            t === currentTier
+              ? 'bg-ga-accent text-white border-transparent'
+              : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+          )}
+        >
+          {t}
+        </button>
+      ))}
     </div>
   );
 }

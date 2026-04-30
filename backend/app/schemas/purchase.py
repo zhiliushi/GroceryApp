@@ -79,6 +79,9 @@ class PurchaseCreate(BaseModel):
     payment_method: Optional[str] = None
     date_bought: Optional[datetime] = None    # defaults to now
     location: Optional[str] = None
+    # v2 store-of-purchase (catalog_evolution.md Phase D §2.2 #9). Defaults
+    # to "unknown" server-side when omitted.
+    store_id: Optional[str] = None
 
 
 class PurchaseUpdate(BaseModel):

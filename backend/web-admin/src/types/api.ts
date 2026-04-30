@@ -10,6 +10,10 @@ export interface AuthUser {
   selected_tools: string[];
   country: string | null;
   currency: string | null;
+  /** Phase B (catalog_evolution.md §5): display-currency target. Distinct from
+   *  `currency` which is the legacy locale field. */
+  currency_preference?: string;
+  schema_version?: number;
 }
 
 // === Dashboard ===
@@ -861,6 +865,19 @@ export interface PurchaseEvent {
   split_from_event_id?: string;
   /** Timestamp when the partial split happened. */
   split_at?: string;
+  // === v2 fields (catalog_evolution.md Phase A schema, Phase B write-path) ===
+  amount?: number | null;
+  display_amount?: number | null;
+  display_currency?: string | null;
+  fx_rate_at_save?: number | null;
+  fx_rate_date?: string | null;
+  pack_size?: number;
+  base_unit_label?: string;
+  store_id?: string;
+  multi_pack_parent_id?: string | null;
+  contributes_to_logical_count?: boolean;
+  unit_price?: number | null;
+  schema_version?: number;
 }
 
 export interface PurchaseListResponse {
@@ -897,6 +914,8 @@ export interface PurchaseCreateRequest {
   payment_method?: PaymentMethod;
   date_bought?: string;
   location?: string;
+  /** Phase D: store_id to charge this purchase against. Defaults server-side to "unknown". */
+  store_id?: string | null;
 }
 
 export interface PurchaseUpdateRequest {
@@ -1158,6 +1177,412 @@ export interface CatalogAnalysis {
   cleanup_preview: CatalogAnalysisCleanupEntry[];
   computed_at?: string;
   schema_version?: number;
+}
+
+// === Catalog counter diagnostics (Phase F of catalog_evolution.md) ===
+
+export interface CatalogCounterRow {
+  name_norm: string;
+  display_name: string;
+  barcode: string | null;
+  stored_total_purchases: number;
+  stored_active_purchases: number;
+  recomputed_total_event_count: number;
+  recomputed_logical_purchase_count: number;
+  recomputed_active: number;
+  delta_total: number;
+  delta_active: number;
+  inflation: number;
+  split_event_count: number;
+  status_counts: Record<string, number>;
+  first_event_at: string | null;
+  last_event_at: string | null;
+}
+
+export interface CatalogCounterOrphanEvent {
+  catalog_name_norm: string;
+  event_id: string;
+  catalog_display: string | null;
+  barcode: string | null;
+  status: string | null;
+  date_bought: string | null;
+}
+
+export interface CatalogCounterDiagnostics {
+  user_id: string;
+  computed_at: string;
+  total_catalog_rows: number;
+  total_events: number;
+  divergent_count: number;
+  inflated_count: number;
+  orphan_event_count: number;
+  rows: CatalogCounterRow[];
+  top_divergent: CatalogCounterRow[];
+  top_inflated: CatalogCounterRow[];
+  orphan_events: CatalogCounterOrphanEvent[];
+}
+
+// === Migration v2 dry-run (Phase 0 of catalog_evolution.md) ===
+
+export interface MigrationDryRunCatalogPrediction {
+  name_norm: string;
+  display_name: string | null;
+  barcode: string | null;
+  predicted_catalog_mode: 'global_linked' | 'user_custom';
+  predicted_canonical_name: string | null;
+  predicted_idle_expires_at: string | null;
+  schema_version_target: number;
+  ambiguity_flags: string[];
+}
+
+export interface MigrationDryRunEventPrediction {
+  event_id: string;
+  catalog_name_norm: string | null;
+  catalog_display: string | null;
+  predicted_pack_size: number;
+  predicted_base_unit_label: string;
+  base_unit_inferred: boolean;
+  predicted_currency: string;
+  predicted_display_amount: number | null;
+  predicted_display_currency: string;
+  predicted_fx_rate_at_save: number | null;
+  predicted_unit_price: number | null;
+  predicted_store_id: string;
+  predicted_contributes_to_logical_count: boolean;
+  schema_version_target: number;
+  ambiguity_flags: string[];
+}
+
+export interface MigrationDryRunUserSection {
+  predicted_is_paid: boolean;
+  predicted_currency_preference: string;
+  predicted_catalog_quota_used: number;
+  predicted_catalog_quota_limit: number;
+  predicted_store_quota_used: number;
+  predicted_store_quota_limit: number;
+  predicted_schema_version: number;
+  quota_at_or_above_limit: boolean;
+}
+
+export interface MigrationDryRunStoresSection {
+  will_create_unknown_store: boolean;
+  auto_created_store_doc: {
+    store_id: string;
+    name: string;
+    auto_created: boolean;
+    use_count: number;
+  } | null;
+}
+
+export interface MigrationDryRunReport {
+  user_id: string;
+  computed_at: string;
+  schema_version_target: number;
+  is_paid: boolean;
+  user_tier: string | null;
+  catalog: {
+    total: number;
+    predicted_global_linked: number;
+    predicted_user_custom_with_barcode: number;
+    predicted_user_custom_no_barcode: number;
+    ambiguous: MigrationDryRunCatalogPrediction[];
+    ambiguous_count: number;
+    ambiguous_pct: number;
+  };
+  events: {
+    total: number;
+    pack_size_default_count: number;
+    base_unit_inferred_count: number;
+    base_unit_default_count: number;
+    currency_set_count: number;
+    currency_default_count: number;
+    currencies_seen: Record<string, number>;
+    multi_currency_user: boolean;
+    no_price_count: number;
+    no_quantity_count: number;
+    split_event_count: number;
+    logical_event_count: number;
+    ambiguous: MigrationDryRunEventPrediction[];
+    ambiguous_count: number;
+    ambiguous_pct: number;
+  };
+  user: MigrationDryRunUserSection;
+  stores: MigrationDryRunStoresSection;
+  totals: {
+    total_writes_predicted: number;
+    total_ambiguous_pct: number;
+    pass_threshold_pct: number;
+    pass_threshold_met: boolean;
+  };
+  sample_diffs: {
+    catalog: MigrationDryRunCatalogPrediction | null;
+    event: MigrationDryRunEventPrediction | null;
+  };
+  events_sample: MigrationDryRunEventPrediction[];
+}
+
+export interface MigrationDryRunPerUserSummary {
+  user_id: string;
+  user_tier?: string | null;
+  is_paid?: boolean;
+  catalog_total?: number;
+  catalog_global_linked?: number;
+  catalog_user_custom?: number;
+  catalog_ambiguous_count?: number;
+  events_total?: number;
+  events_ambiguous_count?: number;
+  events_split?: number;
+  events_logical?: number;
+  multi_currency?: boolean;
+  quota_at_or_above_limit?: boolean;
+  ambiguous_pct?: number;
+  pass_threshold_met?: boolean;
+  error?: string;
+}
+
+export interface MigrationDryRunAllUsers {
+  computed_at: string;
+  schema_version_target: number;
+  user_count: number;
+  aggregate: {
+    catalog_total: number;
+    catalog_global_linked: number;
+    catalog_user_custom: number;
+    catalog_ambiguous: number;
+    events_total: number;
+    events_ambiguous: number;
+    events_split: number;
+    events_logical: number;
+    base_unit_inferred: number;
+    base_unit_default: number;
+    multi_currency_users: number;
+    over_quota_users: number;
+    overall_ambiguous_pct: number;
+    pass_threshold_pct: number;
+    pass_threshold_met: boolean;
+  };
+  per_user: MigrationDryRunPerUserSummary[];
+}
+
+// === Catalog similarity + transfer (Phase G of catalog_evolution.md) ===
+
+export interface SimilarCatalogMatch {
+  name_norm: string;
+  display_name: string;
+  barcode: string | null;
+  catalog_mode?: 'global_linked' | 'user_custom';
+  total_purchases: number;
+  active_purchases: number;
+  last_purchased_at: string | null;
+  score: number;
+}
+
+export interface DuplicatePairSummary {
+  name_norm: string;
+  display_name: string;
+  barcode: string | null;
+  catalog_mode?: 'global_linked' | 'user_custom';
+  total_purchases: number;
+  active_purchases: number;
+  last_purchased_at: string | null;
+}
+
+export interface DuplicatePair {
+  a: DuplicatePairSummary;
+  b: DuplicatePairSummary;
+  score: number;
+  why: 'shared_barcode' | 'name_similarity';
+}
+
+export interface TransferPreview {
+  src: DuplicatePairSummary;
+  dst: DuplicatePairSummary;
+  event_count: number;
+  with_price_count: number;
+  with_waste_count: number;
+  base_unit_label_mismatch: boolean;
+  src_base_unit_label: string | null;
+  dst_base_unit_label: string | null;
+  would_release_quota: boolean;
+}
+
+export interface TransferExecuteResult {
+  transfer_id: string;
+  from_catalog_id: string;
+  to_catalog_id: string;
+  transferred_event_count: number;
+  reversal_token: string;
+  reversal_expires_at: string;
+}
+
+export interface TransferLogEntry {
+  transfer_id: string;
+  from_catalog_id: string;
+  from_display_name: string | null;
+  to_catalog_id: string;
+  to_display_name: string | null;
+  transferred_event_count: number;
+  transferred_at: string | null;
+  reversal_expires_at: string | null;
+  reversed_at: string | null;
+  reversed_by: string | null;
+  reversed_event_count?: number;
+  actor_uid?: string;
+  reversal_window_open: boolean;
+}
+
+// === Catalog overview (Phase E of catalog_evolution.md) ===
+
+export interface CatalogOverviewCounters {
+  logical_purchase_count: number;
+  total_event_count: number;
+  active_count: number;
+}
+
+export interface CatalogOverviewLifetime {
+  total_qty: number;
+  active_qty: number;
+  used_qty: number;
+  thrown_qty: number;
+  given_qty: number;
+  transferred_qty: number;
+}
+
+export interface CatalogOverviewWasteRate {
+  waste_pct: number;
+  used_pct: number;
+  thrown_pct: number;
+  given_pct: number;
+  active_pct: number;
+}
+
+export interface CatalogOverviewTimelineEntry {
+  date: string | null;
+  event_id: string;
+  action: string;
+  location: string | null;
+  quantity: number | null;
+  status: string | null;
+  split_from_event_id: string | null;
+}
+
+export interface CatalogOverviewLineageEvent {
+  id: string;
+  date_bought: string | null;
+  quantity: number | null;
+  status: string | null;
+  location: string | null;
+  expiry_date: string | null;
+  consumed_reason: string | null;
+  split_from_event_id: string | null;
+  store_id: string | null;
+}
+
+export interface CatalogOverviewLineageNode extends CatalogOverviewLineageEvent {
+  children: CatalogOverviewLineageEvent[];
+}
+
+export interface CatalogOverviewPriceSample {
+  event_id: string;
+  date: string | null;
+  amount: number | null;
+  currency: string | null;
+  display_amount: number | null;
+  display_currency: string | null;
+  unit_price: number | null;
+  quantity: number | null;
+  pack_size: number | null;
+}
+
+export interface CatalogOverviewPriceHistory {
+  store_id: string;
+  store_name: string;
+  samples: CatalogOverviewPriceSample[];
+  mean_unit_price: number | null;
+  min_unit_price: number | null;
+  max_unit_price: number | null;
+  latest_unit_price: number | null;
+  sample_count: number;
+}
+
+export interface CatalogOverview {
+  entry: CatalogEntry & {
+    catalog_mode?: 'global_linked' | 'user_custom';
+    canonical_name?: string;
+    idle_expires_at?: string | null;
+  };
+  counters: CatalogOverviewCounters;
+  lifetime_breakdown: CatalogOverviewLifetime;
+  waste_rate: CatalogOverviewWasteRate;
+  movement_timeline: CatalogOverviewTimelineEntry[];
+  split_lineage: CatalogOverviewLineageNode[];
+  price_history_per_store: CatalogOverviewPriceHistory[];
+  computed_at: string;
+}
+
+// === Store catalog (Phase D of catalog_evolution.md) ===
+
+export interface StoreCatalogEntry {
+  store_id: string;
+  name: string;
+  auto_created?: boolean;
+  created_at?: string;
+  last_used_at?: string;
+  use_count?: number;
+}
+
+export interface StoreQuotaStatus {
+  used: number;
+  limit: number;
+  available: number;
+  at_or_above_limit: boolean;
+}
+
+// === Migration v2 audit log (Phase A of catalog_evolution.md) ===
+
+export interface MigrationV2PerUserStats {
+  user_id: string;
+  catalog_rows_processed: number;
+  catalog_rows_global_linked: number;
+  catalog_rows_user_custom: number;
+  catalog_rows_skipped: number;
+  events_processed: number;
+  events_with_unit_label_inferred: number;
+  events_with_unit_label_default: number;
+  events_skipped: number;
+  user_doc_updated: boolean;
+  user_doc_skipped: boolean;
+  store_unknown_created: boolean;
+  errors: { doc_path: string; message: string }[];
+}
+
+export interface MigrationV2RunSummary {
+  run_id: string;
+  started_at: string;
+  completed_at: string | null;
+  schema_version_target: number;
+  actor_uid: string;
+  user_count: number;
+  users_completed: number;
+  users_with_errors: number;
+  catalog_rows_processed: number;
+  catalog_rows_global_linked: number;
+  catalog_rows_user_custom: number;
+  catalog_rows_skipped: number;
+  events_processed: number;
+  events_with_unit_label_inferred: number;
+  events_with_unit_label_default: number;
+  events_skipped: number;
+  user_docs_updated: number;
+  user_docs_skipped: number;
+  stores_created: number;
+  errors: { user_id: string; doc_path: string; message: string }[];
+  status: 'running' | 'complete' | 'complete_with_errors' | 'failed';
+  per_user_count?: number;
+}
+
+export interface MigrationV2RunDetail extends MigrationV2RunSummary {
+  per_user: MigrationV2PerUserStats[];
 }
 
 // === Insights (milestones) ===

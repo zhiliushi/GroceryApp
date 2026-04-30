@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useCreatePurchase } from '@/api/mutations/usePurchaseMutations';
+import {
+  useCreatePurchase,
+  useCreateMultiPack,
+  isQuotaExceededError,
+  type QuotaExceededDetails,
+} from '@/api/mutations/usePurchaseMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
@@ -7,6 +12,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { useScannerEngine } from '@/components/barcode/useScannerEngine';
 import CatalogAutocomplete from './CatalogAutocomplete';
 import ExpiryInput from './ExpiryInput';
+import DidYouMeanSuggestions from './DidYouMeanSuggestions';
+import QuotaHitPicker from '@/components/quota/QuotaHitPicker';
+import StoreSelect from '@/components/stores/StoreSelect';
 import { cn } from '@/utils/cn';
 import type { CatalogEntry, PaymentMethod, ScanInfo } from '@/types/api';
 
@@ -24,6 +32,8 @@ interface QuickAddModalProps {
 
 const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'];
 const UNITS = ['count', 'pack', 'g', 'kg', 'ml', 'L'];
+// Common currencies for the dropdown — user can also type a 3-letter code if missing.
+const CURRENCIES = ['SGD', 'MYR', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'IDR', 'THB', 'PHP', 'VND', 'INR', 'AUD'];
 
 export default function QuickAddModal({ open, onClose, defaults }: QuickAddModalProps) {
   const [name, setName] = useState('');
@@ -32,10 +42,20 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   const [quantity, setQuantity] = useState(1);
   const [unit, setUnit] = useState<string>('count');
   const [price, setPrice] = useState<string>('');
+  const [currency, setCurrency] = useState<string>('SGD');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
   const [location, setLocation] = useState('pantry');
   const [showMore, setShowMore] = useState(false);
   const [matchedEntry, setMatchedEntry] = useState<CatalogEntry | undefined>();
+  // Multi-pack mode — when on, qty/price single-fields are replaced by
+  // pack_count × units_per_pack × price_per_pack and we POST /purchases/multi-pack.
+  const [multiPackOn, setMultiPackOn] = useState(false);
+  const [packCount, setPackCount] = useState<number>(1);
+  const [unitsPerPack, setUnitsPerPack] = useState<number>(1);
+  const [pricePerPack, setPricePerPack] = useState<string>('');
+  // Phase D — store_id of where this purchase came from
+  const [storeId, setStoreId] = useState<string | null>(null);
+  const [storeLabel, setStoreLabel] = useState<string>('');
 
   const [scanning, setScanning] = useState(false);
   const [manualBarcode, setManualBarcode] = useState('');
@@ -45,9 +65,13 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
 
   const { data: flags } = useFeatureFlags();
   const financialTracking = flags?.financial_tracking !== false;
-  const uid = useAuthStore((s) => s.user?.uid);
+  const authUser = useAuthStore((s) => s.user);
+  const uid = authUser?.uid;
+  const userCurrency = authUser?.currency ?? 'SGD';
 
   const createMutation = useCreatePurchase();
+  const multiPackMutation = useCreateMultiPack();
+  const [quotaDetails, setQuotaDetails] = useState<QuotaExceededDetails | null>(null);
   const scanner = useScannerEngine();
   const scannerRef = useRef(scanner);
   scannerRef.current = scanner;
@@ -62,6 +86,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setQuantity(1);
       setUnit('count');
       setPrice('');
+      setCurrency(userCurrency);
       setPaymentMethod('');
       setShowMore(false);
       setMatchedEntry(defaults?.catalogEntry);
@@ -69,8 +94,14 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setManualBarcode('');
       setLookupBarcode(null);
       setLookupError(null);
+      setMultiPackOn(false);
+      setPackCount(1);
+      setUnitsPerPack(1);
+      setPricePerPack('');
+      setStoreId(null);
+      setStoreLabel('');
     }
-  }, [open, defaults]);
+  }, [open, defaults, userCurrency]);
 
   useEffect(() => {
     if (!open) return;
@@ -146,7 +177,21 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
 
   if (!open) return null;
 
-  const canSave = name.trim().length > 0 && !createMutation.isPending;
+  const isPending = createMutation.isPending || multiPackMutation.isPending;
+  const canSaveSingle = name.trim().length > 0 && !isPending;
+  const canSaveMulti =
+    name.trim().length > 0 &&
+    packCount >= 1 &&
+    unitsPerPack >= 1 &&
+    !isPending;
+  const canSave = multiPackOn ? canSaveMulti : canSaveSingle;
+
+  // Live total + per-unit auto-compute for multi-pack mode.
+  const ppPackNum = parseFloat(pricePerPack);
+  const multiPackTotal =
+    !isNaN(ppPackNum) && packCount > 0 ? ppPackNum * packCount : null;
+  const multiPackUnitPrice =
+    !isNaN(ppPackNum) && unitsPerPack > 0 ? ppPackNum / unitsPerPack : null;
 
   function handleAutocomplete(newName: string, entry?: CatalogEntry) {
     setName(newName);
@@ -161,6 +206,29 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
 
   function handleSave() {
     if (!canSave) return;
+    if (multiPackOn) {
+      multiPackMutation.mutate(
+        {
+          name: name.trim(),
+          barcode: barcode.trim() || null,
+          pack_count: packCount,
+          units_per_pack: unitsPerPack,
+          price_per_pack: pricePerPack ? parseFloat(pricePerPack) : null,
+          currency: currency || null,
+          expiry_raw: expiryRaw.trim() || null,
+          location,
+          store_id: storeId || null,
+        },
+        {
+          onSuccess: () => onClose(),
+          onError: (err) => {
+            const q = isQuotaExceededError(err);
+            if (q) setQuotaDetails(q);
+          },
+        },
+      );
+      return;
+    }
     createMutation.mutate(
       {
         name: name.trim(),
@@ -170,16 +238,32 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
         expiry_raw: expiryRaw.trim() || undefined,
         location,
         price: price ? parseFloat(price) : undefined,
+        currency: price && currency ? currency : undefined,
         payment_method: paymentMethod || undefined,
+        store_id: storeId || undefined,
       },
       {
         onSuccess: () => onClose(),
+        onError: (err) => {
+          const q = isQuotaExceededError(err);
+          if (q) setQuotaDetails(q);
+        },
       },
     );
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]" onClick={onClose}>
+      <QuotaHitPicker
+        open={quotaDetails !== null}
+        details={quotaDetails}
+        onCancel={() => setQuotaDetails(null)}
+        onResolved={() => {
+          setQuotaDetails(null);
+          // Retry the create that just failed.
+          handleSave();
+        }}
+      />
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full mx-4"
@@ -251,6 +335,24 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
               )}
             </label>
             <CatalogAutocomplete value={name} onChange={handleAutocomplete} autoFocus />
+            {!matchedEntry && (
+              <DidYouMeanSuggestions
+                query={name}
+                onPick={(m) => {
+                  setName(m.display_name);
+                  setMatchedEntry({
+                    id: m.name_norm,
+                    name_norm: m.name_norm,
+                    display_name: m.display_name,
+                    barcode: m.barcode,
+                    total_purchases: m.total_purchases,
+                    active_purchases: m.active_purchases,
+                    last_purchased_at: m.last_purchased_at,
+                  } as unknown as CatalogEntry);
+                  if (m.barcode && !barcode) setBarcode(m.barcode);
+                }}
+              />
+            )}
           </div>
 
           <ExpiryInput value={expiryRaw} onChange={setExpiryRaw} />
@@ -259,63 +361,182 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
               squeezed into grid-cols-2 cropped the unit dropdown's chevron
               and made the qty input near-unreadable. Stack on small screens,
               side-by-side from sm: up. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-ga-text-secondary mb-1">Quantity</label>
-              <div className="flex gap-1 items-center">
-                <button
-                  type="button"
-                  onClick={() => setQuantity(Math.max(0.1, Math.ceil(quantity) - 1))}
-                  disabled={quantity <= 0.1}
-                  className="w-9 h-10 flex-shrink-0 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
-                  aria-label="Decrease quantity (snaps to whole number)"
-                >
-                  −
-                </button>
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={quantity}
-                  onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-                  className="w-full min-w-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setQuantity(Math.floor(quantity) + 1)}
-                  className="w-9 h-10 flex-shrink-0 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover text-base leading-none"
-                  aria-label="Increase quantity (snaps to whole number)"
-                >
-                  +
-                </button>
+          {!multiPackOn && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-ga-text-secondary mb-1">Quantity</label>
+                <div className="flex gap-1 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setQuantity(Math.max(0.1, Math.ceil(quantity) - 1))}
+                    disabled={quantity <= 0.1}
+                    className="w-9 h-10 flex-shrink-0 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
+                    aria-label="Decrease quantity (snaps to whole number)"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={quantity}
+                    onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
+                    className="w-full min-w-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setQuantity(Math.floor(quantity) + 1)}
+                    className="w-9 h-10 flex-shrink-0 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover text-base leading-none"
+                    aria-label="Increase quantity (snaps to whole number)"
+                  >
+                    +
+                  </button>
+                  <select
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    className="flex-shrink-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    aria-label="Unit"
+                  >
+                    {UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-ga-text-secondary mb-1">Location</label>
                 <select
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  className="flex-shrink-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-                  aria-label="Unit"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                 >
-                  {UNITS.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
+                  {LOCATIONS.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
                     </option>
                   ))}
                 </select>
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-ga-text-secondary mb-1">Location</label>
-              <select
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-              >
-                {LOCATIONS.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </div>
+          )}
+
+          {/* Multi-pack toggle + inputs (catalog_evolution.md §2.2 #5).
+              When on, single quantity is hidden — each event represents one pack
+              with its own expiry, sharing a multi_pack_parent_id. */}
+          <div className="border-t border-ga-border pt-3">
+            <label className="flex items-center gap-2 cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={multiPackOn}
+                onChange={(e) => setMultiPackOn(e.target.checked)}
+              />
+              <span className="text-ga-text-primary">
+                Multi-pack purchase (e.g. 6 packs of 6 eggs)
+              </span>
+            </label>
+            {multiPackOn && (
+              <div className="mt-3 space-y-3 bg-ga-bg-hover/30 rounded-md p-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      # Packs
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={packCount}
+                      onChange={(e) => setPackCount(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      Units / pack
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={unitsPerPack}
+                      onChange={(e) => setUnitsPerPack(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      Price / pack
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricePerPack}
+                      onChange={(e) => setPricePerPack(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-ga-bg-card border border-ga-border rounded p-2">
+                    <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">Total</div>
+                    <div className="text-ga-text-primary tabular-nums font-medium">
+                      {multiPackTotal != null
+                        ? `${currency} ${multiPackTotal.toFixed(2)}`
+                        : '—'}
+                    </div>
+                  </div>
+                  <div className="bg-ga-bg-card border border-ga-border rounded p-2">
+                    <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">Per unit</div>
+                    <div className="text-ga-text-primary tabular-nums font-medium">
+                      {multiPackUnitPrice != null
+                        ? `${currency} ${multiPackUnitPrice.toFixed(2)}`
+                        : '—'}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-ga-text-secondary mb-1">Currency</label>
+                    <select
+                      value={currency}
+                      onChange={(e) => setCurrency(e.target.value)}
+                      className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    >
+                      {(CURRENCIES.includes(currency)
+                        ? CURRENCIES
+                        : [currency, ...CURRENCIES]
+                      ).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ga-text-secondary mb-1">Location</label>
+                    <select
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    >
+                      {LOCATIONS.map((l) => (
+                        <option key={l} value={l}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <p className="text-[10px] text-ga-text-secondary">
+                  Saving creates {packCount} separate event{packCount === 1 ? '' : 's'} sharing one
+                  parent ID — each pack tracked with its own expiry.
+                </p>
+              </div>
+            )}
           </div>
 
           <button
@@ -337,18 +558,53 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                 />
               </div>
-              {financialTracking && (
+              {financialTracking && !multiPackOn && (
                 <>
                   <div>
                     <label className="block text-xs text-ga-text-secondary mb-1">Price</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={price}
+                        onChange={(e) => setPrice(e.target.value)}
+                        placeholder="0.00"
+                        className="flex-1 min-w-0 px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent tabular-nums"
+                      />
+                      <select
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                        aria-label="Currency"
+                        className="flex-shrink-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                      >
+                        {(CURRENCIES.includes(currency)
+                          ? CURRENCIES
+                          : [currency, ...CURRENCIES]
+                        ).map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {currency !== userCurrency && (
+                      <p className="mt-1 text-[10px] text-ga-text-secondary">
+                        Will be converted to {userCurrency} (your display currency) at save time.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ga-text-secondary mb-1">
+                      Store (where bought)
+                    </label>
+                    <StoreSelect
+                      value={storeId}
+                      valueLabel={storeLabel}
+                      onChange={(id, label) => {
+                        setStoreId(id);
+                        setStoreLabel(label);
+                      }}
                     />
                   </div>
                   <div>
@@ -392,7 +648,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
               canSave ? 'bg-ga-accent text-white hover:opacity-90' : 'bg-ga-bg-hover text-ga-text-secondary cursor-not-allowed',
             )}
           >
-            {createMutation.isPending ? 'Saving…' : 'Save'}
+            {isPending
+              ? 'Saving…'
+              : multiPackOn
+                ? `Save ${packCount} pack${packCount === 1 ? '' : 's'}`
+                : 'Save'}
           </button>
         </div>
       </div>

@@ -25,7 +25,8 @@ from app.core.feature_flags import is_enabled
 from app.core.metadata import apply_create_metadata, apply_update_metadata
 from app.core.slow_query import timed
 from app.schemas.purchase import VALID_STATUSES, VALID_CONSUME_REASONS, VALID_PAYMENT_METHODS
-from app.services import catalog_service, country_service, nl_expiry
+from app.services import catalog_service, country_service, currency_service, nl_expiry
+from app.services import migration_v2_dry_run as _mig_helpers  # for _infer_base_unit_label
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,20 @@ def _db():
 
 def _user_purchases_ref(user_id: str):
     return _db().collection("users").document(user_id).collection("purchases")
+
+
+def _get_user_currency_pref(user_id: str) -> Optional[str]:
+    """Read user.currency_preference; None if user doc / field missing.
+
+    v1 users have no currency_preference yet — fallback to caller's default.
+    """
+    try:
+        snap = _db().collection("users").document(user_id).get()
+        if not snap.exists:
+            return None
+        return (snap.to_dict() or {}).get("currency_preference")
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +74,11 @@ def create_purchase(
     location: Optional[str] = None,
     household_id: Optional[str] = None,
     source: str = "api",
+    # v2 fields (catalog_evolution.md Phase B)
+    pack_size: int = 1,
+    base_unit_label: Optional[str] = None,
+    store_id: Optional[str] = None,
+    multi_pack_parent_id: Optional[str] = None,
 ) -> dict:
     """Create a purchase event. Transactionally upserts catalog entry + increments counters.
 
@@ -124,6 +144,28 @@ def create_purchase(
 
     # --- Build event data ---
     now = datetime.now(timezone.utc)
+
+    # v2: compute display fields (price-in-user's-display-currency) at save time.
+    # If user doc doesn't yet have currency_preference (un-migrated), default to SGD.
+    user_currency_pref = _get_user_currency_pref(user_id) or "SGD"
+    display_fields = currency_service.convert_to_display(
+        amount=price,
+        from_currency=currency,
+        to_currency=user_currency_pref,
+        date=now,
+    )
+
+    pack_size_int = int(pack_size or 1) if (pack_size and pack_size > 0) else 1
+    inferred_label, _ = _mig_helpers._infer_base_unit_label(display_name)
+    resolved_unit_label = base_unit_label or inferred_label
+
+    unit_price: Optional[float] = None
+    if display_fields["display_amount"] is not None and quantity:
+        try:
+            unit_price = float(display_fields["display_amount"]) / float(quantity) / pack_size_int
+        except (TypeError, ValueError, ZeroDivisionError):
+            unit_price = None
+
     event_data = {
         "catalog_name_norm": resolved_name_norm,
         "catalog_display": display_name,
@@ -135,6 +177,7 @@ def create_purchase(
         "expiry_source": expiry_source,
         "expiry_raw": expiry_raw,
         "price": price,
+        "amount": price,  # v2 alias — kept in sync with `price` for forward-compat
         "currency": currency,
         "payment_method": payment_method,
         "date_bought": date_bought or now,
@@ -147,6 +190,18 @@ def create_purchase(
         "last_reminded_at": None,
         "household_id": household_id,
         "source_ref": None,
+        # v2 fields (catalog_evolution.md Phase A schema, Phase B write-path)
+        "pack_size": pack_size_int,
+        "base_unit_label": resolved_unit_label,
+        "store_id": store_id or "unknown",
+        "multi_pack_parent_id": multi_pack_parent_id,
+        "contributes_to_logical_count": True,  # original event; splits flip to False later
+        "display_amount": display_fields["display_amount"],
+        "display_currency": display_fields["display_currency"],
+        "fx_rate_at_save": display_fields["fx_rate_at_save"],
+        "fx_rate_date": display_fields["fx_rate_date"],
+        "unit_price": unit_price,
+        "schema_version": 2,
     }
 
     # --- Create event + increment counters in a transaction ---
@@ -157,18 +212,99 @@ def create_purchase(
 
     @firestore.transactional
     def _commit(tx):
-        tx.set(event_ref, apply_create_metadata(event_data, uid=user_id, source=source))
+        tx.set(event_ref, apply_create_metadata(event_data, uid=user_id, source=source, schema_version=2))
         catalog_service.increment_counters_tx(
             tx, user_id, resolved_name_norm, active_delta=1, total_delta=1
         )
 
     _commit(transaction)
 
+    # Phase C: tick the idle clock — buy is a "touch" event per §2.2 #2.
+    # Safe wrapper swallows errors so a clock-write hiccup never blocks a purchase.
+    from app.services import idle_clock_service
+    idle_clock_service.tick_safe(user_id, resolved_name_norm)
+
+    # Phase D: bump the store's use_count + last_used_at. Fire-and-forget.
+    from app.services import store_catalog_service
+    store_catalog_service.touch_store(user_id, event_data.get("store_id") or "unknown")
+
     logger.info(
         "purchase.created user=%s event_id=%s name=%s",
         user_id, event_id, resolved_name_norm,
     )
     return get_purchase(user_id, event_id)
+
+
+# ---------------------------------------------------------------------------
+# Multi-pack create (catalog_evolution.md §2.2 #5)
+# ---------------------------------------------------------------------------
+
+
+def create_multi_pack(
+    user_id: str,
+    name: str,
+    pack_count: int,
+    units_per_pack: int,
+    price_per_pack: Optional[float] = None,
+    currency: Optional[str] = None,
+    expiry_date: Optional[datetime] = None,
+    expiry_raw: Optional[str] = None,
+    barcode: Optional[str] = None,
+    location: Optional[str] = None,
+    base_unit_label: Optional[str] = None,
+    date_bought: Optional[datetime] = None,
+    store_id: Optional[str] = None,
+    source: str = "manual",
+) -> dict:
+    """Create N events sharing a `multi_pack_parent_id`.
+
+    Each event represents one pack — quantity=1 (one pack), pack_size=units_per_pack
+    (items in this pack), price=price_per_pack. Per-unit price falls out as
+    price_per_pack / units_per_pack in the user's display currency.
+
+    Example: 6 packs × 6 eggs/pack × 10.99/pack
+      → 6 events, each {quantity: 1, pack_size: 6, price: 10.99}
+      → unit_price each = 10.99 / 1 / 6 = 1.83/egg
+      → total spend = 6 × 10.99 = 65.94
+
+    Returns:
+        {parent_id, created_count, events: [...]}
+    """
+    import uuid
+
+    if pack_count <= 0:
+        raise ValidationError("pack_count must be > 0")
+    if units_per_pack <= 0:
+        raise ValidationError("units_per_pack must be > 0")
+
+    parent_id = uuid.uuid4().hex
+    events: list[dict] = []
+    for _ in range(pack_count):
+        ev = create_purchase(
+            user_id=user_id,
+            name=name,
+            quantity=1.0,
+            unit=base_unit_label or "pack",
+            expiry_date=expiry_date,
+            expiry_raw=expiry_raw,
+            price=price_per_pack,
+            currency=currency,
+            barcode=barcode,
+            location=location,
+            date_bought=date_bought,
+            source=source,
+            pack_size=units_per_pack,
+            base_unit_label=base_unit_label,
+            multi_pack_parent_id=parent_id,
+            store_id=store_id,
+        )
+        events.append(ev)
+
+    logger.info(
+        "purchase.multi_pack_created user=%s parent_id=%s count=%d units_per_pack=%d",
+        user_id, parent_id, pack_count, units_per_pack,
+    )
+    return {"parent_id": parent_id, "created_count": len(events), "events": events}
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +839,10 @@ def move_to_location(
         )
 
     _commit(transaction)
+
+    # Phase C: transfer/move counts as a "touch" — refresh the idle clock.
+    from app.services import idle_clock_service
+    idle_clock_service.tick_safe(user_id, catalog_name_norm)
 
     logger.info(
         "purchase.move-split user=%s original=%s new=%s portion=%s location=%s",

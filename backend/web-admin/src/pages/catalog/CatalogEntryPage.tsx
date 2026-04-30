@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useCatalogEntry, useCatalog } from '@/api/queries/useCatalog';
+import { useCatalogOverview } from '@/api/queries/useCatalogOverview';
 import {
   useDeleteCatalogEntry,
   useMergeCatalogEntry,
@@ -8,9 +9,13 @@ import {
 } from '@/api/mutations/useCatalogMutations';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
-import ExpiryCountdownChip from '@/components/waste/ExpiryCountdownChip';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
-import { getCatalogEntryActions, getStatusBadge, type Action } from '@/utils/actionResolver';
+import LifetimeUnitBreakdown from '@/components/items/LifetimeUnitBreakdown';
+import MovementTimeline from '@/components/items/MovementTimeline';
+import SplitLineageTree from '@/components/items/SplitLineageTree';
+import PriceHistoryTable from '@/components/items/PriceHistoryTable';
+import TransferHistoryFlow from '@/components/items/TransferHistoryFlow';
+import { getCatalogEntryActions, type Action } from '@/utils/actionResolver';
 import { cn } from '@/utils/cn';
 import type { CatalogEntry } from '@/types/api';
 
@@ -18,6 +23,7 @@ export default function CatalogEntryPage() {
   const { nameNorm } = useParams<{ nameNorm: string }>();
   const navigate = useNavigate();
   const { data: entry, isLoading, error } = useCatalogEntry(nameNorm);
+  const { data: overview } = useCatalogOverview(nameNorm);
   const updateMutation = useUpdateCatalogEntry();
   const deleteMutation = useDeleteCatalogEntry();
   const mergeMutation = useMergeCatalogEntry();
@@ -26,6 +32,7 @@ export default function CatalogEntryPage() {
   const [nameDraft, setNameDraft] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   if (isLoading) return <LoadingSpinner text="Loading…" />;
   if (error || !entry) {
@@ -143,7 +150,10 @@ export default function CatalogEntryPage() {
         </div>
 
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-          <Stat label="Total purchases" value={entry.total_purchases} />
+          <Stat
+            label="Logical purchases"
+            value={overview?.counters.logical_purchase_count ?? entry.total_purchases}
+          />
           <Stat label="Active" value={entry.active_purchases} />
           <Stat label="Location" value={entry.default_location || '—'} />
           <Stat
@@ -155,45 +165,54 @@ export default function CatalogEntryPage() {
             }
           />
         </dl>
-
-        <div className="border-t border-ga-border pt-4">
-          <h3 className="text-sm font-semibold text-ga-text-primary mb-2">Recent purchases</h3>
-          {!entry.history || entry.history.length === 0 ? (
-            <p className="text-xs text-ga-text-secondary italic">No purchase history yet.</p>
-          ) : (
-            <ul className="space-y-1">
-              {entry.history.slice(0, 10).map((h) => {
-                const badge = getStatusBadge(h.status);
-                return (
-                  <li
-                    key={h.id}
-                    className="flex items-center gap-2 text-xs py-1.5 border-b border-ga-border/30 last:border-0"
-                  >
-                    <span className={cn('px-1.5 py-0.5 rounded text-[10px]', badge.color)}>
-                      {badge.label}
-                    </span>
-                    <span className="text-ga-text-primary">
-                      {new Date(h.date_bought).toLocaleDateString()}
-                    </span>
-                    {h.price !== null && h.price !== undefined && (
-                      <span className="text-ga-text-secondary">
-                        {h.currency ? `${h.currency} ` : ''}
-                        {h.price.toFixed(2)}
-                      </span>
-                    )}
-                    {h.status === 'active' && <ExpiryCountdownChip expiryDate={h.expiry_date} />}
-                    <Link
-                      to={`/my-items/${h.id}`}
-                      className="ml-auto text-ga-accent hover:underline"
-                    >
-                      View →
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+        {overview &&
+          overview.counters.total_event_count !== overview.counters.logical_purchase_count && (
+            <p className="text-[10px] text-ga-text-secondary -mt-1">
+              {overview.counters.total_event_count - overview.counters.logical_purchase_count}{' '}
+              additional split event{overview.counters.total_event_count - overview.counters.logical_purchase_count === 1 ? '' : 's'}{' '}
+              from partial actions (used / thrown / moved). Visible in lineage tree below.
+            </p>
           )}
-        </div>
+
+        {overview && (
+          <>
+            <div className="border-t border-ga-border pt-4">
+              <LifetimeUnitBreakdown
+                lifetime={overview.lifetime_breakdown}
+                wasteRate={overview.waste_rate}
+                baseUnitLabel="unit"
+              />
+            </div>
+
+            {overview.price_history_per_store.length > 0 && (
+              <div className="border-t border-ga-border pt-4">
+                <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
+                  Price by store ({overview.price_history_per_store.length})
+                </h3>
+                <PriceHistoryTable
+                  priceHistory={overview.price_history_per_store}
+                  baseUnitLabel="unit"
+                />
+              </div>
+            )}
+
+            <div className="border-t border-ga-border pt-4">
+              <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
+                Movement timeline
+              </h3>
+              <MovementTimeline timeline={overview.movement_timeline} />
+            </div>
+
+            {overview.split_lineage.some((p) => p.children.length > 0) && (
+              <div className="border-t border-ga-border pt-4">
+                <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
+                  Split lineage
+                </h3>
+                <SplitLineageTree lineage={overview.split_lineage} />
+              </div>
+            )}
+          </>
+        )}
 
         <div className="border-t border-ga-border pt-4">
           <h3 className="text-sm font-semibold text-ga-text-primary mb-2">Actions</h3>
@@ -217,6 +236,13 @@ export default function CatalogEntryPage() {
                 {action.label}
               </button>
             ))}
+            {/* Phase G: transfer history into another catalog row */}
+            <button
+              onClick={() => setTransferOpen(true)}
+              className="px-3 py-1.5 text-sm rounded text-ga-text-secondary hover:bg-ga-bg-hover border border-ga-border"
+            >
+              ↪ Transfer history…
+            </button>
           </div>
         </div>
       </div>
@@ -225,6 +251,12 @@ export default function CatalogEntryPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         defaults={{ catalogEntry: entry }}
+      />
+
+      <TransferHistoryFlow
+        open={transferOpen}
+        source={entry}
+        onClose={() => setTransferOpen(false)}
       />
 
       {mergeOpen && (

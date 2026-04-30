@@ -58,3 +58,13 @@ class TransientError(DomainError):
     """Temporary failure (Firestore contention, network). Maps to HTTP 503 with retry hint."""
 
     http_status = 503
+
+
+class QuotaExceededError(DomainError):
+    """User has hit their quota cap. Maps to HTTP 409 with structured payload.
+
+    `details` should include {used, limit, eviction_candidates: [...]} so the
+    client can render a picker UI per catalog_evolution.md §2.2 #3.
+    """
+
+    http_status = 409

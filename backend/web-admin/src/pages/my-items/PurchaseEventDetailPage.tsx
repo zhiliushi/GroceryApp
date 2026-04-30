@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePurchase } from '@/api/queries/usePurchases';
 import { useCatalogEntry } from '@/api/queries/useCatalog';
+import { useStores } from '@/api/queries/useStores';
 import {
   useDeletePurchase,
   useUpdatePurchase,
@@ -29,6 +30,12 @@ export default function PurchaseEventDetailPage() {
   const navigate = useNavigate();
   const { data: event, isLoading, error } = usePurchase(eventId);
   const { data: catalogEntry } = useCatalogEntry(event?.catalog_name_norm);
+  const { data: stores } = useStores();
+  const storeName = useMemo(() => {
+    if (!event?.store_id || !stores) return null;
+    const match = stores.find((s) => s.store_id === event.store_id);
+    return match?.name ?? null;
+  }, [event?.store_id, stores]);
   const deleteMutation = useDeletePurchase();
   const updateMutation = useUpdatePurchase();
   const undoable = useUndoableAction();
@@ -173,10 +180,26 @@ export default function PurchaseEventDetailPage() {
           </Row>
           <Row label="Barcode">{event.barcode ?? '—'}</Row>
           <Row label="Price">
-            {event.price !== null && event.price !== undefined
-              ? `${event.currency ? event.currency + ' ' : ''}${event.price.toFixed(2)}${event.payment_method ? ` (${event.payment_method})` : ''}`
+            <PriceCell event={event} />
+          </Row>
+          <Row label="Pack size">
+            {event.pack_size && event.pack_size > 1
+              ? `${event.pack_size} ${event.base_unit_label || 'unit'}${event.pack_size === 1 ? '' : 's'} / pack`
+              : `1 ${event.base_unit_label || 'unit'}`}
+          </Row>
+          <Row label="Store">
+            {event.store_id
+              ? event.store_id === 'unknown'
+                ? <span className="text-ga-text-secondary">Unknown / Other</span>
+                : <span>🏪 {storeName ?? event.store_id}</span>
               : '—'}
           </Row>
+          {event.multi_pack_parent_id && (
+            <Row label="Multi-pack">
+              <span className="font-mono text-xs">{event.multi_pack_parent_id.slice(0, 8)}…</span>{' '}
+              <span className="text-xs text-ga-text-secondary">(sibling packs share this id)</span>
+            </Row>
+          )}
           <Row label="Expiry">
             {editingExpiry ? (
               <div className="col-span-2 space-y-2">
@@ -269,5 +292,56 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dt className="text-ga-text-secondary">{label}</dt>
       <dd className="text-ga-text-primary">{children}</dd>
     </>
+  );
+}
+
+/**
+ * Price display per Phase B of catalog_evolution.md:
+ *   Original currency line: "MYR 10.99 (cash)"
+ *   Display-currency conversion (if different):
+ *     "≈ SGD 3.30 (rate 0.30, locked 2026-04-30)"
+ *   Per-unit (in display currency):
+ *     "$1.83 / egg"
+ */
+function PriceCell({
+  event,
+}: {
+  event: import('@/types/api').PurchaseEvent;
+}) {
+  if (event.price == null && event.amount == null) return <>—</>;
+  const originalAmount = event.amount ?? event.price;
+  const originalCurrency = event.currency || '';
+  const display = event.display_amount ?? null;
+  const displayCurrency = event.display_currency || originalCurrency;
+  const fxRate = event.fx_rate_at_save;
+  const fxDate = event.fx_rate_date;
+  const unitPrice = event.unit_price;
+  const baseUnit = event.base_unit_label || 'unit';
+  const isStale = (event as { fx_is_stale?: boolean }).fx_is_stale;
+
+  const originalDiffersFromDisplay =
+    display != null && originalCurrency && originalCurrency !== displayCurrency;
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span>
+        {originalCurrency ? `${originalCurrency} ` : ''}
+        {originalAmount != null ? originalAmount.toFixed(2) : '—'}
+        {event.payment_method ? ` (${event.payment_method})` : ''}
+      </span>
+      {originalDiffersFromDisplay && (
+        <span className="text-xs text-ga-text-secondary">
+          ≈ {displayCurrency} {display!.toFixed(2)}
+          {fxRate != null && ` · rate ${fxRate.toFixed(4)}`}
+          {fxDate && ` · locked ${fxDate}`}
+          {isStale && <span className="ml-1 text-orange-400">(stale)</span>}
+        </span>
+      )}
+      {unitPrice != null && (
+        <span className="text-xs text-ga-text-secondary">
+          {displayCurrency} {unitPrice.toFixed(2)} / {baseUnit}
+        </span>
+      )}
+    </div>
   );
 }

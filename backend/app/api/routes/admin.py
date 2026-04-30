@@ -1275,6 +1275,201 @@ async def flag_spam(body: dict, admin: UserInfo = Depends(require_admin)):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics — Phase F of catalog_evolution.md (read-only, no schema change)
+# ---------------------------------------------------------------------------
+
+@router.get("/diagnostic/catalog-counters")
+async def diagnostic_catalog_counters(
+    user_id: Optional[str] = Query(None, description="Target user; defaults to caller"),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Recompute catalog counters from raw events; report drift + inflation.
+
+    `delta_total != 0` means stored counter has drifted from raw event count
+    (real bug). `inflation > 0` means the user-perceived "numbering not tally"
+    symptom — Phase 1-4 splits inflate `total_purchases` above logical purchase
+    count. Read-only, safe to run on production.
+    """
+    from app.services import admin_diagnostic_service
+
+    target_uid = user_id or admin.uid
+    return admin_diagnostic_service.compute_catalog_counter_diagnostics(target_uid)
+
+
+# ---------------------------------------------------------------------------
+# Migration v2 dry-run — Phase 0 of catalog_evolution.md (read-only)
+# ---------------------------------------------------------------------------
+
+@router.get("/migration/dry-run-v2")
+async def migration_v2_dry_run(
+    user_id: Optional[str] = Query(None, description="Target user; defaults to caller"),
+    all_users: bool = Query(False, description="Aggregate across every user"),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Predict every doc change v2 migration will make. Writes nothing.
+
+    Pass criterion: `total_ambiguous_pct < 5%`. Above that, triage ambiguities
+    before authorising the live migration in Phase A.
+
+    Modes:
+      - default / `?user_id=...` → single-user predicted-diff with sample rows
+      - `?all_users=true` → aggregate across every user with per-user summaries
+    """
+    from app.services import migration_v2_dry_run as mig_dry_run
+
+    if all_users:
+        return mig_dry_run.dry_run_all_users()
+    target_uid = user_id or admin.uid
+    return mig_dry_run.dry_run_for_user(target_uid)
+
+
+# ---------------------------------------------------------------------------
+# Migration v2 run — Phase A of catalog_evolution.md (writes prod data)
+# ---------------------------------------------------------------------------
+
+@router.post("/migration/run-v2")
+async def migration_v2_run(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Run catalog evolution v2 migration. Writes to production data.
+
+    Body: {"confirm": true}  — required; refuses to run without it.
+
+    Idempotent: docs with schema_version >= 2 are skipped. Safe to re-run
+    after partial failures. Errors collected per-doc into the audit log.
+
+    Pre-flight checklist (operator responsibility, not enforced here):
+      1. Firestore export to GCS (rollback artifact)
+      2. Phase 0 dry-run reviewed; ambiguous_pct < 5%
+      3. Emulator dress-rehearsal on prod-snapshot done
+    """
+    from app.core.exceptions import ValidationError
+    from app.services import migration_v2
+
+    confirm = bool((body or {}).get("confirm", False))
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Must pass {confirm: true} in body. Refusing to run unconfirmed.",
+        )
+    try:
+        return migration_v2.run_migration(actor_uid=admin.uid, confirm=True)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/migration/audit-log")
+async def migration_audit_log_list(
+    limit: int = Query(20, ge=1, le=100),
+    admin: UserInfo = Depends(require_admin),
+):
+    """List recent migration runs (newest first). per_user trimmed for compactness."""
+    from app.services import migration_v2
+    return {"runs": migration_v2.list_runs(limit=limit)}
+
+
+@router.get("/migration/audit-log/{run_id}")
+async def migration_audit_log_detail(run_id: str, admin: UserInfo = Depends(require_admin)):
+    """Full audit doc for one migration run."""
+    from app.services import migration_v2
+    run = migration_v2.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return run
+
+
+# ---------------------------------------------------------------------------
+# Idle clock + cascade — Phase C of catalog_evolution.md
+# ---------------------------------------------------------------------------
+
+@router.get("/idle-clock/expired")
+async def idle_clock_expired(
+    user_id: Optional[str] = Query(None),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Preview which user_custom rows are past their idle clock. Read-only."""
+    from app.services import idle_clock_service
+    return {"expired": idle_clock_service.list_expired(user_id=user_id)}
+
+
+@router.post("/idle-clock/cascade")
+async def idle_clock_cascade(body: dict, admin: UserInfo = Depends(require_admin)):
+    """Fire the cascade for all expired rows (or scoped to one user_id).
+
+    Body: {"confirm": true, "user_id": str | null}
+    """
+    from app.services import idle_clock_service
+
+    if not bool((body or {}).get("confirm", False)):
+        raise HTTPException(
+            status_code=400,
+            detail="Must pass {confirm: true} in body. Refusing to cascade unconfirmed.",
+        )
+    return idle_clock_service.run_cascade(
+        actor_uid=admin.uid,
+        user_id=(body or {}).get("user_id"),
+    )
+
+
+@router.get("/idle-clock/audit-log")
+async def idle_clock_audit_log(
+    limit: int = Query(20, ge=1, le=100),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Recent cascade runs (newest first)."""
+    from app.services import idle_clock_service
+    return {"runs": idle_clock_service.list_runs(limit=limit)}
+
+
+@router.post("/quota/reconcile/{uid}")
+async def quota_reconcile(uid: str, admin: UserInfo = Depends(require_admin)):
+    """Recompute a user's catalog_quota_used from live data (drift fix)."""
+    from app.services import quota_service
+    return quota_service.reconcile_count(uid)
+
+
+# ---------------------------------------------------------------------------
+# FX rate cache inspection — Phase B of catalog_evolution.md
+# ---------------------------------------------------------------------------
+
+@router.get("/fx-rates")
+async def list_fx_rates(
+    limit: int = Query(50, ge=1, le=500),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Recently-cached FX rates (newest fetch first). Useful for verifying
+    save-time conversions are landing in the cache."""
+    from app.services import fx_rate_service
+    return {"rates": fx_rate_service.list_recent(limit=limit)}
+
+
+@router.get("/fx-rates/lookup")
+async def lookup_fx_rate(
+    from_currency: str = Query(..., min_length=3, max_length=3),
+    to_currency: str = Query(..., min_length=3, max_length=3),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Force a fresh lookup (cache hit / API fetch / stale fallback). Useful to
+    pre-warm the cache before a user enters a price."""
+    from app.services import fx_rate_service
+    return fx_rate_service.get_rate(from_currency.upper(), to_currency.upper())
+
+
+@router.delete("/fx-rates")
+async def evict_fx_rates(
+    from_currency: Optional[str] = Query(None, min_length=3, max_length=3),
+    to_currency: Optional[str] = Query(None, min_length=3, max_length=3),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Evict cached FX rates matching the optional filter (or all if no filter).
+    Use to force re-fetch when the upstream API improves."""
+    from app.services import fx_rate_service
+    deleted = fx_rate_service.evict_cache(
+        from_currency.upper() if from_currency else None,
+        to_currency.upper() if to_currency else None,
+    )
+    return {"success": True, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
 # Test data seed (admin-only, marked source="test_seed" for clean teardown)
 # ---------------------------------------------------------------------------
 

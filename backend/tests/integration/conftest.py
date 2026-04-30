@@ -74,7 +74,8 @@ def fresh_uid() -> str:
 
 @pytest.fixture(autouse=True)
 def _clean_test_data(fresh_uid):
-    """After each test, delete the user's purchases + their catalog entries."""
+    """After each test, delete the user's purchases + their catalog entries +
+    the user doc itself if a test created one."""
     yield
     from firebase_admin import firestore
     from google.cloud.firestore_v1.base_query import FieldFilter
@@ -91,3 +92,7 @@ def _clean_test_data(fresh_uid):
         .stream()
     ):
         doc.reference.delete()
+    # Delete the user doc if it exists (some tests seed `users/{uid}`)
+    user_doc_ref = db.collection("users").document(fresh_uid)
+    if user_doc_ref.get().exists:
+        user_doc_ref.delete()

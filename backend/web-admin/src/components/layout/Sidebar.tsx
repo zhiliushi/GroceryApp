@@ -35,6 +35,9 @@ const secondaryNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { path: '/admin/catalog-analysis', label: 'Catalog Analysis', icon: '🔎' },
+  { path: '/admin/catalog-counters', label: 'Counter Diagnostic', icon: '🩺' },
+  { path: '/admin/migration-dry-run', label: 'Migration Dry-Run', icon: '📋' },
+  { path: '/admin/migration-run', label: 'Migration Run', icon: '⚙️' },
   { path: '/products', label: 'Products', icon: '🏷️' },
   { path: '/users', label: 'Users', icon: '👥' },
   { path: '/contributed-products', label: 'Contributed', icon: '📥' },

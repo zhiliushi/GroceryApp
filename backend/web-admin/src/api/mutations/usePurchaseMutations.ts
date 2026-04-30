@@ -17,6 +17,32 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['reminders'] });
 }
 
+/**
+ * Quota-exceeded error shape (Phase C of catalog_evolution.md).
+ * Thrown by the API when a user_custom catalog row would push past the cap.
+ */
+export interface QuotaExceededDetails {
+  type: 'catalog_quota_exceeded';
+  used: number;
+  limit: number;
+  eviction_candidates: Array<{
+    name_norm: string;
+    display_name: string;
+    barcode: string | null;
+    last_purchased_at: string | null;
+    idle_expires_at: string | null;
+    active_purchases: number;
+    total_purchases: number;
+  }>;
+}
+
+export function isQuotaExceededError(error: unknown): QuotaExceededDetails | null {
+  const details = (error as { response?: { data?: { details?: unknown; detail?: string } } })?.response
+    ?.data?.details as QuotaExceededDetails | undefined;
+  if (details && details.type === 'catalog_quota_exceeded') return details;
+  return null;
+}
+
 export function useCreatePurchase() {
   const qc = useQueryClient();
   return useMutation({
@@ -27,8 +53,49 @@ export function useCreatePurchase() {
       invalidateAll(qc);
     },
     onError: (error: unknown) => {
+      // Caller handles quota-exceeded interactively (shows picker). Skip the toast.
+      if (isQuotaExceededError(error)) return;
       const msg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg || 'Failed to add purchase');
+    },
+  });
+}
+
+export interface MultiPackCreateRequest {
+  name: string;
+  pack_count: number;
+  units_per_pack: number;
+  price_per_pack?: number | null;
+  currency?: string | null;
+  barcode?: string | null;
+  expiry_raw?: string | null;
+  expiry_date?: string | null;
+  location?: string | null;
+  base_unit_label?: string | null;
+  store_id?: string | null;
+}
+
+export interface MultiPackCreateResponse {
+  parent_id: string;
+  created_count: number;
+  events: PurchaseEvent[];
+}
+
+export function useCreateMultiPack() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: MultiPackCreateRequest) =>
+      apiClient
+        .post<MultiPackCreateResponse>(API.PURCHASES_MULTI_PACK, data)
+        .then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success(`Added ${data.created_count} packs`);
+      invalidateAll(qc);
+    },
+    onError: (error: unknown) => {
+      if (isQuotaExceededError(error)) return;
+      const msg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Failed to add multi-pack');
     },
   });
 }

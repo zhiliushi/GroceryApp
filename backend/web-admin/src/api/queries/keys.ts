@@ -71,6 +71,11 @@ export const qk = {
   featureFlags: ['feature-flags'] as const,
   scanInfo: (barcode: string) => ['scan-info', barcode] as const,
   catalogAnalysis: ['catalog-analysis'] as const,
+  catalogCounterDiagnostics: (uid?: string) => ['catalog-counter-diagnostics', uid ?? 'self'] as const,
+  migrationDryRunV2: (params: { uid?: string; allUsers?: boolean }) =>
+    ['migration-dry-run-v2', params] as const,
+  migrationAuditLog: ['migration-audit-log'] as const,
+  migrationAuditLogDetail: (runId: string) => ['migration-audit-log', runId] as const,
   insights: {
     all: ['insights'] as const,
     detail: (id: string) => ['insights', id] as const,
