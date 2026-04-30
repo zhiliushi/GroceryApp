@@ -15,6 +15,8 @@ import MovementTimeline from '@/components/items/MovementTimeline';
 import SplitLineageTree from '@/components/items/SplitLineageTree';
 import PriceHistoryTable from '@/components/items/PriceHistoryTable';
 import TransferHistoryFlow from '@/components/items/TransferHistoryFlow';
+import CurrentLocations from '@/components/items/CurrentLocations';
+import ItemPatterns from '@/components/items/ItemPatterns';
 import { getCatalogEntryActions, type Action } from '@/utils/actionResolver';
 import { cn } from '@/utils/cn';
 import type { CatalogEntry } from '@/types/api';
@@ -176,6 +178,28 @@ export default function CatalogEntryPage() {
 
         {overview && (
           <>
+            <div className="border-t border-ga-border pt-4">
+              <h3 className="text-sm font-semibold text-ga-text-primary mb-3">
+                Currently stored
+              </h3>
+              <CurrentLocations
+                locations={overview.current_locations}
+                baseUnitLabel="unit"
+              />
+            </div>
+
+            <div className="border-t border-ga-border pt-4">
+              <h3 className="text-sm font-semibold text-ga-text-primary mb-3">
+                Patterns
+              </h3>
+              <ItemPatterns
+                cadence={overview.cadence}
+                wasteCost={overview.waste_cost}
+                wasteRate={overview.waste_rate}
+                baseUnitLabel="unit"
+              />
+            </div>
+
             <div className="border-t border-ga-border pt-4">
               <LifetimeUnitBreakdown
                 lifetime={overview.lifetime_breakdown}

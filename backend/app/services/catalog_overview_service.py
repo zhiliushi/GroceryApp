@@ -80,6 +80,9 @@ def compute_overview(user_id: str, name_norm: str) -> dict[str, Any]:
     timeline = _compute_movement_timeline(events)
     lineage = _compute_split_lineage(events)
     price_history = _compute_price_history_per_store(user_id, events)
+    current_locations = _compute_current_locations(events)
+    cadence = _compute_cadence(events)
+    waste_cost = _compute_waste_cost(events)
 
     return {
         "entry": _serialize_entry(entry),
@@ -89,6 +92,13 @@ def compute_overview(user_id: str, name_norm: str) -> dict[str, Any]:
         "movement_timeline": timeline,
         "split_lineage": lineage,
         "price_history_per_store": price_history,
+        # Phase E expansion (post-deploy feedback): "where do I have it now?",
+        # "how often do I buy this and when's the next buy?", "how much money
+        # have I lost to waste?" — analytics that help a user reason about
+        # their behavior with this item, not just observe history.
+        "current_locations": current_locations,
+        "cadence": cadence,
+        "waste_cost": waste_cost,
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -246,6 +256,182 @@ def _minimal_event(ev: dict) -> dict:
         "split_from_event_id": ev.get("split_from_event_id"),
         "store_id": ev.get("store_id"),
     }
+
+
+def _compute_current_locations(events: list[dict]) -> list[dict]:
+    """Active inventory grouped by location — answers 'where do I have this now?'.
+
+    Sorted by qty desc. Each entry shows soonest-expiry-in-location so the user
+    sees which spot needs attention first. Skips terminal events.
+    """
+    by_location: dict[str, dict[str, Any]] = {}
+    for ev in events:
+        if ev.get("status") != "active":
+            continue
+        loc = ev.get("location") or "(none)"
+        if loc not in by_location:
+            by_location[loc] = {
+                "location": loc,
+                "active_qty": 0.0,
+                "active_event_count": 0,
+                "soonest_expiry": None,
+            }
+        bl = by_location[loc]
+        try:
+            bl["active_qty"] += float(ev.get("quantity") or 0)
+        except (TypeError, ValueError):
+            pass
+        bl["active_event_count"] += 1
+        expiry = ev.get("expiry_date")
+        if expiry is not None:
+            cur = bl["soonest_expiry"]
+            if cur is None or expiry < cur:
+                bl["soonest_expiry"] = expiry
+
+    out: list[dict] = []
+    for entry in by_location.values():
+        out.append({
+            "location": entry["location"],
+            "active_qty": round(entry["active_qty"], 4),
+            "active_event_count": entry["active_event_count"],
+            "soonest_expiry": _iso(entry["soonest_expiry"]),
+        })
+    out.sort(key=lambda x: -x["active_qty"])
+    return out
+
+
+def _compute_cadence(events: list[dict]) -> dict[str, Any]:
+    """Purchase + consumption cadence + restock prediction.
+
+    Cadence math:
+      - Buy timestamps: date_bought from logical purchases (no split_from_event_id)
+      - avg_days_between_buys: mean of consecutive deltas (None if < 2 buys)
+      - days_since_last_buy: now - last_buy
+      - predicted_next_buy_in_days: avg_days_between_buys - days_since_last_buy
+        (negative = overdue; positive = days remaining; None = insufficient data)
+
+    Consumption math:
+      - For events with status=used and consumed_date set:
+        consumed_date - date_bought = days the user kept that batch
+      - avg_days_buy_to_use: mean across all used events
+    """
+    now = datetime.now(timezone.utc)
+    buy_dates: list[datetime] = []
+    for ev in events:
+        if ev.get("split_from_event_id"):
+            continue  # split children aren't independent buys
+        db_dt = ev.get("date_bought")
+        if db_dt is None:
+            continue
+        if hasattr(db_dt, "to_datetime"):
+            db_dt = db_dt.to_datetime()
+        if db_dt.tzinfo is None:
+            db_dt = db_dt.replace(tzinfo=timezone.utc)
+        buy_dates.append(db_dt)
+    buy_dates.sort()
+
+    avg_days_between_buys: Optional[float] = None
+    if len(buy_dates) >= 2:
+        deltas = [
+            (buy_dates[i + 1] - buy_dates[i]).total_seconds() / 86400.0
+            for i in range(len(buy_dates) - 1)
+        ]
+        if deltas:
+            avg_days_between_buys = sum(deltas) / len(deltas)
+
+    last_buy = buy_dates[-1] if buy_dates else None
+    days_since_last_buy: Optional[float] = None
+    if last_buy is not None:
+        days_since_last_buy = (now - last_buy).total_seconds() / 86400.0
+
+    predicted_next_buy_in_days: Optional[float] = None
+    if avg_days_between_buys is not None and days_since_last_buy is not None:
+        predicted_next_buy_in_days = avg_days_between_buys - days_since_last_buy
+
+    consumption_deltas: list[float] = []
+    for ev in events:
+        if ev.get("status") != "used":
+            continue
+        consumed = ev.get("consumed_date")
+        bought = ev.get("date_bought")
+        if not consumed or not bought:
+            continue
+        if hasattr(consumed, "to_datetime"):
+            consumed = consumed.to_datetime()
+        if hasattr(bought, "to_datetime"):
+            bought = bought.to_datetime()
+        if consumed.tzinfo is None:
+            consumed = consumed.replace(tzinfo=timezone.utc)
+        if bought.tzinfo is None:
+            bought = bought.replace(tzinfo=timezone.utc)
+        delta = (consumed - bought).total_seconds() / 86400.0
+        if delta >= 0:
+            consumption_deltas.append(delta)
+
+    avg_days_buy_to_use: Optional[float] = None
+    if consumption_deltas:
+        avg_days_buy_to_use = sum(consumption_deltas) / len(consumption_deltas)
+
+    return {
+        "logical_buy_count": len(buy_dates),
+        "avg_days_between_buys": _round_or_none(avg_days_between_buys, 1),
+        "last_buy_at": _iso(last_buy),
+        "days_since_last_buy": _round_or_none(days_since_last_buy, 1),
+        "predicted_next_buy_in_days": _round_or_none(predicted_next_buy_in_days, 1),
+        "avg_days_buy_to_use": _round_or_none(avg_days_buy_to_use, 1),
+        "use_event_count": len(consumption_deltas),
+    }
+
+
+def _compute_waste_cost(events: list[dict]) -> dict[str, Any]:
+    """Money lost to waste — concrete dollar figure beats a percentage.
+
+    Spent_total = sum of display_amount across all events with a price.
+    waste_pct_by_value = thrown_value / spent_total (independent from
+    waste_pct_by_qty in `waste_rate` — different denominators answer
+    different questions).
+    """
+    spent_total = 0.0
+    used_total = 0.0
+    thrown_total = 0.0
+    given_total = 0.0
+    display_currency: Optional[str] = None
+    for ev in events:
+        amt = ev.get("display_amount")
+        if amt is None:
+            amt = ev.get("amount")
+        if amt is None:
+            amt = ev.get("price")
+        if amt is None:
+            continue
+        try:
+            amt = float(amt)
+        except (TypeError, ValueError):
+            continue
+        spent_total += amt
+        if display_currency is None and ev.get("display_currency"):
+            display_currency = ev.get("display_currency")
+        status = ev.get("status")
+        if status == "used":
+            used_total += amt
+        elif status == "thrown":
+            thrown_total += amt
+        elif status in ("given", "transferred"):
+            given_total += amt
+    return {
+        "display_currency": display_currency,
+        "spent_total": round(spent_total, 2),
+        "used_total": round(used_total, 2),
+        "thrown_total": round(thrown_total, 2),
+        "given_total": round(given_total, 2),
+        "waste_pct_by_value": (
+            round(thrown_total / spent_total * 100, 2) if spent_total else 0.0
+        ),
+    }
+
+
+def _round_or_none(v: Optional[float], ndigits: int) -> Optional[float]:
+    return round(v, ndigits) if v is not None else None
 
 
 def _compute_price_history_per_store(user_id: str, events: list[dict]) -> list[dict]:

@@ -169,3 +169,121 @@ def test_overview_omits_non_priced_events_from_history(fresh_uid):
     purchase_event_service.create_purchase(user_id=fresh_uid, name="Free thing", quantity=1)
     overview = catalog_overview_service.compute_overview(fresh_uid, "free_thing")
     assert overview["price_history_per_store"] == []
+
+
+# ---------------------------------------------------------------------------
+# Post-deploy expansion: current_locations, cadence, waste_cost
+# ---------------------------------------------------------------------------
+
+
+def test_current_locations_groups_active_inventory(fresh_uid):
+    """Eggs at pantry + at fridge → two location buckets with qty per location."""
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=11, location="pantry",
+    )
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=4, location="fridge",
+    )
+    overview = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+    locations = {loc["location"]: loc for loc in overview["current_locations"]}
+    assert "pantry" in locations and "fridge" in locations
+    assert locations["pantry"]["active_qty"] == 11
+    assert locations["fridge"]["active_qty"] == 4
+    # Sorted desc by qty → pantry first
+    assert overview["current_locations"][0]["location"] == "pantry"
+
+
+def test_current_locations_excludes_terminal_events(fresh_uid):
+    """Used / thrown / given events shouldn't show as 'active' inventory."""
+    _set_user_doc(fresh_uid, tier="free")
+    p = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Bread", quantity=1, location="counter",
+    )
+    purchase_event_service.update_status(
+        user_id=fresh_uid, event_id=p["id"], status="used",
+    )
+    overview = catalog_overview_service.compute_overview(fresh_uid, "bread")
+    assert overview["current_locations"] == []
+
+
+def test_cadence_avg_days_between_buys(fresh_uid):
+    """Three buys spaced 7 days apart → avg cadence ~7 days."""
+    from datetime import datetime, timezone, timedelta
+    _set_user_doc(fresh_uid, tier="free")
+    base = datetime.now(timezone.utc) - timedelta(days=21)
+    for i in range(3):
+        purchase_event_service.create_purchase(
+            user_id=fresh_uid, name="Eggs", quantity=12,
+            date_bought=base + timedelta(days=i * 7),
+        )
+    overview = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+    cadence = overview["cadence"]
+    assert cadence["logical_buy_count"] == 3
+    # 7 days between buys
+    assert cadence["avg_days_between_buys"] == pytest.approx(7.0, abs=0.5)
+    # last buy was 7 days ago (third buy at base + 14 days; now ≈ base + 21)
+    assert cadence["days_since_last_buy"] == pytest.approx(7.0, abs=0.5)
+    # predicted = avg(7) - elapsed(7) = ~0 → due now
+    assert cadence["predicted_next_buy_in_days"] == pytest.approx(0.0, abs=1.0)
+
+
+def test_cadence_handles_single_buy_gracefully(fresh_uid):
+    """One buy → avg/predicted are None (insufficient data)."""
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Tea", quantity=1)
+    overview = catalog_overview_service.compute_overview(fresh_uid, "tea")
+    cadence = overview["cadence"]
+    assert cadence["logical_buy_count"] == 1
+    assert cadence["avg_days_between_buys"] is None
+    assert cadence["predicted_next_buy_in_days"] is None
+    # days_since_last_buy still computable
+    assert cadence["days_since_last_buy"] is not None
+
+
+def test_cadence_consumption_avg(fresh_uid):
+    """avg_days_buy_to_use averages over events that transitioned to used."""
+    from datetime import datetime, timezone, timedelta
+    _set_user_doc(fresh_uid, tier="free")
+    bought_at = datetime.now(timezone.utc) - timedelta(days=10)
+    p = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Milk", quantity=1, date_bought=bought_at,
+    )
+    purchase_event_service.update_status(
+        user_id=fresh_uid, event_id=p["id"], status="used",
+    )
+    overview = catalog_overview_service.compute_overview(fresh_uid, "milk")
+    cadence = overview["cadence"]
+    assert cadence["use_event_count"] == 1
+    # consumed ~now, bought 10 days ago
+    assert cadence["avg_days_buy_to_use"] == pytest.approx(10.0, abs=0.5)
+
+
+def test_waste_cost_tracks_money_lost(fresh_uid):
+    """Thrown events sum into waste_cost.thrown_total in display currency."""
+    _set_user_doc(fresh_uid, tier="free", currency_preference="SGD")
+    p = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Bananas", quantity=6, price=4.80, currency="SGD",
+    )
+    purchase_event_service.update_status(
+        user_id=fresh_uid, event_id=p["id"], status="thrown", reason="bad", quantity=6,
+    )
+    overview = catalog_overview_service.compute_overview(fresh_uid, "bananas")
+    cost = overview["waste_cost"]
+    # Original event + thrown split = 2 events, but the split inherits a portion
+    # of the price. Sum of all (display_amount) across events for this catalog
+    # should be the total spent.
+    assert cost["spent_total"] == pytest.approx(4.80, abs=0.01)
+    assert cost["thrown_total"] == pytest.approx(4.80, abs=0.01)  # full qty thrown
+    assert cost["waste_pct_by_value"] == pytest.approx(100.0, abs=0.5)
+    assert cost["display_currency"] == "SGD"
+
+
+def test_waste_cost_zero_when_no_prices(fresh_uid):
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(user_id=fresh_uid, name="Free item", quantity=1)
+    overview = catalog_overview_service.compute_overview(fresh_uid, "free_item")
+    cost = overview["waste_cost"]
+    assert cost["spent_total"] == 0.0
+    assert cost["thrown_total"] == 0.0
+    assert cost["waste_pct_by_value"] == 0.0

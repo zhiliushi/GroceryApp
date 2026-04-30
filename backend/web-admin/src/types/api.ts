@@ -1508,6 +1508,34 @@ export interface CatalogOverviewPriceHistory {
   sample_count: number;
 }
 
+export interface CatalogOverviewCurrentLocation {
+  location: string;
+  active_qty: number;
+  active_event_count: number;
+  soonest_expiry: string | null;
+}
+
+export interface CatalogOverviewCadence {
+  logical_buy_count: number;
+  avg_days_between_buys: number | null;
+  last_buy_at: string | null;
+  days_since_last_buy: number | null;
+  /** Negative = overdue, positive = days remaining, null = insufficient data. */
+  predicted_next_buy_in_days: number | null;
+  avg_days_buy_to_use: number | null;
+  use_event_count: number;
+}
+
+export interface CatalogOverviewWasteCost {
+  display_currency: string | null;
+  spent_total: number;
+  used_total: number;
+  thrown_total: number;
+  given_total: number;
+  /** thrown_total / spent_total — independent from waste_rate.thrown_pct (qty-based). */
+  waste_pct_by_value: number;
+}
+
 export interface CatalogOverview {
   entry: CatalogEntry & {
     catalog_mode?: 'global_linked' | 'user_custom';
@@ -1520,6 +1548,9 @@ export interface CatalogOverview {
   movement_timeline: CatalogOverviewTimelineEntry[];
   split_lineage: CatalogOverviewLineageNode[];
   price_history_per_store: CatalogOverviewPriceHistory[];
+  current_locations: CatalogOverviewCurrentLocation[];
+  cadence: CatalogOverviewCadence;
+  waste_cost: CatalogOverviewWasteCost;
   computed_at: string;
 }
 
