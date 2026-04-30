@@ -158,11 +158,18 @@ def list_catalog(
         "__name__", direction=sort_direction
     )
 
-    # Apply cursor — expected shape: [sort_value, doc_id]
+    # Apply cursor — expected shape: [sort_value, doc_id]. Firestore's
+    # start_after wants either a document snapshot or a list of field values
+    # matching the order_by sequence; the dict-form previously used here was
+    # silently ignored, causing the cursor to never advance and the same page
+    # to be returned indefinitely. Resolve to a snapshot — costs one read but
+    # is the only form guaranteed correct across Python SDK versions.
     if cursor:
         decoded = decode_cursor(cursor)
         if len(decoded) == 2:
-            q = q.start_after({sort_field: decoded[0], "__name__": decoded[1]})
+            last_snap = _db().collection(_COLLECTION).document(decoded[1]).get()
+            if last_snap.exists:
+                q = q.start_after(last_snap)
 
     # Fetch limit+1 to detect if there's a next page without a count query
     docs = list(q.limit(limit + 1).stream())

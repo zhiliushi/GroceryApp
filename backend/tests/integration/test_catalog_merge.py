@@ -17,10 +17,10 @@ def test_merge_reparents_purchases_and_combines_counters(fresh_uid):
     purchase_event_service.create_purchase(user_id=fresh_uid, name="Susu")
     purchase_event_service.create_purchase(user_id=fresh_uid, name="Milk")
 
-    catalog_service.merge_catalog_entries(
+    catalog_service.merge_catalog(
         user_id=fresh_uid,
-        source_name_norm="susu",
-        target_name_norm="milk",
+        src_name_norm="susu",
+        dst_name_norm="milk",
     )
 
     target = catalog_service.get_catalog_entry(fresh_uid, "milk")

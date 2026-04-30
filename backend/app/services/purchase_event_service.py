@@ -220,10 +220,16 @@ def list_purchases(
         .order_by("__name__", direction=firestore.Query.DESCENDING)
     )
 
+    # Resolve cursor to a document snapshot. The dict-form of start_after
+    # silently fails to advance cursors (same page returned forever); using
+    # a snapshot is the SDK-version-stable path. See catalog_service.list_catalog
+    # for the same fix and rationale.
     if cursor:
         decoded = decode_cursor(cursor)
         if len(decoded) == 2:
-            q = q.start_after({"date_bought": decoded[0], "__name__": decoded[1]})
+            last_snap = _user_purchases_ref(user_id).document(decoded[1]).get()
+            if last_snap.exists:
+                q = q.start_after(last_snap)
 
     docs = list(q.limit(limit + 1).stream())
     has_more = len(docs) > limit
