@@ -7,7 +7,6 @@ import {
   useMergeCatalogEntry,
   useUpdateCatalogEntry,
 } from '@/api/mutations/useCatalogMutations';
-import { useConsumeByCatalog } from '@/api/mutations/usePurchaseMutations';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
@@ -19,6 +18,7 @@ import TransferHistoryFlow from '@/components/items/TransferHistoryFlow';
 import CurrentLocations from '@/components/items/CurrentLocations';
 import ItemPatterns from '@/components/items/ItemPatterns';
 import MoveLocationModal from '@/components/waste/MoveLocationModal';
+import MarkUsedModal from '@/components/waste/MarkUsedModal';
 import { usePurchase } from '@/api/queries/usePurchases';
 import { getCatalogEntryActions, type Action } from '@/utils/actionResolver';
 import { cn } from '@/utils/cn';
@@ -33,7 +33,6 @@ export default function CatalogEntryPage() {
   const deleteMutation = useDeleteCatalogEntry();
   const mergeMutation = useMergeCatalogEntry();
 
-  const consumeMutation = useConsumeByCatalog();
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [addOpen, setAddOpen] = useState(false);
@@ -42,12 +41,32 @@ export default function CatalogEntryPage() {
   const [showLifetime, setShowLifetime] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
-  // Per-location Move opens MoveLocationModal targeting a specific event.
-  // Track which event_id we're moving + which location triggered it (for the
-  // "Use 1" button's busy state during in-flight consume).
+  // Per-location Move + Use both target a specific event_id. We keep two
+  // separate state pieces so opening the Use modal doesn't accidentally
+  // open the Move modal too (or vice-versa).
   const [moveTargetEventId, setMoveTargetEventId] = useState<string | null>(null);
-  const [useBusyLocation, setUseBusyLocation] = useState<string | null>(null);
+  const [useTargetEventId, setUseTargetEventId] = useState<string | null>(null);
   const { data: moveTargetEvent } = usePurchase(moveTargetEventId ?? undefined);
+  const { data: useTargetEvent } = usePurchase(useTargetEventId ?? undefined);
+
+  // The overall most-urgent active event across all locations, for the Hero
+  // bar's "Use…" button. current_locations is sorted by qty so we re-pick
+  // by soonest expiry here.
+  const overallMostUrgentEventId = (() => {
+    if (!overview) return null;
+    let pick: { id: string; expiry: string | null } | null = null;
+    for (const loc of overview.current_locations) {
+      if (!loc.most_urgent_event_id) continue;
+      if (
+        !pick ||
+        (loc.soonest_expiry && (!pick.expiry || loc.soonest_expiry < pick.expiry)) ||
+        (pick.expiry === null && loc.soonest_expiry !== null)
+      ) {
+        pick = { id: loc.most_urgent_event_id, expiry: loc.soonest_expiry };
+      }
+    }
+    return pick?.id ?? null;
+  })();
 
   if (isLoading) return <LoadingSpinner text="Loading…" />;
   if (error || !entry) {
@@ -172,13 +191,10 @@ export default function CatalogEntryPage() {
             overview={overview}
             entryName={entry.display_name}
             onBuyMore={() => setAddOpen(true)}
-            onUseOne={() =>
-              consumeMutation.mutate({
-                catalog_name_norm: entry.name_norm,
-                quantity: 1,
-              })
-            }
-            consumeBusy={consumeMutation.isPending}
+            onUse={() => {
+              if (overallMostUrgentEventId) setUseTargetEventId(overallMostUrgentEventId);
+            }}
+            useTargetAvailable={!!overallMostUrgentEventId}
           />
         )}
 
@@ -231,20 +247,8 @@ export default function CatalogEntryPage() {
               <CurrentLocations
                 locations={overview.current_locations}
                 baseUnitLabel="unit"
-                useBusyLocation={useBusyLocation}
-                onUseAtLocation={(location) => {
-                  if (consumeMutation.isPending) return;
-                  setUseBusyLocation(location);
-                  consumeMutation.mutate(
-                    {
-                      catalog_name_norm: entry.name_norm,
-                      quantity: 1,
-                      location,
-                    },
-                    {
-                      onSettled: () => setUseBusyLocation(null),
-                    },
-                  );
+                onUseAtLocation={(_location, eventId) => {
+                  if (eventId) setUseTargetEventId(eventId);
                 }}
                 onMoveAtLocation={(_location, eventId) => {
                   if (eventId) setMoveTargetEventId(eventId);
@@ -384,12 +388,22 @@ export default function CatalogEntryPage() {
         onClose={() => setTransferOpen(false)}
       />
 
-      {/* Per-location Move modal (post-deploy feedback). Targets the
-          most-urgent active event in the location the user clicked Move on. */}
+      {/* Per-location Move modal. Targets the most-urgent active event in
+          the location the user clicked Move on. */}
       <MoveLocationModal
         open={!!moveTargetEventId && !!moveTargetEvent}
         event={moveTargetEvent ?? null}
         onClose={() => setMoveTargetEventId(null)}
+      />
+
+      {/* Use modal — replaces the unsafe "Use 1" inline button. Defaults to
+          the full event quantity, slider lets the user dial down to a partial
+          amount. Critical for multi-pack and high-qty events where "Use 1"
+          would have wiped out a whole batch with one click. */}
+      <MarkUsedModal
+        open={!!useTargetEventId && !!useTargetEvent}
+        event={useTargetEvent ?? null}
+        onClose={() => setUseTargetEventId(null)}
       />
 
       {mergeOpen && (
@@ -499,18 +513,18 @@ function HeroActionBar({
   overview,
   entryName,
   onBuyMore,
-  onUseOne,
-  consumeBusy,
+  onUse,
+  useTargetAvailable,
 }: {
   overview: CatalogOverview;
   entryName: string;
   onBuyMore: () => void;
-  onUseOne: () => void;
-  consumeBusy: boolean;
+  onUse: () => void;
+  /** If false (no active batches), the Use button is hidden — there's nothing
+   *  to consume. */
+  useTargetAvailable: boolean;
 }) {
   const banner = useMemo(() => buildHeroBanner(overview), [overview]);
-  const hasActiveBatches =
-    overview.lifetime_breakdown.active_qty > 0 || overview.counters.active_count > 0;
 
   return (
     <div
@@ -547,14 +561,13 @@ function HeroActionBar({
         >
           + Buy more
         </button>
-        {hasActiveBatches && (
+        {useTargetAvailable && (
           <button
-            onClick={onUseOne}
-            disabled={consumeBusy}
-            className="px-3 py-1.5 text-sm rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-50"
-            title="Mark the oldest-expiry active batch as used (FIFO)"
+            onClick={onUse}
+            className="px-3 py-1.5 text-sm rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover"
+            title="Pick how many to mark as used"
           >
-            {consumeBusy ? 'Marking…' : 'Use 1'}
+            ✓ Use…
           </button>
         )}
       </div>

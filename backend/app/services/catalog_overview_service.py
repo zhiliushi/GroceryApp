@@ -296,12 +296,18 @@ def _compute_current_locations(events: list[dict]) -> list[dict]:
     """Active inventory grouped by location — answers 'where do I have this now?'.
 
     Sorted by qty desc. Each entry includes:
-      - soonest_expiry: the urgency signal for that location
-      - most_urgent_event_id: the specific event_id behind that expiry, so the
-        UI's per-location "Move" button can target a real event for the
-        existing MoveLocationModal.
-      - most_urgent_event_qty: qty of that batch (sometimes the user wants to
-        move only the most-urgent slice).
+      - active_qty: sum of event.quantity (the "batch count" view — what each
+        event represents to the user, e.g. 4 packs).
+      - active_base_units: sum of event.quantity × event.pack_size (the user's
+        natural unit — e.g. 24 eggs across those 4 packs). The display layer
+        leads with this.
+      - pack_sizes: distinct pack_size values seen at this location, so the
+        UI can render "6 eggs/pack" or "mixed pack sizes" honestly.
+      - base_unit_label: best-effort label for the natural unit ("egg", "ml").
+      - active_event_count: number of separate event docs.
+      - soonest_expiry / most_urgent_event_id / most_urgent_event_qty:
+        the most-urgent batch in this location (the one a Use/Move action
+        should target by default).
 
     Skips terminal events (used / thrown / given / transferred).
     """
@@ -314,21 +320,34 @@ def _compute_current_locations(events: list[dict]) -> list[dict]:
             by_location[loc] = {
                 "location": loc,
                 "active_qty": 0.0,
+                "active_base_units": 0.0,
                 "active_event_count": 0,
+                "pack_sizes": set(),
+                "base_unit_label": None,
                 "soonest_expiry": None,
                 "most_urgent_event_id": None,
                 "most_urgent_event_qty": None,
+                "most_urgent_event_pack_size": None,
             }
         bl = by_location[loc]
         try:
-            bl["active_qty"] += float(ev.get("quantity") or 0)
+            qty = float(ev.get("quantity") or 0)
         except (TypeError, ValueError):
-            pass
+            qty = 0.0
+        try:
+            pack_size = int(ev.get("pack_size") or 1) or 1
+        except (TypeError, ValueError):
+            pack_size = 1
+        bl["active_qty"] += qty
+        bl["active_base_units"] += qty * pack_size
         bl["active_event_count"] += 1
+        bl["pack_sizes"].add(pack_size)
+        if not bl["base_unit_label"] and ev.get("base_unit_label"):
+            bl["base_unit_label"] = ev.get("base_unit_label")
+
         expiry = ev.get("expiry_date")
         # Track the most-urgent event in this location (soonest expiry, with
-        # null expiries treated as last so a real expiring batch wins). Used
-        # by the per-location Move button to know which event to target.
+        # null expiries treated as last so a real expiring batch wins).
         cur_expiry = bl["soonest_expiry"]
         promote = False
         if expiry is not None and (cur_expiry is None or expiry < cur_expiry):
@@ -339,18 +358,27 @@ def _compute_current_locations(events: list[dict]) -> list[dict]:
             bl["soonest_expiry"] = expiry if expiry is not None else cur_expiry
             bl["most_urgent_event_id"] = ev.get("id")
             bl["most_urgent_event_qty"] = ev.get("quantity")
+            bl["most_urgent_event_pack_size"] = pack_size
 
     out: list[dict] = []
     for entry in by_location.values():
+        pack_sizes = sorted(entry["pack_sizes"])
         out.append({
             "location": entry["location"],
             "active_qty": round(entry["active_qty"], 4),
+            "active_base_units": round(entry["active_base_units"], 4),
             "active_event_count": entry["active_event_count"],
+            "pack_sizes": pack_sizes,
+            "mixed_pack_sizes": len(pack_sizes) > 1,
+            "base_unit_label": entry["base_unit_label"] or "unit",
             "soonest_expiry": _iso(entry["soonest_expiry"]),
             "most_urgent_event_id": entry["most_urgent_event_id"],
             "most_urgent_event_qty": entry["most_urgent_event_qty"],
+            "most_urgent_event_pack_size": entry["most_urgent_event_pack_size"],
         })
-    out.sort(key=lambda x: -x["active_qty"])
+    # Sort by base units desc — "where do I have the most" matches the user's
+    # mental count better than event count.
+    out.sort(key=lambda x: -x["active_base_units"])
     return out
 
 

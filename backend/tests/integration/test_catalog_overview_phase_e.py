@@ -456,6 +456,50 @@ def test_consume_one_by_catalog_location_with_no_active_raises(fresh_uid):
         )
 
 
+def test_current_locations_reports_base_units_for_multipack(fresh_uid):
+    """4 packs of 6 eggs at fridge should report 24 base units, not 4 'units'.
+
+    Real-feedback bug: the Currently Stored card was summing event.quantity
+    (= pack count) without multiplying by pack_size, so a 4-pack-of-6 looked
+    like '4 units' instead of '24 eggs'. This test pins the new field.
+    """
+    _set_user_doc(fresh_uid, tier="free")
+    multi = purchase_event_service.create_multi_pack(
+        user_id=fresh_uid, name="Eggs",
+        pack_count=4, units_per_pack=6,
+        price_per_pack=10.99, currency="SGD", location="fridge",
+    )
+    assert multi["created_count"] == 4
+
+    overview = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+    fridge = next(loc for loc in overview["current_locations"] if loc["location"] == "fridge")
+    assert fridge["active_qty"] == 4              # 4 events × qty=1 each
+    assert fridge["active_base_units"] == 24      # 4 × 1 × pack_size=6 = 24 eggs
+    assert fridge["pack_sizes"] == [6]
+    assert fridge["mixed_pack_sizes"] is False
+    assert fridge["base_unit_label"] == "egg"     # inferred from "Eggs"
+    assert fridge["most_urgent_event_pack_size"] == 6
+
+
+def test_current_locations_mixed_pack_sizes_flagged(fresh_uid):
+    """Two events at same location with different pack_sizes → mixed_pack_sizes=True."""
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=12, location="pantry",
+    )
+    # Same catalog, different pack_size at the same location
+    purchase_event_service.create_multi_pack(
+        user_id=fresh_uid, name="Eggs",
+        pack_count=1, units_per_pack=6, price_per_pack=5.0,
+        currency="SGD", location="pantry",
+    )
+    overview = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+    pantry = next(loc for loc in overview["current_locations"] if loc["location"] == "pantry")
+    assert pantry["active_base_units"] == 18   # 12 + 6
+    assert sorted(pantry["pack_sizes"]) == [1, 6]
+    assert pantry["mixed_pack_sizes"] is True
+
+
 # ---------------------------------------------------------------------------
 # FX cache pre-warm (refresh_common_rates)
 # ---------------------------------------------------------------------------

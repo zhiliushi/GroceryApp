@@ -1510,13 +1510,23 @@ export interface CatalogOverviewPriceHistory {
 
 export interface CatalogOverviewCurrentLocation {
   location: string;
+  /** Sum of event.quantity — the "batch count" view (e.g. 4 packs). */
   active_qty: number;
+  /** Sum of event.quantity × event.pack_size — the user's natural unit
+   *  (e.g. 24 eggs). Display layer should lead with this. */
+  active_base_units: number;
   active_event_count: number;
+  /** Distinct pack_size values seen — for "6 eggs/pack" vs "mixed". */
+  pack_sizes: number[];
+  mixed_pack_sizes: boolean;
+  /** Natural-unit label ("egg", "ml", "g", "unit"). */
+  base_unit_label: string;
   soonest_expiry: string | null;
   /** Event_id of the most-urgent active batch in this location. The frontend's
-   *  per-location Move button targets this event. Phase E expansion. */
+   *  per-location Move + Use buttons target this event. */
   most_urgent_event_id: string | null;
   most_urgent_event_qty: number | null;
+  most_urgent_event_pack_size: number | null;
 }
 
 export interface CatalogOverviewCadence {

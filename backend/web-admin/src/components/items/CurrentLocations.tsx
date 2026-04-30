@@ -4,13 +4,16 @@ import type { CatalogOverviewCurrentLocation } from '@/types/api';
 interface Props {
   locations: CatalogOverviewCurrentLocation[];
   baseUnitLabel?: string;
-  /** Per-location quick-actions. When provided, renders Use 1 / Move buttons
+  /** Per-location quick-actions. When provided, renders Use… / Move buttons
    *  on each card. Use case: catalog overview page, where the user wants to
-   *  act on a specific spot's stock without leaving the page. */
-  onUseAtLocation?: (location: string) => void;
+   *  act on a specific spot's stock without leaving the page.
+   *
+   *  Use… opens a quantity-picker modal scoped to the most-urgent batch in
+   *  that location (the existing MarkUsedModal handles slider + spinner +
+   *  partial qty). The eventId param is the most_urgent_event_id of the
+   *  location, which the parent uses to fetch the event for the modal. */
+  onUseAtLocation?: (location: string, eventId: string | null) => void;
   onMoveAtLocation?: (location: string, eventId: string | null) => void;
-  /** Disable the Use button while a mutation is in flight. */
-  useBusyLocation?: string | null;
 }
 
 /**
@@ -28,7 +31,6 @@ export default function CurrentLocations({
   baseUnitLabel = 'unit',
   onUseAtLocation,
   onMoveAtLocation,
-  useBusyLocation,
 }: Props) {
   if (locations.length === 0) {
     return (
@@ -38,13 +40,16 @@ export default function CurrentLocations({
     );
   }
 
-  const totalQty = locations.reduce((sum, l) => sum + l.active_qty, 0);
+  // Prefer per-location base_unit_label so we say "eggs" / "ml" honestly.
+  // Fall back to prop only when the location entries don't carry one.
+  const headlineUnit = locations[0]?.base_unit_label || baseUnitLabel;
+  const totalBaseUnits = locations.reduce((sum, l) => sum + l.active_base_units, 0);
 
   return (
     <div className="space-y-2">
       <p className="text-xs text-ga-text-secondary">
-        {totalQty.toFixed(totalQty % 1 === 0 ? 0 : 1)} {baseUnitLabel}
-        {totalQty === 1 ? '' : 's'} across{' '}
+        {formatNum(totalBaseUnits)} {headlineUnit}
+        {totalBaseUnits === 1 ? '' : 's'} across{' '}
         <strong className="text-ga-text-primary">{locations.length}</strong>{' '}
         location{locations.length === 1 ? '' : 's'}
       </p>
@@ -65,7 +70,12 @@ export default function CurrentLocations({
                     ? 'yellow'
                     : 'green';
           const showActions = !!(onUseAtLocation || onMoveAtLocation);
-          const useBusy = useBusyLocation === loc.location;
+          const locUnit = loc.base_unit_label || baseUnitLabel;
+          const packLabel = loc.mixed_pack_sizes
+            ? 'mixed pack sizes'
+            : loc.pack_sizes[0] && loc.pack_sizes[0] > 1
+              ? `${loc.pack_sizes[0]} ${locUnit}${loc.pack_sizes[0] === 1 ? '' : 's'}/pack`
+              : null;
           return (
             <div
               key={loc.location}
@@ -78,19 +88,22 @@ export default function CurrentLocations({
                 tone === 'gray' && 'border-ga-border',
               )}
             >
+              {/* Headline: base-units count + label, NOT the event-qty count
+                  ("4 units" was misleading when 4 packs × 6 eggs = 24 eggs). */}
               <div className="flex items-baseline justify-between">
                 <div className="text-sm text-ga-text-primary font-medium">
                   📍 {loc.location}
                 </div>
                 <div className="text-sm text-ga-text-primary tabular-nums">
-                  {loc.active_qty.toFixed(loc.active_qty % 1 === 0 ? 0 : 1)} {baseUnitLabel}
-                  {loc.active_qty === 1 ? '' : 's'}
+                  {formatNum(loc.active_base_units)} {locUnit}
+                  {loc.active_base_units === 1 ? '' : 's'}
                 </div>
               </div>
-              <div className="text-[10px] text-ga-text-secondary mt-0.5 flex items-center justify-between">
+              <div className="text-[10px] text-ga-text-secondary mt-0.5 flex items-center justify-between gap-2 flex-wrap">
                 <span>
                   {loc.active_event_count} batch
                   {loc.active_event_count === 1 ? '' : 'es'}
+                  {packLabel && <span className="ml-1">· {packLabel}</span>}
                 </span>
                 {expiry ? (
                   <span
@@ -118,17 +131,17 @@ export default function CurrentLocations({
                   {onUseAtLocation && (
                     <button
                       type="button"
-                      onClick={() => onUseAtLocation(loc.location)}
-                      disabled={useBusy}
-                      title="Mark the oldest-expiry batch in this location as used (FIFO)"
+                      onClick={() => onUseAtLocation(loc.location, loc.most_urgent_event_id)}
+                      disabled={!loc.most_urgent_event_id}
+                      title="Pick how many to mark as used"
                       className={cn(
                         'flex-1 px-2 py-1 text-[11px] rounded border transition',
-                        useBusy
-                          ? 'border-ga-border text-ga-text-secondary cursor-wait'
-                          : 'border-ga-accent/40 bg-ga-accent/10 text-ga-accent hover:bg-ga-accent/20',
+                        loc.most_urgent_event_id
+                          ? 'border-ga-accent/40 bg-ga-accent/10 text-ga-accent hover:bg-ga-accent/20'
+                          : 'border-ga-border text-ga-text-secondary opacity-50 cursor-not-allowed',
                       )}
                     >
-                      {useBusy ? '…' : '✓ Use 1'}
+                      ✓ Use…
                     </button>
                   )}
                   {onMoveAtLocation && (
@@ -154,4 +167,11 @@ export default function CurrentLocations({
       </div>
     </div>
   );
+}
+
+/** Whole numbers without trailing zeros, otherwise one decimal. Avoids
+ *  showing "4.0 eggs" when "4 eggs" is what the user wants to read. */
+function formatNum(n: number): string {
+  if (n === Math.floor(n)) return String(Math.round(n));
+  return n.toFixed(1);
 }

@@ -184,7 +184,13 @@ export function useConsumeByCatalog() {
       toast.success(res.message);
       invalidateAll(qc);
     },
-    onError: () => toast.error('Failed to consume'),
+    onError: (error: unknown) => {
+      // Surface the actual server error so we can debug. Generic "Failed to
+      // consume" hid the real reason during the post-deploy investigation.
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      const msg = (error as Error)?.message;
+      toast.error(`Use failed: ${detail || msg || 'unknown error'}`);
+    },
   });
 }
 
