@@ -297,17 +297,16 @@ export function useScannerEngine(): UseScannerEngineReturn {
       { facingMode: 'environment' },
       {
         fps: 10,
-        // Responsive qrbox: ~75% of the smaller viewport dimension, capped to
-        // sane bounds. Fixes off-screen scan target on narrow phones where a
-        // 280px-wide hard-coded qrbox sat below the visible frame.
-        qrbox: (vw: number, vh: number) => {
-          const min = Math.min(vw, vh);
-          const side = Math.max(160, Math.min(320, Math.floor(min * 0.75)));
-          return { width: side, height: Math.floor(side * 0.6) };
-        },
-        // Match the modal container's aspect-[4/3] wrapper. Mismatched
-        // aspectRatio (was 16:9) causes html5-qrcode to crop the feed and
-        // shift the scan target outside the visible box.
+        // No qrbox — html5-qrcode scans the entire video frame. Setting a
+        // qrbox triggers html5-qrcode's built-in shaded mask + corner
+        // brackets around the scan zone, which on iPhone confused users
+        // (real-device feedback): they thought "shaded = bad, scan in the
+        // clear area" but the actual decode zone was the smaller bracketed
+        // region inside the clear area, leading them to align barcodes
+        // outside where the decoder was looking. Full-frame scan is slightly
+        // more CPU but on modern phones (iPhone 13 Pro at 10fps) it's fine.
+        // Our own decorative guide box (in the modal) provides centering
+        // hint without claiming to be the literal scan boundary.
         aspectRatio: 4 / 3,
       },
       (decodedText) => {

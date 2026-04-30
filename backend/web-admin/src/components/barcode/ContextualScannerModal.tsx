@@ -273,11 +273,13 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
                 {scanner.engine !== 'manual' ? (
                   <div className="relative bg-black rounded-lg overflow-hidden aspect-[4/3]">
                     <div id="barcode-viewfinder" className="absolute inset-0" />
-                    {/* Visual guide. Sized to roughly match html5-qrcode's qrbox
-                        region (75% of min video dim, 0.6 height ratio) — the
-                        previous inset-10 box was substantially larger than the
-                        actual scan zone, leading users to align barcodes
-                        outside where the decoder was looking. */}
+                    {/* Soft centering guide. The actual decode zone is the
+                        full video frame (qrbox unset on the html5-qrcode
+                        config so its shaded-region overlay + corner brackets
+                        don't render — those confused real-device users on
+                        iOS who thought "shaded = bad, scan in the clear"
+                        but the real scan zone was a smaller bracketed
+                        region inside the clear area). */}
                     <div
                       aria-hidden
                       className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3/5 h-1/3 border-2 border-white/70 rounded pointer-events-none"
