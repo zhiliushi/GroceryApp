@@ -1469,6 +1469,15 @@ async def evict_fx_rates(
     return {"success": True, "deleted": deleted}
 
 
+@router.post("/fx-rates/refresh")
+async def refresh_fx_rates(admin: UserInfo = Depends(require_admin)):
+    """Pre-warm today's rate for every common (from, to) pair the cron job
+    handles. Manual trigger for the same job that runs daily at 03:30 UTC.
+    Returns a summary of how many pairs were freshly fetched vs cached."""
+    from app.services import fx_rate_service
+    return fx_rate_service.refresh_common_rates()
+
+
 # ---------------------------------------------------------------------------
 # Test data seed (admin-only, marked source="test_seed" for clean teardown)
 # ---------------------------------------------------------------------------

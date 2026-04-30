@@ -159,11 +159,25 @@ export function useMovePurchase() {
 export function useConsumeByCatalog() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ catalog_name_norm, quantity }: { catalog_name_norm: string; quantity?: number }) =>
+    mutationFn: ({
+      catalog_name_norm,
+      quantity,
+      location,
+    }: {
+      catalog_name_norm: string;
+      quantity?: number;
+      /** Restrict FIFO consume to one location — powers per-location Use 1
+       *  on the catalog overview page. Optional; omit for cross-location. */
+      location?: string;
+    }) =>
       apiClient
         .post<{ consumed: string[]; remaining_active: number; message: string }>(
           API.PURCHASE_CONSUME,
-          { catalog_name_norm, quantity: quantity ?? 1 },
+          {
+            catalog_name_norm,
+            quantity: quantity ?? 1,
+            ...(location ? { location } : {}),
+          },
         )
         .then((r) => r.data),
     onSuccess: (res) => {

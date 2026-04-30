@@ -245,13 +245,23 @@ async def consume_by_catalog(
 ):
     """FIFO consume — mark the oldest-expiry active event for a catalog entry as used.
 
-    Body: {"catalog_name_norm": "milk", "quantity": 1}
+    Body:
+      {
+        "catalog_name_norm": "milk",
+        "quantity": 1,                    # optional, defaults to 1
+        "location": "fridge"              # optional — restrict to one location
+                                          #   (powers per-location "Use 1" on
+                                          #    the catalog overview page)
+      }
     """
     catalog_name_norm = (body or {}).get("catalog_name_norm")
     if not catalog_name_norm:
         raise HTTPException(status_code=400, detail="catalog_name_norm is required")
     quantity = int((body or {}).get("quantity", 1))
-    return purchase_event_service.consume_one_by_catalog(user.uid, catalog_name_norm, quantity)
+    location = (body or {}).get("location") or None
+    return purchase_event_service.consume_one_by_catalog(
+        user.uid, catalog_name_norm, quantity, location=location,
+    )
 
 
 # ---------------------------------------------------------------------------

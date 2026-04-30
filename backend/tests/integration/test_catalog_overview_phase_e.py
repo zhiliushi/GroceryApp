@@ -376,3 +376,118 @@ def test_overview_handles_fx_unavailable(fresh_uid, monkeypatch):
     # No conversion possible; spent_total is whatever fell back (0 or the saved
     # display_amount). Important is that we didn't crash.
     assert "waste_cost" in overview
+
+
+# ---------------------------------------------------------------------------
+# Per-location quick actions (post-deploy feedback iteration)
+# ---------------------------------------------------------------------------
+
+
+def test_current_locations_includes_most_urgent_event_id(fresh_uid):
+    """Each location summary carries the event_id of its most-urgent batch so
+    the Move button can target a real event for the move modal."""
+    from datetime import datetime, timezone, timedelta
+    _set_user_doc(fresh_uid, tier="free")
+    base = datetime.now(timezone.utc)
+    p_a = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=4, location="fridge",
+        expiry_date=base + timedelta(days=10),
+    )
+    # Older expiry at fridge — should win as most_urgent
+    p_b = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=2, location="fridge",
+        expiry_date=base + timedelta(days=3),
+    )
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=11, location="pantry",
+        expiry_date=base + timedelta(days=8),
+    )
+
+    overview = catalog_overview_service.compute_overview(fresh_uid, "eggs")
+    by_loc = {loc["location"]: loc for loc in overview["current_locations"]}
+    assert by_loc["fridge"]["most_urgent_event_id"] == p_b["id"]  # 3d wins over 10d
+    assert by_loc["fridge"]["most_urgent_event_qty"] == 2
+    assert by_loc["pantry"]["most_urgent_event_id"] is not None
+
+
+def test_consume_one_by_catalog_with_location_filter(fresh_uid):
+    """consume_one_by_catalog(location='fridge') only marks fridge events used."""
+    from datetime import datetime, timezone, timedelta
+    _set_user_doc(fresh_uid, tier="free")
+    base = datetime.now(timezone.utc)
+    # Pantry has the most-urgent batch globally, but we're consuming at fridge
+    p_pantry_urgent = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=11, location="pantry",
+        expiry_date=base + timedelta(days=2),
+    )
+    p_fridge_a = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=4, location="fridge",
+        expiry_date=base + timedelta(days=10),
+    )
+    p_fridge_urgent = purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=2, location="fridge",
+        expiry_date=base + timedelta(days=5),
+    )
+
+    result = purchase_event_service.consume_one_by_catalog(
+        user_id=fresh_uid, catalog_name_norm="eggs", quantity=1, location="fridge",
+    )
+    # Should consume the fridge-urgent (5d) event, NOT the pantry-urgent (2d)
+    consumed_id = result["consumed"][0]
+    consumed = purchase_event_service.get_purchase(fresh_uid, consumed_id)
+    assert consumed["location"] == "fridge"
+    assert consumed["status"] == "used"
+    assert consumed_id == p_fridge_urgent["id"]
+
+    # Pantry event still active
+    pantry = purchase_event_service.get_purchase(fresh_uid, p_pantry_urgent["id"])
+    assert pantry["status"] == "active"
+
+
+def test_consume_one_by_catalog_location_with_no_active_raises(fresh_uid):
+    from app.core.exceptions import NotFoundError
+    _set_user_doc(fresh_uid, tier="free")
+    purchase_event_service.create_purchase(
+        user_id=fresh_uid, name="Eggs", quantity=1, location="pantry",
+    )
+    with pytest.raises(NotFoundError):
+        purchase_event_service.consume_one_by_catalog(
+            user_id=fresh_uid, catalog_name_norm="eggs", quantity=1, location="freezer",
+        )
+
+
+# ---------------------------------------------------------------------------
+# FX cache pre-warm (refresh_common_rates)
+# ---------------------------------------------------------------------------
+
+
+def test_fx_refresh_common_rates_returns_summary(monkeypatch):
+    """refresh_common_rates iterates COMMON_PAIRS + user-derived pairs and
+    returns a summary with counts per outcome."""
+    from app.services import fx_rate_service
+
+    # Cold-start the fx_rates cache so this test sees real fetch behaviour
+    # (other tests in this file may have left rates in the cache).
+    db = firestore.client()
+    for snap in db.collection("fx_rates").stream():
+        snap.reference.delete()
+
+    fetch_calls = {"count": 0}
+    def fake_fetch(f, t, d):
+        fetch_calls["count"] += 1
+        return 0.42
+
+    monkeypatch.setattr(fx_rate_service, "_fetch_rate", fake_fetch)
+    summary = fx_rate_service.refresh_common_rates()
+    assert summary["pairs_attempted"] >= 1
+    assert summary["newly_fetched"] + summary["already_cached"] + summary["failed"] == summary["pairs_attempted"]
+    # First run should have fetched at least one pair (cache was cold)
+    assert summary["newly_fetched"] >= 1
+    # Re-run should hit cache, not API
+    monkeypatch.setattr(
+        fx_rate_service, "_fetch_rate",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not refetch")),
+    )
+    summary2 = fx_rate_service.refresh_common_rates()
+    assert summary2["already_cached"] >= summary["newly_fetched"]
+    assert summary2["newly_fetched"] == 0

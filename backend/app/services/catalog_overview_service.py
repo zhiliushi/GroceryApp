@@ -295,8 +295,15 @@ def _minimal_event(ev: dict) -> dict:
 def _compute_current_locations(events: list[dict]) -> list[dict]:
     """Active inventory grouped by location — answers 'where do I have this now?'.
 
-    Sorted by qty desc. Each entry shows soonest-expiry-in-location so the user
-    sees which spot needs attention first. Skips terminal events.
+    Sorted by qty desc. Each entry includes:
+      - soonest_expiry: the urgency signal for that location
+      - most_urgent_event_id: the specific event_id behind that expiry, so the
+        UI's per-location "Move" button can target a real event for the
+        existing MoveLocationModal.
+      - most_urgent_event_qty: qty of that batch (sometimes the user wants to
+        move only the most-urgent slice).
+
+    Skips terminal events (used / thrown / given / transferred).
     """
     by_location: dict[str, dict[str, Any]] = {}
     for ev in events:
@@ -309,6 +316,8 @@ def _compute_current_locations(events: list[dict]) -> list[dict]:
                 "active_qty": 0.0,
                 "active_event_count": 0,
                 "soonest_expiry": None,
+                "most_urgent_event_id": None,
+                "most_urgent_event_qty": None,
             }
         bl = by_location[loc]
         try:
@@ -317,10 +326,19 @@ def _compute_current_locations(events: list[dict]) -> list[dict]:
             pass
         bl["active_event_count"] += 1
         expiry = ev.get("expiry_date")
-        if expiry is not None:
-            cur = bl["soonest_expiry"]
-            if cur is None or expiry < cur:
-                bl["soonest_expiry"] = expiry
+        # Track the most-urgent event in this location (soonest expiry, with
+        # null expiries treated as last so a real expiring batch wins). Used
+        # by the per-location Move button to know which event to target.
+        cur_expiry = bl["soonest_expiry"]
+        promote = False
+        if expiry is not None and (cur_expiry is None or expiry < cur_expiry):
+            promote = True
+        elif expiry is None and bl["most_urgent_event_id"] is None:
+            promote = True
+        if promote:
+            bl["soonest_expiry"] = expiry if expiry is not None else cur_expiry
+            bl["most_urgent_event_id"] = ev.get("id")
+            bl["most_urgent_event_qty"] = ev.get("quantity")
 
     out: list[dict] = []
     for entry in by_location.values():
@@ -329,6 +347,8 @@ def _compute_current_locations(events: list[dict]) -> list[dict]:
             "active_qty": round(entry["active_qty"], 4),
             "active_event_count": entry["active_event_count"],
             "soonest_expiry": _iso(entry["soonest_expiry"]),
+            "most_urgent_event_id": entry["most_urgent_event_id"],
+            "most_urgent_event_qty": entry["most_urgent_event_qty"],
         })
     out.sort(key=lambda x: -x["active_qty"])
     return out

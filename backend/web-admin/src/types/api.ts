@@ -1513,6 +1513,10 @@ export interface CatalogOverviewCurrentLocation {
   active_qty: number;
   active_event_count: number;
   soonest_expiry: string | null;
+  /** Event_id of the most-urgent active batch in this location. The frontend's
+   *  per-location Move button targets this event. Phase E expansion. */
+  most_urgent_event_id: string | null;
+  most_urgent_event_qty: number | null;
 }
 
 export interface CatalogOverviewCadence {

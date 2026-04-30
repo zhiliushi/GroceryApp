@@ -4,6 +4,13 @@ import type { CatalogOverviewCurrentLocation } from '@/types/api';
 interface Props {
   locations: CatalogOverviewCurrentLocation[];
   baseUnitLabel?: string;
+  /** Per-location quick-actions. When provided, renders Use 1 / Move buttons
+   *  on each card. Use case: catalog overview page, where the user wants to
+   *  act on a specific spot's stock without leaving the page. */
+  onUseAtLocation?: (location: string) => void;
+  onMoveAtLocation?: (location: string, eventId: string | null) => void;
+  /** Disable the Use button while a mutation is in flight. */
+  useBusyLocation?: string | null;
 }
 
 /**
@@ -12,11 +19,16 @@ interface Props {
  * Phase E expansion (post-deploy feedback): the old My Items list rendered
  * each event as a row, so a single item ("Eggs") at multiple locations
  * looked like duplicates. This component is the consolidated answer:
- * one card with each location's qty + soonest expiry.
+ * one card with each location's qty + soonest expiry. Per-location actions
+ * (Use 1 FIFO / Move) added so the user doesn't have to navigate away to
+ * act on a specific spot.
  */
 export default function CurrentLocations({
   locations,
   baseUnitLabel = 'unit',
+  onUseAtLocation,
+  onMoveAtLocation,
+  useBusyLocation,
 }: Props) {
   if (locations.length === 0) {
     return (
@@ -52,6 +64,8 @@ export default function CurrentLocations({
                   : daysToExpiry <= 7
                     ? 'yellow'
                     : 'green';
+          const showActions = !!(onUseAtLocation || onMoveAtLocation);
+          const useBusy = useBusyLocation === loc.location;
           return (
             <div
               key={loc.location}
@@ -98,6 +112,42 @@ export default function CurrentLocations({
                   <span>no expiry</span>
                 )}
               </div>
+
+              {showActions && (
+                <div className="flex gap-1.5 mt-2 pt-2 border-t border-ga-border/50">
+                  {onUseAtLocation && (
+                    <button
+                      type="button"
+                      onClick={() => onUseAtLocation(loc.location)}
+                      disabled={useBusy}
+                      title="Mark the oldest-expiry batch in this location as used (FIFO)"
+                      className={cn(
+                        'flex-1 px-2 py-1 text-[11px] rounded border transition',
+                        useBusy
+                          ? 'border-ga-border text-ga-text-secondary cursor-wait'
+                          : 'border-ga-accent/40 bg-ga-accent/10 text-ga-accent hover:bg-ga-accent/20',
+                      )}
+                    >
+                      {useBusy ? '…' : '✓ Use 1'}
+                    </button>
+                  )}
+                  {onMoveAtLocation && (
+                    <button
+                      type="button"
+                      onClick={() => onMoveAtLocation(loc.location, loc.most_urgent_event_id)}
+                      disabled={!loc.most_urgent_event_id}
+                      title={
+                        loc.most_urgent_event_id
+                          ? 'Move the most-urgent batch in this location'
+                          : 'Nothing to move'
+                      }
+                      className="flex-1 px-2 py-1 text-[11px] rounded border border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover disabled:opacity-50"
+                    >
+                      ↪ Move
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

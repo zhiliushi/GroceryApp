@@ -17,7 +17,7 @@ import logging
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -28,6 +28,25 @@ _COLLECTION = "fx_rates"
 _API_BASE = "https://api.frankfurter.app"
 _STALE_DAYS = 7
 _HTTP_TIMEOUT_S = 5.0
+
+# Pairs the daily refresh keeps warm. A pair appearing in this list means the
+# cron job calls get_rate(from, to, today) once a day so the first user-driven
+# conversion of the day hits a warm cache instead of the ~200ms HTTP fetch.
+# Both directions of common SE-Asia pairs + the major world reserves are
+# included since most users have a profile pref in one of these.
+_COMMON_PAIRS: tuple[tuple[str, str], ...] = (
+    ("SGD", "MYR"), ("MYR", "SGD"),
+    ("USD", "SGD"), ("SGD", "USD"),
+    ("USD", "MYR"), ("MYR", "USD"),
+    ("EUR", "SGD"), ("SGD", "EUR"),
+    ("EUR", "MYR"), ("MYR", "EUR"),
+    ("GBP", "SGD"), ("GBP", "MYR"),
+    ("AUD", "SGD"), ("AUD", "MYR"),
+    ("JPY", "SGD"), ("JPY", "MYR"),
+    ("CNY", "SGD"), ("CNY", "MYR"),
+    ("IDR", "SGD"), ("IDR", "MYR"),
+    ("THB", "SGD"), ("THB", "MYR"),
+)
 
 
 def _db():
@@ -77,7 +96,11 @@ def get_rate(
     cached = db.collection(_COLLECTION).document(doc_id).get()
     if cached.exists:
         d = cached.to_dict() or {}
-        return {**d, "source": d.get("source", "cache")}
+        # Override source on read so the refresh job's classifier can tell
+        # cache-hit ("cache") from a fresh fetch ("frankfurter") regardless of
+        # what was originally written to the doc.
+        d["source"] = "cache"
+        return d
 
     # Cache miss — try API
     try:
@@ -175,3 +198,97 @@ def evict_cache(from_currency: Optional[str] = None, to_currency: Optional[str] 
         snap.reference.delete()
         deleted += 1
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# Periodic refresh
+# ---------------------------------------------------------------------------
+
+
+def common_pairs() -> list[tuple[str, str]]:
+    """Pairs the cron job pre-warms each day. Static + derived from user prefs.
+
+    Static list covers SE-Asia common moves + world-reserve pairs.
+    Dynamic add-ons: any (event.currency → user.currency_preference) pair the
+    refresh job sees in the live data, so users with niche currencies get
+    their conversions cached too.
+    """
+    pairs: set[tuple[str, str]] = set(_COMMON_PAIRS)
+
+    db = _db()
+    user_prefs: set[str] = set()
+    try:
+        for snap in db.collection("users").stream():
+            d = snap.to_dict() or {}
+            pref = (d.get("currency_preference") or "").upper()
+            if pref:
+                user_prefs.add(pref)
+    except Exception as e:
+        logger.warning("FX refresh: could not list users — %s", e)
+
+    # For each user pref, ensure all common originating currencies → pref
+    # are in the refresh set.
+    common_origins = ("SGD", "MYR", "USD", "EUR", "GBP", "AUD", "JPY", "CNY", "IDR", "THB")
+    for pref in user_prefs:
+        for origin in common_origins:
+            if origin == pref:
+                continue
+            pairs.add((origin, pref))
+
+    return sorted(pairs)
+
+
+def refresh_common_rates() -> dict[str, Any]:
+    """Pre-warm today's rate for every common pair.
+
+    Calls `get_rate` for each pair (which fetches from frankfurter.app and
+    caches on miss). Returns a per-pair status dict so the admin endpoint
+    or the scheduler log can show what was refreshed vs failed.
+
+    Safe to run multiple times per day — calls that hit cache are no-ops.
+    """
+    started_at = datetime.now(timezone.utc)
+    pairs = common_pairs()
+    refreshed = 0
+    cached = 0
+    failed = 0
+    failures: list[dict[str, str]] = []
+    for from_c, to_c in pairs:
+        try:
+            r = get_rate(from_c, to_c)
+            source = r.get("source")
+            if source == "frankfurter":
+                refreshed += 1
+            elif source in ("cache", "identity"):
+                cached += 1
+            elif source == "stale_cache":
+                cached += 1  # at least we have something
+            else:
+                failed += 1
+                failures.append({"from": from_c, "to": to_c, "reason": source or "unknown"})
+        except Exception as e:
+            failed += 1
+            failures.append({"from": from_c, "to": to_c, "reason": str(e)})
+            logger.warning("FX refresh failed for %s→%s: %s", from_c, to_c, e)
+
+    completed_at = datetime.now(timezone.utc)
+    elapsed_s = (completed_at - started_at).total_seconds()
+    summary = {
+        "started_at": started_at.isoformat(),
+        "completed_at": completed_at.isoformat(),
+        "elapsed_s": round(elapsed_s, 2),
+        "pairs_attempted": len(pairs),
+        "newly_fetched": refreshed,
+        "already_cached": cached,
+        "failed": failed,
+        "failures": failures[:20],  # cap payload
+    }
+    logger.info(
+        "fx.refresh_complete attempted=%d fetched=%d cached=%d failed=%d elapsed=%.2fs",
+        summary["pairs_attempted"],
+        refreshed,
+        cached,
+        failed,
+        elapsed_s,
+    )
+    return summary

@@ -18,6 +18,8 @@ import PriceHistoryTable from '@/components/items/PriceHistoryTable';
 import TransferHistoryFlow from '@/components/items/TransferHistoryFlow';
 import CurrentLocations from '@/components/items/CurrentLocations';
 import ItemPatterns from '@/components/items/ItemPatterns';
+import MoveLocationModal from '@/components/waste/MoveLocationModal';
+import { usePurchase } from '@/api/queries/usePurchases';
 import { getCatalogEntryActions, type Action } from '@/utils/actionResolver';
 import { cn } from '@/utils/cn';
 import type { CatalogEntry, CatalogOverview } from '@/types/api';
@@ -40,6 +42,12 @@ export default function CatalogEntryPage() {
   const [showLifetime, setShowLifetime] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
+  // Per-location Move opens MoveLocationModal targeting a specific event.
+  // Track which event_id we're moving + which location triggered it (for the
+  // "Use 1" button's busy state during in-flight consume).
+  const [moveTargetEventId, setMoveTargetEventId] = useState<string | null>(null);
+  const [useBusyLocation, setUseBusyLocation] = useState<string | null>(null);
+  const { data: moveTargetEvent } = usePurchase(moveTargetEventId ?? undefined);
 
   if (isLoading) return <LoadingSpinner text="Loading…" />;
   if (error || !entry) {
@@ -174,12 +182,17 @@ export default function CatalogEntryPage() {
           />
         )}
 
-        <dl className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+        <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <Stat
             label="Times bought"
             value={overview?.counters.logical_purchase_count ?? entry.total_purchases}
+            hint="How many separate trips you've bought this on."
           />
-          <Stat label="Active batches" value={entry.active_purchases} />
+          <Stat
+            label="Open packs"
+            value={entry.active_purchases}
+            hint="Batches you haven't finished yet."
+          />
           <Stat
             label="Total on hand"
             value={
@@ -187,6 +200,7 @@ export default function CatalogEntryPage() {
                 ? `${formatQty(overview.lifetime_breakdown.active_qty)}`
                 : entry.active_purchases
             }
+            hint="Units across all open packs."
           />
           <Stat
             label="Last bought"
@@ -195,6 +209,7 @@ export default function CatalogEntryPage() {
                 ? new Date(entry.last_purchased_at).toLocaleDateString()
                 : '—'
             }
+            hint="The date of your most recent purchase."
           />
         </dl>
         {overview &&
@@ -209,19 +224,39 @@ export default function CatalogEntryPage() {
         {overview && (
           <>
             <div className="border-t border-ga-border pt-4">
-              <h3 className="text-sm font-semibold text-ga-text-primary mb-3">
-                Currently stored
-              </h3>
+              <SectionHeader
+                title="Currently stored"
+                hint="Where you have this right now and how soon each spot expires."
+              />
               <CurrentLocations
                 locations={overview.current_locations}
                 baseUnitLabel="unit"
+                useBusyLocation={useBusyLocation}
+                onUseAtLocation={(location) => {
+                  if (consumeMutation.isPending) return;
+                  setUseBusyLocation(location);
+                  consumeMutation.mutate(
+                    {
+                      catalog_name_norm: entry.name_norm,
+                      quantity: 1,
+                      location,
+                    },
+                    {
+                      onSettled: () => setUseBusyLocation(null),
+                    },
+                  );
+                }}
+                onMoveAtLocation={(_location, eventId) => {
+                  if (eventId) setMoveTargetEventId(eventId);
+                }}
               />
             </div>
 
             <div className="border-t border-ga-border pt-4">
-              <h3 className="text-sm font-semibold text-ga-text-primary mb-3">
-                Patterns
-              </h3>
+              <SectionHeader
+                title="Your patterns"
+                hint="How you actually buy and use this item — based on your history."
+              />
               <ItemPatterns
                 cadence={overview.cadence}
                 wasteCost={overview.waste_cost}
@@ -234,9 +269,10 @@ export default function CatalogEntryPage() {
                 price comparison is the most actionable financial insight. */}
             {overview.price_history_per_store.length > 0 && (
               <div className="border-t border-ga-border pt-4">
-                <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
-                  Price by store ({overview.price_history_per_store.length})
-                </h3>
+                <SectionHeader
+                  title={`Where you've bought it (${overview.price_history_per_store.length})`}
+                  hint="Average and best-ever per-unit price at each shop. Cheapest first."
+                />
                 <PriceHistoryTable
                   priceHistory={overview.price_history_per_store}
                   baseUnitLabel="unit"
@@ -246,15 +282,12 @@ export default function CatalogEntryPage() {
 
             {/* Lifetime breakdown — reference data, collapsed by default. */}
             <div className="border-t border-ga-border pt-4">
-              <button
-                onClick={() => setShowLifetime((v) => !v)}
-                className="flex items-center justify-between w-full text-sm font-semibold text-ga-text-primary"
-              >
-                <span>Lifetime breakdown</span>
-                <span className="text-xs text-ga-text-secondary">
-                  {showLifetime ? '▾' : '▸'} {showLifetime ? 'hide' : 'show'}
-                </span>
-              </button>
+              <CollapsibleHeader
+                title="Lifetime breakdown"
+                hint="Total units bought, used, thrown — the big picture."
+                open={showLifetime}
+                onToggle={() => setShowLifetime((v) => !v)}
+              />
               {showLifetime && (
                 <div className="mt-3">
                   <LifetimeUnitBreakdown
@@ -268,20 +301,12 @@ export default function CatalogEntryPage() {
 
             {/* Activity timeline — history view, collapsed. */}
             <div className="border-t border-ga-border pt-4">
-              <button
-                onClick={() => setShowTimeline((v) => !v)}
-                className="flex items-center justify-between w-full text-sm font-semibold text-ga-text-primary"
-              >
-                <span>
-                  Activity timeline
-                  <span className="ml-2 text-xs text-ga-text-secondary font-normal">
-                    ({overview.movement_timeline.length} events)
-                  </span>
-                </span>
-                <span className="text-xs text-ga-text-secondary">
-                  {showTimeline ? '▾' : '▸'} {showTimeline ? 'hide' : 'show'}
-                </span>
-              </button>
+              <CollapsibleHeader
+                title="Recent activity"
+                hint={`Every event for this item, newest first (${overview.movement_timeline.length} total).`}
+                open={showTimeline}
+                onToggle={() => setShowTimeline((v) => !v)}
+              />
               {showTimeline && (
                 <div className="mt-3">
                   <MovementTimeline timeline={overview.movement_timeline} />
@@ -293,15 +318,12 @@ export default function CatalogEntryPage() {
                 its presence is itself the signal worth seeing. */}
             {overview.split_lineage.some((p) => p.children.length > 0) && (
               <div className="border-t border-ga-border pt-4">
-                <button
-                  onClick={() => setShowLineage((v) => !v)}
-                  className="flex items-center justify-between w-full text-sm font-semibold text-ga-text-primary"
-                >
-                  <span>Split lineage</span>
-                  <span className="text-xs text-ga-text-secondary">
-                    {showLineage ? '▾' : '▸'} {showLineage ? 'hide' : 'show'}
-                  </span>
-                </button>
+                <CollapsibleHeader
+                  title="Partial-action history"
+                  hint="When you split a pack — used some, threw some, moved some — the parent + children chain."
+                  open={showLineage}
+                  onToggle={() => setShowLineage((v) => !v)}
+                />
                 {showLineage && (
                   <div className="mt-3">
                     <SplitLineageTree lineage={overview.split_lineage} />
@@ -315,12 +337,13 @@ export default function CatalogEntryPage() {
         {/* Manage entry — admin / rare actions. Common actions (buy more, use)
             are surfaced in the Hero bar above so this stays out of the way. */}
         <div className="border-t border-ga-border pt-4">
-          <h3 className="text-sm font-semibold text-ga-text-primary mb-2">
-            Manage entry
-          </h3>
+          <SectionHeader
+            title="Manage this item"
+            hint="Edit name, merge into another item, or remove. Rare actions — daily ones live at the top."
+          />
           <div className="flex flex-wrap gap-2">
             {actions
-              .filter((a) => a.id !== 'new_purchase') // already in Hero bar as "Buy more"
+              .filter((a) => a.id !== 'new_purchase') /* already in Hero bar as "Buy more" */
               .map((action) => (
                 <button
                   key={action.id}
@@ -361,6 +384,14 @@ export default function CatalogEntryPage() {
         onClose={() => setTransferOpen(false)}
       />
 
+      {/* Per-location Move modal (post-deploy feedback). Targets the
+          most-urgent active event in the location the user clicked Move on. */}
+      <MoveLocationModal
+        open={!!moveTargetEventId && !!moveTargetEvent}
+        event={moveTargetEvent ?? null}
+        onClose={() => setMoveTargetEventId(null)}
+      />
+
       {mergeOpen && (
         <MergeModal
           source={entry}
@@ -382,11 +413,24 @@ export default function CatalogEntryPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number | string;
+  hint?: string;
+}) {
   return (
     <div>
       <div className="text-xs text-ga-text-secondary">{label}</div>
       <div className="text-lg font-semibold text-ga-text-primary">{value}</div>
+      {hint && (
+        <div className="text-[10px] text-ga-text-secondary leading-tight mt-0.5">
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
@@ -394,6 +438,48 @@ function Stat({ label, value }: { label: string; value: number | string }) {
 function formatQty(n: number): string {
   if (n === Math.floor(n)) return n.toString();
   return n.toFixed(1);
+}
+
+/**
+ * Section header with a small-font hint on the next line.
+ * Layman copy + 1-line "what this section is" beneath each header — added
+ * after real-feedback that bare titles like "Patterns" and "Lifetime
+ * breakdown" left users guessing.
+ */
+function SectionHeader({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="mb-3">
+      <h3 className="text-sm font-semibold text-ga-text-primary">{title}</h3>
+      <p className="text-[11px] text-ga-text-secondary leading-tight mt-0.5">{hint}</p>
+    </div>
+  );
+}
+
+function CollapsibleHeader({
+  title,
+  hint,
+  open,
+  onToggle,
+}: {
+  title: string;
+  hint: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className="flex items-start justify-between w-full text-left hover:opacity-90"
+    >
+      <div>
+        <h3 className="text-sm font-semibold text-ga-text-primary">{title}</h3>
+        <p className="text-[11px] text-ga-text-secondary leading-tight mt-0.5">{hint}</p>
+      </div>
+      <span className="text-xs text-ga-text-secondary flex-shrink-0 ml-3 mt-0.5">
+        {open ? '▾ hide' : '▸ show'}
+      </span>
+    </button>
+  );
 }
 
 /**

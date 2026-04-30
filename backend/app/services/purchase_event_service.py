@@ -851,24 +851,31 @@ def move_to_location(
     return get_purchase(user_id, new_event_id)
 
 
-def consume_one_by_catalog(user_id: str, catalog_name_norm: str, quantity: int = 1) -> dict:
+def consume_one_by_catalog(
+    user_id: str,
+    catalog_name_norm: str,
+    quantity: int = 1,
+    location: Optional[str] = None,
+) -> dict:
     """FIFO consume: find oldest-expiry active event for this catalog entry, mark used.
 
     If quantity > 1, marks the next N events used (in expiry order).
+    If `location` is provided, only events at that location are eligible — used
+    by the per-location "Use 1" button on the catalog overview page.
 
     Returns:
         {"consumed": [...event ids...], "remaining_active": int, "message": str}
 
     Raises:
-        NotFoundError: if no active events exist
+        NotFoundError: if no active events match
     """
-    result = find_purchases_by_barcode(user_id, "")  # not by barcode — filter by catalog
-    # Actually query by catalog_name_norm directly
     q = (
         _user_purchases_ref(user_id)
         .where(filter=FieldFilter("status", "==", "active"))
         .where(filter=FieldFilter("catalog_name_norm", "==", catalog_name_norm))
     )
+    if location:
+        q = q.where(filter=FieldFilter("location", "==", location))
     events = []
     for doc in q.stream():
         data = doc.to_dict()
@@ -876,7 +883,8 @@ def consume_one_by_catalog(user_id: str, catalog_name_norm: str, quantity: int =
         events.append(data)
 
     if not events:
-        raise NotFoundError(f"No active purchases found for '{catalog_name_norm}'")
+        scope = f"'{catalog_name_norm}'" + (f" at {location}" if location else "")
+        raise NotFoundError(f"No active purchases found for {scope}")
 
     # Sort FIFO: oldest expiry first (nulls last), then oldest date_bought
     def _sort_key(event):

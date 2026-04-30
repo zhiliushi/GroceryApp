@@ -24,6 +24,7 @@ from app.services import (
     country_service,
     exchange_rate_service,
     foodbank_service,
+    fx_rate_service,
     insights_service,
     inventory_service,
     nudge_service,
@@ -62,6 +63,22 @@ def start():
         hours=24,
         id="exchange_rate_update",
         name="Exchange rate daily update",
+        replace_existing=True,
+    )
+
+    # v2 FX cache pre-warm (catalog evolution Phase B). The lazy-fetch path in
+    # fx_rate_service handles cold misses, but the FIRST conversion of any
+    # given pair on a given day pays a ~200ms HTTP round-trip. This job warms
+    # the cache for common pairs + every (origin → user_pref) seen in user
+    # profiles. Runs at 03:30 UTC, after the legacy exchange-rate-update at
+    # midnight, so both layers are fresh by morning.
+    _scheduler.add_job(
+        fx_rate_service.refresh_common_rates,
+        "cron",
+        hour=3,
+        minute=30,
+        id="fx_rate_refresh_v2",
+        name="v2 FX rate cache pre-warm (frankfurter.app)",
         replace_existing=True,
     )
 
