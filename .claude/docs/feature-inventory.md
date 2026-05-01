@@ -114,6 +114,43 @@ is the engineer's index.
 | Update unit_type | UnitTypeEditor inside CatalogEntryPage | `PATCH /api/catalog/{name_norm}` `{unit_type}` |
 | Set currency preference | SettingsPage | `PATCH /api/users/me` `{currency_preference}` |
 
+## unit_type touchpoints
+
+`unit_type` lives on the catalog row (`count` / `volume` / `weight` /
+`container`). It controls how purchase events render and how the Use
+modal's slider step adapts.
+
+When you add a new unit_type or change behaviour for an existing one,
+you MUST update ALL of the following — comments tagged
+`UNIT_TYPE_TOUCHPOINT` mark each spot in code:
+
+**Backend**:
+- `app/services/unit_type_service.py` — inference (`infer_unit_type`),
+  validation (`normalize_unit_type`), step heuristic (`default_step`).
+- `app/services/catalog_service.py` — sets unit_type on
+  `upsert_catalog_entry`; allows `unit_type` in `update_catalog_entry`.
+- `app/services/catalog_overview_service.py` — lazy-backfills
+  `unit_type` on rows that pre-date the field.
+- `app/schemas/catalog.py` — `CatalogUpdate.unit_type`.
+
+**Frontend** (search for `UNIT_TYPE_TOUCHPOINT`):
+- `types/api.ts` — `CatalogEntry.unit_type` type definition.
+- `pages/catalog/CatalogEntryPage.tsx` — the `UnitTypeEditor`
+  dropdown (user-facing override under "Manage this item").
+- `components/quickadd/QuickAddModal.tsx` — `defaultUnitForType()`
+  helper + integration in `handleAutocomplete` and the open-reset
+  effect. Defaults the per-event `unit` field to a sensible value
+  when matched against a catalog row with a known unit_type.
+- `components/waste/MarkUsedModal.tsx` — `stepForUnit()` heuristic.
+  Mirrors backend `default_step()`. Keep ranges aligned.
+- `api/mutations/useCatalogMutations.ts` — `useUpdateCatalogEntry`
+  body type accepts `unit_type`.
+
+**The discipline rule**: every change to unit semantics (new type,
+new default, new step heuristic) is a single PR that touches *all*
+of the above. Half-updated unit_type is worse than no unit_type —
+the user sees a step value that doesn't match their inputs.
+
 ## Currency model
 
 Read-time conversion. Each spending/waste figure is converted on read

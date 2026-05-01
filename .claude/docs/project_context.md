@@ -86,29 +86,38 @@ cd backend && pip install -r requirements.txt && uvicorn main:app --reload --por
 
 ## Layout — global floating-action safe-zone
 
-The fixed Add (`StickyAddButton`) and Scan (`FloatingScanButton`) pills
-live at `top-4 right-4 z-30` in `AppLayout.tsx`. They're hidden on
-mobile (replaced by `PrimaryActionFab` at bottom-right). On desktop
-they overlap the top-right of every page.
+THREE fixed pills live at `top-4 ... z-30` in `AppLayout.tsx` on desktop:
+  - `GlobalSearchBar`  — `top-4 left-64`  (left side, ~360px wide)
+  - `FloatingScanButton` — `top-4 right-36` (right side, ~85px wide)
+  - `StickyAddButton`  — `top-4 right-4`  (right side, ~110px wide)
 
-To prevent collisions, `AppLayout` wraps `<Outlet />` in a div with
-`md:pr-[260px] pb-24 md:pb-0`:
+All three end at y≈56px (`top-4` 16px + ~40px button height). They're
+hidden on mobile and replaced by `PrimaryActionFab` at bottom-right.
 
-- `md:pr-[260px]` reserves 260px of right-side space on desktop,
-  enough to clear "Scan" + "Add item" pills + their margins.
-- `pb-24 md:pb-0` gives mobile pages bottom-padding so the FAB
-  doesn't cover the last list item.
-- `min-w-0` lets flex/grid children shrink properly.
+**The fix** lives in `AppLayout.tsx`: a wrapper around `<Outlet />`
+with `md:pt-16 pb-24 md:pb-0 min-w-0`.
 
-**Implication for new pages**: Don't add per-page `md:pr-[*]` to
-header rows. The wrapper handles it. The only sibling of the wrapper
-is `CatalogCleanupBanner` (full-width by design), which carries its
-own `md:pr-[260px]` for content clearance.
+- `md:pt-16` (64px top reservation) pushes EVERY page's content
+  below the entire pill row — clears LEFT and RIGHT at once. Earlier
+  attempts used `md:pr-[260px]` which only fixed the right side; the
+  GlobalSearchBar pill on the left still blocked page titles. Switched
+  to top-padding 2026-05-01 after the Shopping Lists / Foodbanks /
+  Dashboard screenshots showed left-side cropping.
+- `pb-24 md:pb-0` keeps the last list row above the mobile FAB.
+- `min-w-0` lets flex/grid children shrink properly inside.
 
-If a page genuinely needs to use the right strip (e.g. a custom
-floating widget that should NOT be obscured by the pills), it must
-either fight the wrapper (`md:!pr-0` + own clearance) or extend
-beyond the wrapper via `position: fixed`.
+The banner (`CatalogCleanupBanner`) is a SIBLING of the wrapper, NOT
+a child. Its background spans full main width. It uses `z-40` so the
+floating pills (z-30) hide behind it where they overlap — banner
+needs no extra padding.
+
+**Discipline rule (TAGGED in AppLayout.tsx)**: don't add per-page
+`md:pl-*` / `md:pr-*` / `md:pt-*` hacks for floating-pill clearance.
+The wrapper already handles it. New pages get clearance for free.
+
+If a page legitimately needs the top strip (rare — a hero image, a
+full-bleed map), it can fight the wrapper with `md:!pt-0` and
+position its own pill clearance.
 
 ## Glossary
 

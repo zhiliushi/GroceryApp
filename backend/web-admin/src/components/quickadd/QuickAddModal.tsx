@@ -35,6 +35,35 @@ const UNITS = ['count', 'pack', 'g', 'kg', 'ml', 'L'];
 // Common currencies for the dropdown — user can also type a 3-letter code if missing.
 const CURRENCIES = ['SGD', 'MYR', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'IDR', 'THB', 'PHP', 'VND', 'INR', 'AUD'];
 
+/**
+ * Default purchase-event unit when the matched catalog row has a
+ * `unit_type` set. Lets the dropdown default to a sensible option
+ * instead of always 'count' regardless of what's being bought.
+ *
+ * UNIT_TYPE_TOUCHPOINT — see .claude/docs/feature-inventory.md.
+ * If you add a new unit_type or change an existing one, also update:
+ *   - backend/app/services/unit_type_service.py (inference + defaults)
+ *   - backend/web-admin/src/components/waste/MarkUsedModal.tsx
+ *     (the stepForUnit heuristic — keep step ranges aligned)
+ *   - backend/web-admin/src/pages/catalog/CatalogEntryPage.tsx
+ *     (the UnitTypeEditor select options)
+ */
+function defaultUnitForType(
+  unitType: 'count' | 'volume' | 'weight' | 'container' | null | undefined,
+): string {
+  switch (unitType) {
+    case 'volume':
+      return 'ml';
+    case 'weight':
+      return 'g';
+    case 'container':
+      return 'pack';
+    case 'count':
+    default:
+      return 'count';
+  }
+}
+
 export default function QuickAddModal({ open, onClose, defaults }: QuickAddModalProps) {
   const [name, setName] = useState('');
   const [barcode, setBarcode] = useState<string>('');
@@ -84,7 +113,9 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setLocation(defaults?.location ?? defaults?.catalogEntry?.default_location ?? 'pantry');
       setExpiryRaw('');
       setQuantity(1);
-      setUnit('count');
+      // Default unit follows the catalog row's unit_type when available
+      // — buying milk shouldn't show 'count' by default. UNIT_TYPE_TOUCHPOINT.
+      setUnit(defaultUnitForType(defaults?.catalogEntry?.unit_type));
       setPrice('');
       setCurrency(userCurrency);
       setPaymentMethod('');
@@ -200,6 +231,13 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       if (entry.barcode && !barcode) setBarcode(entry.barcode);
       if (entry.default_location && location === 'pantry') {
         setLocation(entry.default_location);
+      }
+      // Default unit follows the matched row's unit_type (volume → ml,
+      // weight → g, container → pack). Only override when the user
+      // hasn't deliberately changed it from the initial 'count'.
+      // UNIT_TYPE_TOUCHPOINT.
+      if (entry.unit_type && unit === 'count') {
+        setUnit(defaultUnitForType(entry.unit_type));
       }
     }
   }
@@ -357,14 +395,25 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
 
           <ExpiryInput value={expiryRaw} onChange={setExpiryRaw} />
 
-          {/* On phones, Quantity (4 controls: −, input, +, unit) + Location
-              squeezed into grid-cols-2 cropped the unit dropdown's chevron
-              and made the qty input near-unreadable. Stack on small screens,
-              side-by-side from sm: up. */}
+          {/* Quantity row layout — UNIT_TYPE_TOUCHPOINT.
+              Earlier iteration crammed [−, input, +, unit-select] into one
+              tight row inside grid-cols-2; the input collapsed to ~46px and
+              the number was barely readable. Now: number input is a fixed
+              `w-16` so it's always legible, unit dropdown moves to its own
+              field below the row on mobile (stacks naturally via wrap on
+              cramped widths). The unit defaults track unit_type — see
+              defaultUnitForType() at top of file. */}
           {!multiPackOn && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-ga-text-secondary mb-1">Quantity</label>
+                <label className="block text-xs text-ga-text-secondary mb-1">
+                  Quantity
+                  {matchedEntry?.unit_type && (
+                    <span className="ml-1 text-[10px] text-ga-text-secondary font-normal">
+                      ({matchedEntry.unit_type})
+                    </span>
+                  )}
+                </label>
                 <div className="flex gap-1 items-center">
                   <button
                     type="button"
@@ -381,7 +430,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                     step="0.1"
                     value={quantity}
                     onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-                    className="w-full min-w-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    className="w-16 flex-shrink-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
                   <button
                     type="button"
@@ -394,7 +443,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   <select
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="flex-shrink-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    className="flex-1 min-w-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                     aria-label="Unit"
                   >
                     {UNITS.map((u) => (

@@ -33,13 +33,30 @@ export default function AppLayout() {
           'ml-0 pt-12 md:pt-0',
         )}
       >
-        {/* Banner is sibling of the page-content wrapper so its background
-            spans the full main area; banner content has its own pr for
-            clearance. Page content gets `md:pr-[260px]` to clear the fixed
-            top-right Add/Scan pills (z-30) on desktop, plus `pb-24 md:pb-0`
-            so mobile FAB at bottom-right doesn't cover the last list row. */}
+        {/* ┌─ LAYOUT SAFE-ZONE — DO NOT add per-page pl/pr/pt hacks. ────┐
+            │                                                              │
+            │ Floating UI lives at top of viewport on desktop:             │
+            │   • GlobalSearchBar  — top-4 left-64  z-30 (left side)       │
+            │   • FloatingScanBtn  — top-4 right-36 z-30 (right side)      │
+            │   • StickyAddButton  — top-4 right-4  z-30 (right side)      │
+            │                                                              │
+            │ All three end at y≈56px (top-4 + ~40px height).              │
+            │ Outlet wrapper reserves `md:pt-16` (64px) so EVERY page's    │
+            │ content starts BELOW the pill row — clears LEFT and RIGHT    │
+            │ at once without wasting horizontal real estate.              │
+            │                                                              │
+            │ Mobile: pills hidden; FAB at bottom-right replaces them.     │
+            │ `pb-24 md:pb-0` keeps the last list row above the FAB.       │
+            │                                                              │
+            │ Banner is a SIBLING (not a child) so its amber bg spans the  │
+            │ full main width. Banner has z-40 — it covers the pills in    │
+            │ its overlap area, so banner's content needs no per-pill pr.  │
+            │                                                              │
+            │ Discipline rule + reasoning: project_context.md "Layout —    │
+            │ global floating-action safe-zone".                           │
+            └──────────────────────────────────────────────────────────────┘ */}
         <CatalogCleanupBanner />
-        <div className="md:pr-[260px] pb-24 md:pb-0 min-w-0">
+        <div className="md:pt-16 pb-24 md:pb-0 min-w-0">
           <Outlet />
         </div>
       </main>
