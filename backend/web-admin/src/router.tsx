@@ -50,6 +50,7 @@ const MigrationDryRunPage = lazy(() => import('@/pages/admin/MigrationDryRunPage
 const AdminMigrationPage = lazy(() => import('@/pages/admin/AdminMigrationPage'));
 const ExperimentalPage = lazy(() => import('@/pages/admin/ExperimentalPage'));
 const UserManualPage = lazy(() => import('@/pages/help/UserManualPage'));
+const InventoryDetailPage = lazy(() => import('@/pages/inventory/InventoryDetailPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -134,8 +135,11 @@ export const router = createBrowserRouter([
       { path: 'catalog', element: <SuspenseWrapper><CatalogListPage /></SuspenseWrapper> },
       { path: 'catalog/:nameNorm', element: <SuspenseWrapper><CatalogEntryPage /></SuspenseWrapper> },
       { path: 'insights', element: <SuspenseWrapper><InsightsPage /></SuspenseWrapper> },
-      // Legacy URL support — redirect old /inventory → /my-items
+      // Legacy URL support — redirect old /inventory list → /my-items.
+      // /inventory/:nameNorm is the new lightweight per-catalog inventory
+      // view (current state only; manager view stays at /catalog/:nameNorm).
       { path: 'inventory', element: <Navigate to="/my-items" replace /> },
+      { path: 'inventory/:nameNorm', element: <SuspenseWrapper><InventoryDetailPage /></SuspenseWrapper> },
       { path: 'inventory/:uid/:itemId', element: <Navigate to="/my-items" replace /> },
       { path: 'item/:barcode', element: <Navigate to="/catalog" replace /> },
       { path: 'analytics', element: <Navigate to="/insights" replace /> },

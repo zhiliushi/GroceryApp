@@ -35,12 +35,13 @@ action-driving.
    anything is past expiry. Headline shows "N expired · M expiring in 3
    days · 1 in fridge · 2 in pantry". Per-item "Use…" buttons stop click
    propagation so they don't toggle the card.
-6. 2-col bottom row: `<InventoryStatsCard />` · `<FrequentlyBoughtCard />`.
-   InventoryStatsCard shows 4 mini stats (in-stock / fresh / use soon /
-   expired), each a Link drilling to the relevant My Items / health-score
-   tab. Replaces the previous `<InventoryGlance />` pill row — same data
-   source (`useHealthScore`), more presence, no longer leaves
-   `<FrequentlyBoughtCard />` lonely as a full-width card.
+6. 2-col bottom row: `<InventoryListCard />` · `<FrequentlyBoughtCard />`.
+   InventoryListCard renders up to 8 catalog rows currently in stock,
+   sorted by expiry urgency. Each row links to the new
+   `/inventory/:nameNorm` page (housewife view, current state only).
+   Replaces the earlier InventoryStatsCard (4 abstract counts) — real
+   users want to see *which* items they have, not aggregate numbers,
+   and one tap should land them on the action page for that item.
 7. Full-width `<InsightsCard />` (auto-hides when empty).
 8. Admin-only stats grid + Quick Actions (gated by `isAdmin`).
 
@@ -64,7 +65,7 @@ All widgets fetch their own data via hooks:
   (`/api/waste/summary?period=...`). Response includes `top_wasted`
   sorted by `total_value` desc.
 - `usePurchases({ status: 'active', limit: 200 })` — for ExpiringSoonCard
-- `useHealthScore()` — for InventoryStatsCard counts (reuses existing endpoint)
+- `usePurchases({status:'active', limit:200})` — also feeds InventoryListCard (cache-shared with ExpiringSoonCard)
 - `useDashboard()` — admin stats (legacy)
 - `useFeatureFlags()` — `/api/admin/features` (admin) or
   `/api/features/public` (user)

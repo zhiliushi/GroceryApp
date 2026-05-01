@@ -9,7 +9,7 @@ import ProgressiveNudge from '@/components/nudge/ProgressiveNudge';
 import SpendingScoreboard from '@/components/dashboard/SpendingScoreboard';
 import WasteScoreboard from '@/components/dashboard/WasteScoreboard';
 import ExpiringSoonCard from '@/components/dashboard/ExpiringSoonCard';
-import InventoryStatsCard from '@/components/dashboard/InventoryStatsCard';
+import InventoryListCard from '@/components/dashboard/InventoryListCard';
 import InsightsCard from '@/components/dashboard/InsightsCard';
 import FrequentlyBoughtCard from '@/components/dashboard/FrequentlyBoughtCard';
 import { useAuthStore } from '@/stores/authStore';
@@ -23,9 +23,9 @@ import { truncateUid } from '@/utils/format';
  *
  * Mobile-first ordering: each scoreboard features "This month" full-width
  * with This-week + Last-month compact below (see SpendingScoreboard for
- * the grid+order trick). Bottom row pairs InventoryStatsCard (4 mini
- * stats — in stock / fresh / use soon / expired) with FrequentlyBoughtCard
- * so a one-handed mobile user has both reference panels in one screen.
+ * the grid+order trick). Bottom row pairs InventoryListCard (live list
+ * of catalog rows in stock, sorted by expiry urgency, click → per-item
+ * inventory detail page) with FrequentlyBoughtCard.
  *
  * Admin stats stay in their own block, gated by isAdmin, untouched.
  *
@@ -73,13 +73,13 @@ export default function DashboardPage() {
         <ExpiringSoonCard />
       </div>
 
-      {/* Bottom row: kitchen-at-a-glance stats + frequently-bought. Both
-          are reference / quick-action panels — putting them side-by-side
-          on desktop avoids leaving FrequentlyBought as a lonely full-width
-          card, and pairs the "what's in the kitchen" stats with the
-          "what to buy next" shortcut. On mobile they stack. */}
+      {/* Bottom row: live inventory list (clickable rows → /inventory/:nameNorm
+          for per-item detail) + frequently-bought (one-tap re-buy). The list
+          replaces the previous abstract InventoryStatsCard — real users want
+          to see *which* items they have and what needs attention, not aggregate
+          counts. Sorted by expiry urgency. On mobile they stack. */}
       <div className="grid md:grid-cols-2 gap-3 md:gap-4 mb-3 md:mb-4">
-        <InventoryStatsCard />
+        <InventoryListCard />
         <FrequentlyBoughtCard />
       </div>
 

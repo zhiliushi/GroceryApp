@@ -319,35 +319,62 @@ function TrackingItems() {
     <section className="space-y-2">
       <H2 id="tracking-items">3. Tracking what you have</H2>
       <p>
+        Three places to look at your stock, depending on what you want
+        to do.
+      </p>
+
+      <H3>From the dashboard — quick glance</H3>
+      <p>
+        The <strong>"What's in your kitchen"</strong> card on the dashboard
+        lists up to 8 items you have right now, sorted by what's expiring
+        first. Each row shows the quantity, where it's stored, and an
+        expiry chip (red / orange / yellow / green). Tap any row to open
+        its detail page.
+      </p>
+
+      <H3>Per-item inventory detail</H3>
+      <p>
+        Tap an item from the dashboard list (or the item name on My Items)
+        to open the inventory detail page at <code>/inventory/{'{name}'}</code>.
+        It's a focused, action-first view of one item:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>Hero</strong> — name, total available across all packs
+          (in eggs / ml / g — base units), urgency banner.
+        </li>
+        <li>
+          <strong>Per-location chips</strong> — "Fridge: 6 · Pantry: 12".
+        </li>
+        <li>
+          <strong>Per-pack list</strong> — every active pack as its own
+          row with Use / Move / Throw / Give-away buttons. Sorted so the
+          most urgent pack is at the top.
+        </li>
+        <li>
+          <strong>"+ Buy more"</strong> top-right opens Quick Add prefilled
+          with this item.
+        </li>
+      </ul>
+      <p className="text-xs text-ga-text-secondary">
+        The inventory page is deliberately current-state only. For price
+        history, waste analysis, or to rename / merge / delete the catalog
+        row, use the <strong>"Full price history & analysis →"</strong> link
+        at the bottom (goes to the manager view at{' '}
+        <code>/catalog/{'{name}'}</code>).
+      </p>
+
+      <H3>The full list — My Items</H3>
+      <p>
         <Link to="/my-items" className="text-ga-accent hover:underline">
           My Items
         </Link>{' '}
         is the full list of every active purchase grouped by catalog row.
-        Filter by location, expiry urgency, or status.
+        Filter by location, expiry urgency, or status. Each row also
+        lets you drill to the per-pack detail page (movement timeline,
+        partial-action lineage, restore button if the pack was
+        accidentally marked used or thrown).
       </p>
-
-      <H3>Per-item detail</H3>
-      <p>
-        Click any item to open the detail page. It shows:
-      </p>
-      <ul className="list-disc pl-5 space-y-1">
-        <li>Status, location, expiry, and price.</li>
-        <li>
-          <strong>Action buttons</strong> appear based on state — an active
-          item shows Use / Move / Throw / Give away. A used or thrown item
-          shows <strong>↺ Restore to active</strong> if you clicked the wrong
-          button.
-        </li>
-        <li>
-          <strong>Movement timeline</strong> — every status change with
-          timestamp, so you can audit "wait, when did I move this?".
-        </li>
-        <li>
-          <strong>Partial-action lineage</strong> — when you "use 3 of 6"
-          eggs, the app splits the event into a 3-used child and a 3-active
-          child, both linked to the original parent.
-        </li>
-      </ul>
     </section>
   );
 }
