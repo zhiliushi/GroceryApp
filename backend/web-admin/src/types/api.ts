@@ -1057,6 +1057,16 @@ export interface WasteSummary {
   top_wasted: WasteSummaryItem[];
 }
 
+export interface SpendingTopItem {
+  id: string;
+  catalog_name_norm: string | null;
+  display_name: string;
+  /** Amount in display_currency. */
+  amount: number;
+  quantity: number;
+  date_bought?: string;
+}
+
 export interface SpendingSummary {
   period: SpendingPeriod;
   from_date: string;
@@ -1070,6 +1080,8 @@ export interface SpendingSummary {
   grand_total: number;
   /** Events with no price recorded at all. */
   untracked_count: number;
+  /** Top-5 most expensive purchase events in the period, descending. */
+  top_items?: SpendingTopItem[];
 }
 
 export interface FinancialSummaryRow {

@@ -34,15 +34,20 @@ export default function CatalogCleanupBanner() {
   if (!user || (user.schema_version ?? 1) < 2 || dismissed) return null;
 
   // Right-padding on desktop reserves space for the fixed Add/Scan pills
-  // (top-right z-30 on AppLayout). Without it the banner text slid under
-  // the pills and the dismiss button was unclickable. Numbers chosen to
-  // clear roughly Add pill (~110px) + Scan pill (~85px) + gap = ~290px.
+  // (z-30 top-right in AppLayout). The pills sit in that gap; banner
+  // text + buttons stay clear of them.
+  //
+  // Color discipline: the previous amber-300 / amber-100 text on
+  // amber-500/15 was washed out on the light theme (which is what the
+  // app actually uses — the dark sidebar gave the wrong impression).
+  // Switched to high-contrast dark-on-amber-200 so the warning reads
+  // at a glance regardless of theme.
   return (
-    <div className="relative z-40 bg-amber-500/15 border-b border-amber-500/50 px-4 py-2 text-sm md:pr-[300px]">
+    <div className="relative z-40 bg-amber-200 border-b-2 border-amber-500 px-4 py-2.5 text-sm md:pr-[300px] shadow-sm">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-amber-100 flex-1 min-w-0">
-          <strong className="font-semibold">Catalog cleanup is now active.</strong>{' '}
-          <span className="text-amber-200">
+        <div className="flex-1 min-w-0">
+          <strong className="font-semibold text-amber-950">⚠ Catalog cleanup is now active.</strong>{' '}
+          <span className="text-amber-900">
             Items in your catalog without a barcode have a 30-day idle counter — touch them to
             keep, or remove from the list. (Paid users exempt.)
           </span>
@@ -50,13 +55,13 @@ export default function CatalogCleanupBanner() {
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link
             to="/catalog"
-            className="px-3 py-1 rounded bg-amber-400/30 text-amber-50 text-xs font-medium hover:bg-amber-400/40"
+            className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 shadow-sm"
           >
             Show me
           </Link>
           <button
             onClick={() => setDismissed(true)}
-            className="px-3 py-1 rounded bg-ga-bg-card border border-ga-border text-ga-text-secondary text-xs hover:bg-ga-bg-hover"
+            className="px-3 py-1.5 rounded bg-white border border-amber-400 text-amber-900 text-xs font-medium hover:bg-amber-50"
           >
             Dismiss
           </button>

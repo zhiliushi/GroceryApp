@@ -6,8 +6,8 @@ import StatsCard from '@/components/shared/StatsCard';
 import StatusBadge from '@/components/shared/StatusBadge';
 import NudgeBanner from '@/components/nudge/NudgeBanner';
 import ProgressiveNudge from '@/components/nudge/ProgressiveNudge';
-import WasteSummaryCard from '@/components/dashboard/WasteSummaryCard';
 import SpendingScoreboard from '@/components/dashboard/SpendingScoreboard';
+import WasteScoreboard from '@/components/dashboard/WasteScoreboard';
 import ExpiringSoonCard from '@/components/dashboard/ExpiringSoonCard';
 import InventoryGlance from '@/components/dashboard/InventoryGlance';
 import InsightsCard from '@/components/dashboard/InsightsCard';
@@ -52,9 +52,21 @@ export default function DashboardPage() {
         <NudgeBanner />
       </div>
 
-      {/* Hero: the two questions she asks first. */}
-      <div className="grid md:grid-cols-2 gap-4 mb-4">
+      {/* Spending scoreboard — three period cards (week / month / last
+          month). Each expands to its top-5 most expensive purchases. */}
+      <div className="mb-4">
         <SpendingScoreboard />
+      </div>
+
+      {/* Waste scoreboard — same structure as spending so the user can
+          compare "spent vs thrown" period-by-period at a glance. */}
+      <div className="mb-4">
+        <WasteScoreboard />
+      </div>
+
+      {/* Use these soon — collapsed by default; auto-opens when anything
+          is already past expiry (urgent enough to warrant the click). */}
+      <div className="mb-4">
         <ExpiringSoonCard />
       </div>
 
@@ -63,9 +75,8 @@ export default function DashboardPage() {
         <InventoryGlance />
       </div>
 
-      {/* Reference cards: waste, suggestions, quick re-buy. */}
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
-        <WasteSummaryCard />
+      {/* Reference cards: suggestions + quick re-buy. */}
+      <div className="grid md:grid-cols-2 gap-4 mb-6">
         <InsightsCard />
         <FrequentlyBoughtCard />
       </div>

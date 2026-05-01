@@ -350,7 +350,15 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
 
     for row in by_catalog.values():
         row["total_value"] = round(row["total_value"], 2)
-    top_wasted = sorted(by_catalog.values(), key=lambda x: x["count"], reverse=True)[:10]
+    # Sort by value descending — "most expensive items thrown" is the
+    # actionable framing for the dashboard scoreboard. Two items thrown
+    # at RM 12 each is more useful to surface than ten items thrown at
+    # RM 0.50 each. Tie-break by count.
+    top_wasted = sorted(
+        by_catalog.values(),
+        key=lambda x: (x["total_value"], x["count"]),
+        reverse=True,
+    )[:10]
 
     return {
         "period": period,
@@ -485,6 +493,7 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
     card_total = 0.0
     other_total = 0.0  # has price, no payment_method recorded
     untracked = 0      # has no price at all
+    items: list[dict[str, Any]] = []
 
     for doc in q.stream():
         data = doc.to_dict() or {}
@@ -499,6 +508,20 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
             card_total += amount
         else:
             other_total += amount
+        items.append({
+            "id": doc.id,
+            "catalog_name_norm": data.get("catalog_name_norm"),
+            "display_name": data.get("catalog_display") or data.get("catalog_name_norm") or "(unknown)",
+            "amount": round(amount, 2),
+            "quantity": float(data.get("quantity") or 1),
+            "date_bought": data.get("date_bought"),
+        })
+
+    # Top-5 most expensive purchase events for the period — drives the
+    # dashboard scoreboard's per-card expand. We rank by display-currency
+    # amount so the ordering matches what the user sees on screen.
+    items.sort(key=lambda x: x["amount"], reverse=True)
+    top_items = items[:5]
 
     return {
         "period": period,
@@ -513,4 +536,5 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
         # really means now.
         "grand_total": round(cash_total + card_total + other_total, 2),
         "untracked_count": untracked,
+        "top_items": top_items,
     }

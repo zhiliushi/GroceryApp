@@ -99,61 +99,73 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
           </p>
         </div>
 
-        <div className="px-5 py-4 space-y-2">
-          <div className="flex items-center justify-between text-xs text-ga-text-secondary">
-            <span>How many to use?</span>
-            <span className="text-ga-text-primary font-medium tabular-nums">
-              {formatNum(portion, decimal)} {baseUnit}{portion === 1 ? '' : 's'}
-              {isPartial && (
-                <span className="ml-1 text-ga-text-secondary">
-                  ({formatNum(totalBaseUnits - portion, decimal)} stays active)
-                </span>
-              )}
-            </span>
+        {/* Single-unit case: slider + spinner are meaningless (min == max ==
+            1). Show a confirmation-only body so the user isn't confused by
+            disabled controls. The Mark used button still fires the same
+            handleConfirm path. */}
+        {totalBaseUnits <= step + 1e-9 ? (
+          <div className="px-5 py-5">
+            <p className="text-sm text-ga-text-primary">
+              This will mark <strong>all {formatNum(totalBaseUnits, decimal)} {baseUnit}{totalBaseUnits === 1 ? '' : 's'}</strong> of "{event.catalog_display}" as used.
+            </p>
           </div>
-          <div className="flex gap-2 items-center">
-            <input
-              type="range"
-              min={inputMin}
-              max={totalBaseUnits}
-              step={step}
-              value={portion}
-              onChange={(e) => setPortion(Number(e.target.value))}
-              className="flex-1 accent-ga-accent"
-            />
-            <button
-              type="button"
-              onClick={() => setPortion(Math.max(inputMin, portion - step))}
-              disabled={portion <= inputMin + 1e-9}
-              className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
-              aria-label={`Decrease by ${step}`}
-            >
-              −
-            </button>
-            <input
-              type="number"
-              min={inputMin}
-              max={totalBaseUnits}
-              step={step}
-              value={portion}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (!Number.isFinite(v)) return;
-                setPortion(Math.max(inputMin, Math.min(totalBaseUnits, v)));
-              }}
-              className="w-20 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            />
-            <button
-              type="button"
-              onClick={() => setPortion(Math.min(totalBaseUnits, portion + step))}
-              disabled={portion >= totalBaseUnits - 1e-9}
-              className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
-              aria-label={`Increase by ${step}`}
-            >
-              +
-            </button>
+        ) : (
+          <div className="px-5 py-4 space-y-2">
+            <div className="flex items-center justify-between text-xs text-ga-text-secondary">
+              <span>How many to use?</span>
+              <span className="text-ga-text-primary font-medium tabular-nums">
+                {formatNum(portion, decimal)} {baseUnit}{portion === 1 ? '' : 's'}
+                {isPartial && (
+                  <span className="ml-1 text-ga-text-secondary">
+                    ({formatNum(totalBaseUnits - portion, decimal)} stays active)
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2 items-center">
+              <input
+                type="range"
+                min={inputMin}
+                max={totalBaseUnits}
+                step={step}
+                value={portion}
+                onChange={(e) => setPortion(Number(e.target.value))}
+                className="flex-1 accent-ga-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setPortion(Math.max(inputMin, portion - step))}
+                disabled={portion <= inputMin + 1e-9}
+                className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
+                aria-label={`Decrease by ${step}`}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={inputMin}
+                max={totalBaseUnits}
+                step={step}
+                value={portion}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  setPortion(Math.max(inputMin, Math.min(totalBaseUnits, v)));
+                }}
+                className="w-20 px-2 py-1 text-sm bg-ga-bg-app border border-ga-border rounded text-ga-text-primary tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+              <button
+                type="button"
+                onClick={() => setPortion(Math.min(totalBaseUnits, portion + step))}
+                disabled={portion >= totalBaseUnits - 1e-9}
+                className="w-7 h-7 rounded border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed text-base leading-none"
+                aria-label={`Increase by ${step}`}
+              >
+                +
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2">
           <button
