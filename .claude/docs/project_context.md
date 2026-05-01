@@ -71,3 +71,57 @@ cd backend && pip install -r requirements.txt && uvicorn main:app --reload --por
 - `docs/MIGRATION_GUIDE.md` — grocery_items → catalog+purchases migration
 - `docs/ADMIN_CATALOG_ANALYSIS.md` — admin aggregation view
 - `docs/FUTURE_*.md` — deferred designs (Telegram, mobile, AI dedup, item movement, household merge)
+
+### Claude-context docs (read these BEFORE building features)
+
+- `.claude/docs/feature-inventory.md` — **canonical** list of user-visible
+  features × tier × page × API. Single source of truth for "where does X
+  live, who can use it, and what API does it call". Update this in lockstep
+  with code changes.
+- `.claude/docs/pages/user-manual.md` — page doc for the user-facing manual
+  at `/help`. Update discipline: when a feature changes, update
+  `pages/help/UserManualPage.tsx` AND `feature-inventory.md` in the same PR.
+- `.claude/docs/pages/*.md` — per-page documentation (dashboard, my-items,
+  quickadd, insights, catalog-analysis, feature-flags, user-manual).
+
+## Glossary
+
+User-facing and engineering terms whose meaning isn't obvious from
+context. Pin new domain terms here the first time they resolve in a
+session — drift compounds across sessions.
+
+- **Catalog row / catalog entry** — one user-defined named item
+  (`catalog_entries/{user_id}__{name_norm}`). Stable across purchases;
+  the autocomplete + frequently-bought list uses this.
+- **Purchase event** — one purchase, possibly partially consumed
+  (`users/{uid}/purchases/{event_id}`). Many events can map to one
+  catalog row.
+- **Base unit** — the actual countable thing (eggs, ml, g), as opposed
+  to event-quantity which is in pack-multiples. A "1 pack × 6 eggs"
+  event has `quantity=1, pack_size=6`, so `totalBaseUnits = 6`. The
+  Use modal works in base units; the API converts back to event-qty.
+- **unit_type** — classification on a catalog row: `count`, `volume`,
+  `weight`, `container`. Drives the input shape on the Use modal
+  (count → integer spinner; volume → ml slider; weight → g slider;
+  container → whole-pack confirmation).
+- **Display currency** — user's `currency_preference`. All spending +
+  waste figures are converted at read time via
+  `currency_service.display_amount_for_user`. Original currency is
+  preserved on each event.
+- **Tier** — `free` (Basic Basket), `plus` (Smart Cart), `pro` (Full
+  Fridge). `admin` bypasses all tier checks. Defined in
+  `config_service._DEFAULT_TIERS`.
+- **Tool (Smart Cart sense)** — a tier-gated feature that `plus` users
+  pick up to 3 of (e.g. `price_tracking`, `receipt_scanning_ocr`).
+  Different from a feature flag, which is admin-only.
+- **Idle counter** — the 30-day clock on barcodeless catalog rows for
+  free-tier users. Resets on any "touch" (open, edit, new purchase).
+  Paid users exempt.
+- **Restore** — flips a terminal-status event (`used`/`thrown`/
+  `transferred`) back to `active`. Per-event button on the detail
+  page; bulk admin endpoint for disaster recovery.
+- **Partial action / split** — when a user marks part of a multi-pack
+  used or thrown, the API splits one event into two: a child of the
+  partial qty in the new status, and a child with the remainder still
+  active. Both reference the original parent via
+  `split_from_event_id`.

@@ -49,6 +49,7 @@ const CatalogCountersDiagnosticPage = lazy(
 const MigrationDryRunPage = lazy(() => import('@/pages/admin/MigrationDryRunPage'));
 const AdminMigrationPage = lazy(() => import('@/pages/admin/AdminMigrationPage'));
 const ExperimentalPage = lazy(() => import('@/pages/admin/ExperimentalPage'));
+const UserManualPage = lazy(() => import('@/pages/help/UserManualPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -146,6 +147,10 @@ export const router = createBrowserRouter([
       { path: 'meals', element: <SuspenseWrapper><MealsPage /></SuspenseWrapper> },
       { path: 'meals/new', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
       { path: 'meals/:id/edit', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
+      // User manual — always accessible, no tier gating. The help content
+      // is the same for free and paid users (paid features are tier-tagged
+      // inside the manual itself).
+      { path: 'help', element: <SuspenseWrapper><UserManualPage /></SuspenseWrapper> },
 
       // ── Admin-only pages ──
       {

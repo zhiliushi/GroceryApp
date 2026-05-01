@@ -97,9 +97,24 @@ Render URL: `https://groceryapp-backend-7af2.onrender.com`
 - `docs/FUTURE_HOUSEHOLD_CATALOG_MERGE.md` — household merge (deferred)
 
 ### Claude memory
-- `.claude/docs/project_context.md` — project summary for AI context
-- `.claude/docs/pages/*` — per-page documentation
+- `.claude/docs/project_context.md` — project summary for AI context (includes Glossary)
+- `.claude/docs/feature-inventory.md` — **canonical** feature × tier × page × API map. Read BEFORE adding any user-visible feature.
+- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-manual.md`.
 - `.claude/memory/MEMORY.md` — project decisions & patterns
+
+## Discipline rules
+
+### Update the user manual when shipping features
+The user manual lives at `/help` (`backend/web-admin/src/pages/help/UserManualPage.tsx`). When a feature lands or changes, update the manual section AND `feature-inventory.md` in the same PR. The manual is one file (10 sections) so the diff is visible in PR review — that's intentional.
+
+### Read feature-inventory.md BEFORE adding a new feature
+Most "new" surfaces already exist somewhere. The inventory tells you which page already owns the concern, which tier should gate the feature, and which API the backend expects. Adding a sibling page when an existing page should hold the feature is a Mistake (captured 2026-04-28 from a similar case in the Luqman/business sibling-vs-tab incident).
+
+### Tier and feature flag changes must propagate
+Changing `_DEFAULT_TIERS` in `config_service.py` requires:
+1. Updating section 9 (`Tiers`) of `UserManualPage.tsx`.
+2. Updating the tier matrix in `feature-inventory.md`.
+3. Verifying `useVisibility()` consumers still work (TierRoute gated pages, `canUseTool` for tools).
 
 ## Key Patterns
 

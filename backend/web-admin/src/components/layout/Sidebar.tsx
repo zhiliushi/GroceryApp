@@ -31,6 +31,7 @@ const secondaryNav: NavItem[] = [
   { path: '/reminders', label: 'Reminders', icon: '⏰' },
   { path: '/insights', label: 'Insights', icon: '✨', requiresFlag: 'insights' },
   { path: '/settings', label: 'Settings', icon: '⚙️' },
+  { path: '/help', label: 'User Manual', icon: '📘' },
 ];
 
 const adminNav: NavItem[] = [
