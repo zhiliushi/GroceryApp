@@ -1044,19 +1044,25 @@ export interface WasteSummaryItem {
   total_value: number;
 }
 
+export type SpendingPeriod = 'week' | 'month' | 'last_month' | 'year' | 'all';
+
 export interface WasteSummary {
-  period: 'week' | 'month' | 'year' | 'all';
+  period: SpendingPeriod;
   from_date: string;
   to_date: string;
+  /** ISO currency code amounts have been converted to (user's current preference). */
+  display_currency?: string;
   thrown_count: number;
   thrown_value: number;
   top_wasted: WasteSummaryItem[];
 }
 
 export interface SpendingSummary {
-  period: 'week' | 'month' | 'year' | 'all';
+  period: SpendingPeriod;
   from_date: string;
   to_date: string;
+  /** ISO currency code amounts have been converted to (user's current preference). */
+  display_currency?: string;
   cash_total: number;
   card_total: number;
   /** Price-bearing events without a payment_method tag. Counts toward grand_total. */

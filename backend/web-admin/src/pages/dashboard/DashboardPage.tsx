@@ -4,20 +4,30 @@ import { useMe } from '@/api/queries/useMe';
 import PageHeader from '@/components/shared/PageHeader';
 import StatsCard from '@/components/shared/StatsCard';
 import StatusBadge from '@/components/shared/StatusBadge';
-import HealthBar from '@/components/waste/HealthBar';
 import NudgeBanner from '@/components/nudge/NudgeBanner';
 import ProgressiveNudge from '@/components/nudge/ProgressiveNudge';
 import WasteSummaryCard from '@/components/dashboard/WasteSummaryCard';
-import SpendingCard from '@/components/dashboard/SpendingCard';
+import SpendingScoreboard from '@/components/dashboard/SpendingScoreboard';
+import ExpiringSoonCard from '@/components/dashboard/ExpiringSoonCard';
+import InventoryGlance from '@/components/dashboard/InventoryGlance';
 import InsightsCard from '@/components/dashboard/InsightsCard';
 import FrequentlyBoughtCard from '@/components/dashboard/FrequentlyBoughtCard';
 import { useAuthStore } from '@/stores/authStore';
 import { truncateUid } from '@/utils/format';
 
 /**
- * Dashboard — refactored waste-prevention hero view.
+ * Dashboard — laid out around the two questions the user (Malaysian
+ * housewife archetype, MYR) actually asks when she opens the app:
+ *   1. "Did I overspend?"   → SpendingScoreboard at the top.
+ *   2. "What goes bad next?" → ExpiringSoonCard immediately under it.
  *
- * Add Item / Scan controls live in AppLayout (StickyAddButton + FloatingScanButton).
+ * Everything below is reference (waste cost, frequently-bought, plain
+ * inventory glance). The old "Inventory Health 73" hero was dropped in
+ * favor of InventoryGlance — a one-line plain-language status. Admin
+ * stats stay in their own block, gated by isAdmin, untouched.
+ *
+ * Add Item / Scan controls live in AppLayout (StickyAddButton +
+ * FloatingScanButton).
  */
 export default function DashboardPage() {
   const { data: me } = useMe();
@@ -35,20 +45,28 @@ export default function DashboardPage() {
     <div className="p-6">
       <PageHeader title="Dashboard" subtitle={today} />
 
-      {/* Nudge + insight stack */}
+      {/* Nudge stack — opt-in product hints, kept above the fold so they
+          don't get lost. Ordered by intrusiveness: progressive < banner. */}
       <div className="mb-4 space-y-3">
         <ProgressiveNudge />
         <NudgeBanner />
-        <InsightsCard />
       </div>
 
-      <div className="mb-4">
-        <HealthBar />
+      {/* Hero: the two questions she asks first. */}
+      <div className="grid md:grid-cols-2 gap-4 mb-4">
+        <SpendingScoreboard />
+        <ExpiringSoonCard />
       </div>
 
+      {/* One-line inventory glance — replaces the abstract score-out-of-100. */}
+      <div className="mb-6">
+        <InventoryGlance />
+      </div>
+
+      {/* Reference cards: waste, suggestions, quick re-buy. */}
       <div className="grid md:grid-cols-3 gap-4 mb-6">
         <WasteSummaryCard />
-        <SpendingCard />
+        <InsightsCard />
         <FrequentlyBoughtCard />
       </div>
 

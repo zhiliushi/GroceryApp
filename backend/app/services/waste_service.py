@@ -32,6 +32,39 @@ def _user_purchases_ref(user_id: str):
     return _db().collection("users").document(user_id).collection("purchases")
 
 
+def _period_range(period: str, now: datetime) -> tuple[datetime, datetime, str]:
+    """Return (from_date, to_date, normalized_period) for a period string.
+
+    "last_month" was added for the dashboard scoreboard's month-over-month
+    comparison — it covers the *previous* full calendar month [first..first
+    of current month). Other periods cover up to `now`.
+    """
+    if period == "week":
+        return (now - timedelta(days=7), now, "week")
+    if period == "month":
+        return (datetime(now.year, now.month, 1, tzinfo=timezone.utc), now, "month")
+    if period == "year":
+        return (datetime(now.year, 1, 1, tzinfo=timezone.utc), now, "year")
+    if period == "all":
+        return (datetime(2000, 1, 1, tzinfo=timezone.utc), now, "all")
+    if period == "last_month":
+        first_of_this = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        prev_month_year = now.year - 1 if now.month == 1 else now.year
+        prev_month = 12 if now.month == 1 else now.month - 1
+        first_of_prev = datetime(prev_month_year, prev_month, 1, tzinfo=timezone.utc)
+        return (first_of_prev, first_of_this, "last_month")
+    # Unknown period → fall back to month
+    return (datetime(now.year, now.month, 1, tzinfo=timezone.utc), now, "month")
+
+
+def _user_currency_pref(user_id: str) -> str:
+    """User's preferred display currency, default SGD."""
+    snap = _db().collection("users").document(user_id).get()
+    if not snap.exists:
+        return "SGD"
+    return (snap.to_dict() or {}).get("currency_preference") or "SGD"
+
+
 def _user_cache_ref(user_id: str, key: str):
     return _db().collection("users").document(user_id).collection("cache").document(key)
 
@@ -270,26 +303,24 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
     """Aggregate thrown items for a period.
 
     Args:
-        period: "month" (default) | "week" | "year" | "all"
-    """
-    now = datetime.now(timezone.utc)
+        period: "month" (default) | "week" | "last_month" | "year" | "all"
 
-    if period == "week":
-        from_date = now - timedelta(days=7)
-    elif period == "month":
-        from_date = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-    elif period == "year":
-        from_date = datetime(now.year, 1, 1, tzinfo=timezone.utc)
-    elif period == "all":
-        from_date = datetime(2000, 1, 1, tzinfo=timezone.utc)
-    else:
-        from_date = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-        period = "month"
+    Values are converted to the user's current currency_preference at
+    read time (same approach as get_spending_summary). Real-feedback fix:
+    the dashboard previously showed thrown_value in raw event currency,
+    which mixed SGD + MYR + USD into one number.
+    """
+    from app.services import currency_service
+
+    now = datetime.now(timezone.utc)
+    from_date, to_date, period = _period_range(period, now)
+    user_pref = _user_currency_pref(user_id)
 
     q = (
         _user_purchases_ref(user_id)
         .where(filter=FieldFilter("status", "==", "thrown"))
         .where(filter=FieldFilter("consumed_date", ">=", from_date))
+        .where(filter=FieldFilter("consumed_date", "<", to_date))
     )
 
     by_catalog: dict[str, dict[str, Any]] = {}
@@ -300,7 +331,7 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
         data = doc.to_dict() or {}
         name_norm = data.get("catalog_name_norm", "(unknown)")
         display = data.get("catalog_display", name_norm)
-        price = data.get("price") or 0.0
+        amount = currency_service.display_amount_for_user(data, user_pref) or 0.0
         qty = float(data.get("quantity") or 1)
 
         if name_norm not in by_catalog:
@@ -313,16 +344,19 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
         # `count` here is units thrown, not number of throw events. A partial
         # split that threw 2 of 12 contributes 2 units, not 1 event.
         by_catalog[name_norm]["count"] += qty
-        by_catalog[name_norm]["total_value"] += price
+        by_catalog[name_norm]["total_value"] += amount
         thrown_count += qty
-        thrown_value += price
+        thrown_value += amount
 
+    for row in by_catalog.values():
+        row["total_value"] = round(row["total_value"], 2)
     top_wasted = sorted(by_catalog.values(), key=lambda x: x["count"], reverse=True)[:10]
 
     return {
         "period": period,
         "from_date": from_date,
-        "to_date": now,
+        "to_date": to_date,
+        "display_currency": user_pref,
         "thrown_count": thrown_count,
         "thrown_value": round(thrown_value, 2),
         "top_wasted": top_wasted,
@@ -427,30 +461,24 @@ def get_financial_summary(user_id: str, period: str = "month") -> dict:
 
 @timed("waste.get_spending_summary")
 def get_spending_summary(user_id: str, period: str = "month") -> dict:
-    """Aggregate spending (cash vs card) for a period."""
+    """Aggregate spending (cash vs card) for a period.
+
+    Args:
+        period: "month" (default) | "week" | "last_month" | "year" | "all"
+
+    Read-time currency conversion: amounts are returned in the user's
+    current currency_preference, not the display_amount locked at save.
+    """
+    from app.services import currency_service
+
     now = datetime.now(timezone.utc)
-    if period == "month":
-        from_date = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-    elif period == "week":
-        from_date = now - timedelta(days=7)
-    elif period == "year":
-        from_date = datetime(now.year, 1, 1, tzinfo=timezone.utc)
-    else:
-        from_date = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    from_date, to_date, period = _period_range(period, now)
+    user_pref = _user_currency_pref(user_id)
 
     q = (
         _user_purchases_ref(user_id)
         .where(filter=FieldFilter("date_bought", ">=", from_date))
-    )
-
-    # Read-time currency conversion: honor user's CURRENT preference rather than
-    # the display_amount locked at save. Real-feedback fix — users expect their
-    # spending dashboard to reflect their preferred currency.
-    from app.services import currency_service
-    user_snap = _db().collection("users").document(user_id).get()
-    user_pref = (
-        (user_snap.to_dict() or {}).get("currency_preference") or "SGD"
-        if user_snap.exists else "SGD"
+        .where(filter=FieldFilter("date_bought", "<", to_date))
     )
 
     cash_total = 0.0
@@ -475,7 +503,7 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
     return {
         "period": period,
         "from_date": from_date,
-        "to_date": now,
+        "to_date": to_date,
         "display_currency": user_pref,
         "cash_total": round(cash_total, 2),
         "card_total": round(card_total, 2),

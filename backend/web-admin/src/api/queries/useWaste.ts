@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { qk } from '@/api/queries/keys';
-import type { FinancialSummary, HealthHistoryResponse, HealthScore, SpendingSummary, WasteSummary } from '@/types/api';
+import type { FinancialSummary, HealthHistoryResponse, HealthScore, SpendingPeriod, SpendingSummary, WasteSummary } from '@/types/api';
 
-export function useWasteSummary(period: 'week' | 'month' | 'year' | 'all' = 'month') {
+export function useWasteSummary(period: SpendingPeriod = 'month') {
   return useQuery({
     queryKey: qk.waste.summary(period),
     queryFn: () =>
@@ -15,7 +15,7 @@ export function useWasteSummary(period: 'week' | 'month' | 'year' | 'all' = 'mon
   });
 }
 
-export function useSpendingSummary(period: 'week' | 'month' | 'year' | 'all' = 'month') {
+export function useSpendingSummary(period: SpendingPeriod = 'month') {
   return useQuery({
     queryKey: qk.waste.spending(period),
     queryFn: () =>

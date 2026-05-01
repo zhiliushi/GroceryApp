@@ -22,7 +22,7 @@ router = APIRouter()
 
 @router.get("/summary")
 async def waste_summary(
-    period: str = Query("month", description="week | month | year | all"),
+    period: str = Query("month", description="week | month | last_month | year | all"),
     user: UserInfo = Depends(get_current_user),
 ):
     """Thrown items aggregated over a period. Top-10 wasted catalog entries."""
@@ -31,10 +31,15 @@ async def waste_summary(
 
 @router.get("/spending")
 async def spending_summary(
-    period: str = Query("month", description="week | month | year | all"),
+    period: str = Query("month", description="week | month | last_month | year | all"),
     user: UserInfo = Depends(get_current_user),
 ):
-    """Spending totals (cash/card/untracked) over a period."""
+    """Spending totals (cash/card/untracked) over a period.
+
+    `last_month` returns the previous full calendar month [first..first
+    of current). Powers the dashboard scoreboard's month-over-month
+    comparison.
+    """
     return waste_service.get_spending_summary(user.uid, period=period)
 
 
