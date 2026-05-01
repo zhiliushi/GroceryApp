@@ -67,7 +67,12 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   // pack_count × units_per_pack × price_per_pack and we POST /purchases/multi-pack.
   const [multiPackOn, setMultiPackOn] = useState(false);
   const [packCount, setPackCount] = useState<number>(1);
+  // UNIT_TYPE_TOUCHPOINT — bulk mode is "N packs × M items × Z each-size".
+  // unitsPerPack = M (default 1); sizePerItem = Z (default 1).
+  // Backend `units_per_pack` field receives M × Z (collapsed into one
+  // pack_size). See `.claude/docs/unit-type-method.md` "BUY".
   const [unitsPerPack, setUnitsPerPack] = useState<number>(1);
+  const [sizePerItem, setSizePerItem] = useState<number>(1);
   const [pricePerPack, setPricePerPack] = useState<string>('');
   // UNIT_TYPE_TOUCHPOINT — descriptive container name (carton/box/bag/…).
   // Defaults from suggestedPackLabels(unit_type) when matched, else 'pack'.
@@ -130,6 +135,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setMultiPackOn(false);
       setPackCount(1);
       setUnitsPerPack(1);
+      setSizePerItem(1);
       setPackLabel(
         suggestedPackLabels(defaults?.catalogEntry?.unit_type)[0] ?? 'pack',
       );
@@ -259,22 +265,28 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   function handleSave() {
     if (!canSave) return;
     if (multiPackOn) {
+      // UNIT_TYPE_TOUCHPOINT — collapse the user's "M items × Z each"
+      // into the backend's pack_size = M × Z (in base units). We lose
+      // the M / Z distinction in storage, but the math (total, partial
+      // use, partial throw) is unchanged. See unit-type-method.md.
+      const collapsedUnitsPerPack = Math.max(
+        1,
+        Math.round(unitsPerPack * sizePerItem * 1000) / 1000,
+      );
       multiPackMutation.mutate(
         {
           name: name.trim(),
           barcode: barcode.trim() || null,
           pack_count: packCount,
-          units_per_pack: unitsPerPack,
+          units_per_pack: collapsedUnitsPerPack,
           price_per_pack: pricePerPack ? parseFloat(pricePerPack) : null,
           currency: currency || null,
           expiry_raw: expiryRaw.trim() || null,
           location,
           store_id: storeId || null,
-          // UNIT_TYPE_TOUCHPOINT — pass canonical fields per
-          // `.claude/docs/unit-type-method.md`.
           base_unit_label: unit,
           base_unit: unit,
-          pack_label: packLabel,
+          pack_label: packLabel || 'pack',
         },
         {
           onSuccess: () => onClose(),
@@ -419,14 +431,52 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
 
           <ExpiryInput value={expiryRaw} onChange={setExpiryRaw} />
 
+          {/* UNIT_TYPE_TOUCHPOINT — Single vs Bulk segmented control.
+              Replaces the old "Multi-pack purchase" checkbox + dynamic
+              column-label chaos. See `.claude/docs/unit-type-method.md`
+              "BUY (QuickAddModal)". */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-ga-text-secondary">How was it bought?</span>
+            <div className="inline-flex rounded-md border border-ga-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setMultiPackOn(false)}
+                className={cn(
+                  'px-3 py-1.5 transition-colors',
+                  !multiPackOn
+                    ? 'bg-ga-accent text-white'
+                    : 'bg-ga-bg-card text-ga-text-secondary hover:bg-ga-bg-hover',
+                )}
+                aria-pressed={!multiPackOn}
+              >
+                Single
+              </button>
+              <button
+                type="button"
+                onClick={() => setMultiPackOn(true)}
+                className={cn(
+                  'px-3 py-1.5 transition-colors border-l border-ga-border',
+                  multiPackOn
+                    ? 'bg-ga-accent text-white'
+                    : 'bg-ga-bg-card text-ga-text-secondary hover:bg-ga-bg-hover',
+                )}
+                aria-pressed={multiPackOn}
+              >
+                Bulk
+              </button>
+            </div>
+            <span className="text-[10px] text-ga-text-secondary">
+              {multiPackOn
+                ? 'Multiple packs, each tracked separately.'
+                : '1 thing of given size.'}
+            </span>
+          </div>
+
           {/* Quantity row layout — UNIT_TYPE_TOUCHPOINT.
-              Earlier iteration crammed [−, input, +, unit-select] into one
-              tight row inside grid-cols-2; the input collapsed to ~46px and
-              the number was barely readable. Now: number input is a fixed
-              `w-16` so it's always legible, unit dropdown moves to its own
-              field below the row on mobile (stacks naturally via wrap on
-              cramped widths). The unit defaults track unit_type — see
-              defaultUnitForType() at top of file. */}
+              Single mode: just amount + base_unit. The number input is
+              fixed-width so the value is always legible; unit dropdown
+              filtered by the matched catalog row's unit_type (no more
+              "pack" as a unit — see unit-type-method.md). */}
           {!multiPackOn && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -499,55 +549,68 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
             </div>
           )}
 
-          {/* Multi-pack toggle + inputs (catalog_evolution.md §2.2 #5).
-              When on, single quantity is hidden — each event represents one pack
-              with its own expiry, sharing a multi_pack_parent_id. */}
-          <div className="border-t border-ga-border pt-3">
-            <label className="flex items-center gap-2 cursor-pointer text-xs">
-              <input
-                type="checkbox"
-                checked={multiPackOn}
-                onChange={(e) => setMultiPackOn(e.target.checked)}
-              />
-              <span className="text-ga-text-primary">
-                Multi-pack purchase (e.g. 6 packs of 6 eggs)
-              </span>
-            </label>
-            {multiPackOn && (
-              <div className="mt-3 space-y-3 bg-ga-bg-hover/30 rounded-md p-3">
-                {/* UNIT_TYPE_TOUCHPOINT — pack_label + base_unit row.
-                    pack_label is a free-text descriptive container name
-                    (carton, box, bag, …); base_unit is the measurement
-                    (filtered by the matched catalog row's unit_type). */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      Pack label
-                    </label>
+          {/* UNIT_TYPE_TOUCHPOINT — Bulk mode panel.
+              Three inputs answer "N packs × M items × Z each-size":
+                # Packs       — how many physical containers
+                Items / pack  — how many inner units in each
+                Size / item   — how big each item is (with base_unit)
+              Plus an OPTIONAL pack label so future "you tend to throw a
+              whole carton" insights have something to anchor on.
+              Static labels — never embed pack_label / base_unit in the
+              column headers (the previous "# LOOSE" / "COUNT/LOOSE"
+              confusion is the reason). See unit-type-method.md. */}
+          {multiPackOn && (
+            <div className="bg-ga-bg-hover/30 rounded-md p-3 space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                    # Packs
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={packCount}
+                    onChange={(e) =>
+                      setPackCount(Math.max(1, parseInt(e.target.value) || 1))
+                    }
+                    className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                    Items / pack
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={unitsPerPack}
+                    onChange={(e) =>
+                      setUnitsPerPack(Math.max(1, parseInt(e.target.value) || 1))
+                    }
+                    className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                    Size / item
+                  </label>
+                  <div className="flex gap-1">
                     <input
-                      type="text"
-                      list="pack-label-suggestions"
-                      value={packLabel}
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={sizePerItem}
                       onChange={(e) =>
-                        setPackLabel(e.target.value.trim().toLowerCase())
+                        setSizePerItem(Math.max(0.1, parseFloat(e.target.value) || 1))
                       }
-                      placeholder="carton / box / bag / …"
-                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                      className="w-full min-w-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
                     />
-                    <datalist id="pack-label-suggestions">
-                      {suggestedPackLabels(matchedUnitType).map((label) => (
-                        <option key={label} value={label} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      Base unit
-                    </label>
                     <select
                       value={unit}
                       onChange={(e) => setUnit(e.target.value)}
-                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                      className="flex-shrink-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                     >
                       {validBaseUnits(matchedUnitType).map((u) => (
                         <option key={u} value={u}>
@@ -557,106 +620,135 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      # {packLabel}{packCount === 1 ? '' : 's'}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={packCount}
-                      onChange={(e) => setPackCount(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      {unit}/{packLabel}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={unitsPerPack}
-                      onChange={(e) => setUnitsPerPack(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      Price/{packLabel}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={pricePerPack}
-                      onChange={(e) => setPricePerPack(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-ga-bg-card border border-ga-border rounded p-2">
-                    <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">Total</div>
-                    <div className="text-ga-text-primary tabular-nums font-medium">
-                      {multiPackTotal != null
-                        ? `${currency} ${multiPackTotal.toFixed(2)}`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div className="bg-ga-bg-card border border-ga-border rounded p-2">
-                    <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">Per unit</div>
-                    <div className="text-ga-text-primary tabular-nums font-medium">
-                      {multiPackUnitPrice != null
-                        ? `${currency} ${multiPackUnitPrice.toFixed(2)}`
-                        : '—'}
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-ga-text-secondary mb-1">Currency</label>
-                    <select
-                      value={currency}
-                      onChange={(e) => setCurrency(e.target.value)}
-                      className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-                    >
-                      {(CURRENCIES.includes(currency)
-                        ? CURRENCIES
-                        : [currency, ...CURRENCIES]
-                      ).map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-ga-text-secondary mb-1">Location</label>
-                    <select
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-                    >
-                      {locations.map((l) => (
-                        <option key={l.key} value={l.key}>
-                          {l.icon} {l.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <p className="text-[10px] text-ga-text-secondary">
-                  Saving creates {packCount} separate event{packCount === 1 ? '' : 's'} sharing one
-                  parent ID — each pack tracked with its own expiry.
+              </div>
+
+              {/* Live total + per-item caption. Anchors the user back to
+                  the canonical "N × M × Z" they just entered. */}
+              <p className="text-[11px] text-ga-text-secondary tabular-nums">
+                {packCount} × {unitsPerPack} × {sizePerItem} {unit} ={' '}
+                <strong className="text-ga-text-primary">
+                  {(packCount * unitsPerPack * sizePerItem).toFixed(
+                    sizePerItem !== Math.floor(sizePerItem) ? 1 : 0,
+                  )}{' '}
+                  {unit}
+                </strong>{' '}
+                total
+              </p>
+
+              {/* Optional descriptive pack label. Kept SEPARATE from the
+                  column headers so renaming a pack ("carton" → "case")
+                  doesn't change the field labels. */}
+              <div>
+                <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                  Pack label (optional)
+                </label>
+                <input
+                  type="text"
+                  list="pack-label-suggestions"
+                  value={packLabel}
+                  onChange={(e) =>
+                    setPackLabel(e.target.value.trim().toLowerCase())
+                  }
+                  placeholder="carton / box / bag / bottle / case …"
+                  className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                />
+                <datalist id="pack-label-suggestions">
+                  {suggestedPackLabels(matchedUnitType).map((label) => (
+                    <option key={label} value={label} />
+                  ))}
+                </datalist>
+                <p className="mt-1 text-[10px] text-ga-text-secondary">
+                  Optional, but adds accuracy to waste / recommendation
+                  insights (e.g. "you tend to throw 1 unfinished bottle
+                  per case").
                 </p>
               </div>
-            )}
-          </div>
+
+              <div>
+                <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                  Price / pack
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricePerPack}
+                  onChange={(e) => setPricePerPack(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                />
+              </div>
+
+              {/* Live cost preview — anchors per-pack and per-unit cost
+                  next to the inputs for shopping-aisle math. */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-ga-bg-card border border-ga-border rounded p-2">
+                  <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">
+                    Total
+                  </div>
+                  <div className="text-ga-text-primary tabular-nums font-medium">
+                    {multiPackTotal != null
+                      ? `${currency} ${multiPackTotal.toFixed(2)}`
+                      : '—'}
+                  </div>
+                </div>
+                <div className="bg-ga-bg-card border border-ga-border rounded p-2">
+                  <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">
+                    Per item
+                  </div>
+                  <div className="text-ga-text-primary tabular-nums font-medium">
+                    {multiPackUnitPrice != null
+                      ? `${currency} ${multiPackUnitPrice.toFixed(2)}`
+                      : '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-ga-text-secondary mb-1">
+                    Currency
+                  </label>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                  >
+                    {(CURRENCIES.includes(currency)
+                      ? CURRENCIES
+                      : [currency, ...CURRENCIES]
+                    ).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ga-text-secondary mb-1">
+                    Location
+                  </label>
+                  <select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                  >
+                    {locations.map((l) => (
+                      <option key={l.key} value={l.key}>
+                        {l.icon} {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-ga-text-secondary">
+                Saving creates {packCount} separate event
+                {packCount === 1 ? '' : 's'} sharing one parent ID — each
+                pack tracked with its own expiry.
+              </p>
+            </div>
+          )}
 
           <button
             onClick={() => setShowMore(!showMore)}

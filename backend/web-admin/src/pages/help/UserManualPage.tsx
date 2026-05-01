@@ -301,12 +301,56 @@ function AddingItems() {
         is one tap.
       </p>
 
-      <H3>Multi-pack purchases</H3>
+      <H3>Single vs Bulk</H3>
       <p>
-        Bought 4 packs of eggs, each with 6 eggs? Use the multi-pack option
-        when adding. The app stores it as 4 events of "1 pack × 6 eggs/pack"
-        so you can later "Use 3 eggs" without doing pack-fraction math
-        yourself.
+        The Add Item modal has a <strong>Single / Bulk</strong> toggle near
+        the quantity area. Pick whichever matches how you bought the item.
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>Single</strong> — one thing of a given size. Just enter
+          quantity + unit. Examples:
+          <ul className="list-disc pl-5">
+            <li>"6 eggs" → 6 count</li>
+            <li>"500 g of flour" → 500 g</li>
+            <li>"1 L of milk" → 1 L</li>
+          </ul>
+        </li>
+        <li>
+          <strong>Bulk</strong> — multiple identical packs. Three inputs
+          answer "<em># packs × items per pack × size each</em>". Each pack
+          gets tracked as its own event with its own expiry, so 3 cartons
+          can spoil at different times and the app catches each one.
+          Examples:
+          <ul className="list-disc pl-5">
+            <li>3 cartons of 1 L milk: <code>3 × 1 × 1 L</code></li>
+            <li>2 boxes of 12 eggs: <code>2 × 12 × 1 count</code></li>
+            <li>3 cases of 4 bottles × 500 ml each: <code>3 × 4 × 500 ml</code></li>
+          </ul>
+        </li>
+      </ul>
+
+      <H3>Pack label (optional, but helpful)</H3>
+      <p>
+        In Bulk mode there's an optional <strong>pack label</strong> field
+        — type "carton", "box", "bottle", "case", "bag", whatever it
+        actually is. Suggestions appear as you type.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        It's optional, but it makes waste and spending recommendations more
+        accurate. Without it, the system can only say "you wasted 500 ml
+        of milk last week"; with it, the system can spot "you tend to
+        throw 1 unfinished carton per week — try a smaller size next time".
+      </p>
+
+      <H3>What gets stored</H3>
+      <p className="text-xs text-ga-text-secondary">
+        Behind the scenes the app stores three numbers per purchase:
+        <code> pack_count</code>, <code> pack_size</code> (= items per pack
+        × size each, in base units), and <code> base_unit</code> (count /
+        ml / L / g / kg). The Use modal works directly in base units — so
+        "use 250 ml" out of a 1 L carton works without any pack-fraction
+        math on your end.
       </p>
     </section>
   );

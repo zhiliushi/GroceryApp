@@ -125,32 +125,73 @@ abstraction is preserved via `pack_label`.
 
 ### BUY (QuickAddModal)
 
-User-facing fields, in order of relevance. Smart defaults driven by
-matched catalog row's unit_type:
+The modal exposes a **Single / Bulk** segmented toggle near the
+quantity area. The user's choice determines the input shape — and how
+the canonical fields get populated.
+
+**Single mode** (1 thing of size X):
 
 ```
 Name:        [Milk]                    ← drives unit_type via match
 Expiry:      [tomorrow]
 
-Bought:      [1] [carton ▾]    of    [1000] [ml ▾]
-              ▲      ▲                    ▲     ▲
-        pack_count  pack_label       pack_size  base_unit
+[Single] [Bulk]                        ← segmented control, default Single
 
-[ ] Each pack has its own expiry        ← only when pack_count > 1
-                                           creates separate events
-
+Quantity:    [1]  [L ▾]                ← qty + filtered base_unit
 Location:    [Fridge]
 ```
 
-- `pack_label` dropdown shows recently-used + a curated suggestion list
-  by unit_type (volume → carton/bottle/jug; weight → box/bag/jar;
-  count → loose/carton/pack/tray).
-- `base_unit` is filtered by unit_type. When the catalog row's
-  unit_type is known, the dropdown is locked to the relevant subset
-  (volume → ml/L; weight → g/kg; count → count only).
-- `pack_size` defaults from the user's recent purchases of this item;
-  on first purchase, falls back to `unit_type_service.default_pack_size(pack_label)`.
-- "Each pack has its own expiry" toggle hidden when `pack_count <= 1`.
+Storage:
+```
+pack_count = qty           pack_label = "loose"
+pack_size  = 1             base_unit  = unit
+total_base_units = qty
+```
+
+**Bulk mode** (N packs × M items × Z each):
+
+```
+[Single] [Bulk]
+
+[# Packs]    [Items / pack]    [Size / item]   [unit ▾]
+   3              4                500            ml
+                                           = 6000 ml total
+
+Pack label (optional): [case]   ← carton / box / bag / bottle / case …
+                                  Free-text + suggestions per unit_type.
+                                  Optional, but enables better future
+                                  insights ("threw 1 unfinished case per
+                                  week" vs just "wasted 500ml").
+
+Price / pack: [____]
+Currency: [MYR]
+Location:    [Fridge]
+```
+
+Storage (collapses M × Z into pack_size for simplicity — math
+preserved, M / Z separation lost in storage but visible in the input):
+```
+pack_count   = N           pack_label = user-input or "pack"
+pack_size    = M × Z       base_unit  = unit
+total_base_units = N × M × Z
+```
+
+Each pack becomes its own purchase event sharing a
+`multi_pack_parent_id`, so each pack can spoil independently.
+
+**Static labels rule**: column headers (`# Packs`, `Items / pack`,
+`Size / item`, `Price / pack`) are STATIC strings, not derived from
+`pack_label` / `base_unit`. Past iterations rendered "# LOOSE" /
+"COUNT/LOOSE" by composing the field values into headers — confused
+users because pack_label is technical jargon to them.
+
+**Filtering rules**:
+- `base_unit` dropdown is filtered by the matched catalog row's
+  `unit_type` (volume → ml/L; weight → g/kg; count → count). On no-match
+  it shows all canonical units.
+- `pack_label` datalist suggests common labels per `unit_type`
+  (volume → carton/bottle/jug; weight → box/bag/jar; count →
+  loose/carton/pack/tray). User can type anything.
 
 ### USE (MarkUsedModal)
 
