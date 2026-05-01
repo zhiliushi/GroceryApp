@@ -248,6 +248,21 @@ async def on_startup():
     from app.core import feature_flags
     feature_flags.seed_defaults()
 
+    # UNIT_TYPE_TOUCHPOINT — idempotent backfill of pack_label/base_unit
+    # on legacy events + coerce unit_type="container" → "count" on
+    # catalog rows. Bounded per startup (max_docs=2000) so a cold start
+    # against a large dataset doesn't stall. Re-runs pick up where the
+    # last one left off via the per-doc marker. See
+    # `.claude/docs/unit-type-method.md`.
+    try:
+        from scripts import backfill_pack_label_base_unit
+        summary = backfill_pack_label_base_unit.run(execute=True, max_docs=2000)
+        logger.info("unit-type backfill: %s", summary)
+    except Exception:
+        # Never fail startup on a backfill error — service is more
+        # important than data hygiene. The next startup retries.
+        logger.exception("unit-type backfill failed (non-fatal)")
+
     scheduler.start()
     logger.info("Background scheduler started")
 

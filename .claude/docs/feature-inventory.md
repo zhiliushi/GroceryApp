@@ -161,9 +161,15 @@ registered list.
 
 ## unit_type touchpoints
 
-`unit_type` lives on the catalog row (`count` / `volume` / `weight` /
-`container`). It controls how purchase events render and how the Use
-modal's slider step adapts.
+> **Canonical reference**: `.claude/docs/unit-type-method.md` is the
+> source of truth for the unit_type / pack_label / base_unit method.
+> Read it before editing this section.
+
+`unit_type` lives on the catalog row. Canonical values: `count` /
+`volume` / `weight`. Legacy `container` is read-compat only — backend
+coerces to `count` on next write (`unit_type_service.coerce_legacy_unit_type`).
+The container-ness of a purchase is preserved per event via the new
+`pack_label` field.
 
 When you add a new unit_type or change behaviour for an existing one,
 you MUST update ALL of the following — comments tagged

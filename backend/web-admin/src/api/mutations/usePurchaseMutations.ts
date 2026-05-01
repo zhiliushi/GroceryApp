@@ -71,7 +71,12 @@ export interface MultiPackCreateRequest {
   expiry_raw?: string | null;
   expiry_date?: string | null;
   location?: string | null;
+  // UNIT_TYPE_TOUCHPOINT — canonical pack_label + base_unit per
+  // `.claude/docs/unit-type-method.md`. base_unit_label is the legacy
+  // alias kept for read-compat; new clients send the explicit fields.
   base_unit_label?: string | null;
+  pack_label?: string | null;
+  base_unit?: string | null;
   store_id?: string | null;
 }
 

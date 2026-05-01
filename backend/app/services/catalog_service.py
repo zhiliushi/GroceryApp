@@ -342,11 +342,13 @@ def upsert_catalog_entry(
         if not _is_paid_user(user_id):
             idle_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
 
-    # Unit-type classification (count / volume / weight / container).
-    # Stored on the catalog row so every event inherits — the right input
-    # shape for the Use modal, the right label noun, etc.
+    # UNIT_TYPE_TOUCHPOINT — classify on first save. Canonical types are
+    # count / volume / weight (see `.claude/docs/unit-type-method.md`).
+    # Legacy "container" gets coerced to "count" by the service helper.
     from app.services import unit_type_service
-    inferred_unit_type = unit_type_service.infer_unit_type(name=display_name)
+    inferred_unit_type = unit_type_service.coerce_legacy_unit_type(
+        unit_type_service.infer_unit_type(name=display_name)
+    )
 
     new_data = {
         "user_id": user_id,
@@ -421,10 +423,10 @@ def update_catalog_entry(
                "image_url", "country_code", "needs_review", "unit_type"}
     clean_updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
 
-    # Coerce unit_type to a valid enum value on write
+    # UNIT_TYPE_TOUCHPOINT — coerce on write. Legacy "container" → "count".
     if "unit_type" in clean_updates:
         from app.services import unit_type_service
-        clean_updates["unit_type"] = unit_type_service.normalize_unit_type(
+        clean_updates["unit_type"] = unit_type_service.coerce_legacy_unit_type(
             clean_updates["unit_type"],
         )
 

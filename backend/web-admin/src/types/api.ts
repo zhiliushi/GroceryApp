@@ -822,10 +822,10 @@ export interface CatalogEntry {
   active_purchases: number;
   last_purchased_at: string | null;
   needs_review: boolean;
-  /** Phase H: classifies the item so the Use modal picks the right input shape.
-   *  count = integer spinner (eggs, bottles); volume = ml/L slider; weight =
-   *  g/kg slider; container = whole-pack toggle. Inferred from name + base
-   *  unit on first save; user can override on the catalog entry page. */
+  /** UNIT_TYPE_TOUCHPOINT — classifies the item so the Use modal picks
+   *  the right input shape. Canonical values: count / volume / weight.
+   *  Legacy 'container' is read-compat only; the backend coerces to
+   *  'count' on next write. See `.claude/docs/unit-type-method.md`. */
   unit_type?: 'count' | 'volume' | 'weight' | 'container' | null;
   created_at?: string;
   updated_at?: string;
@@ -878,6 +878,11 @@ export interface PurchaseEvent {
   fx_rate_date?: string | null;
   pack_size?: number;
   base_unit_label?: string;
+  // UNIT_TYPE_TOUCHPOINT — canonical fields per
+  // .claude/docs/unit-type-method.md. Backend writes both; reads should
+  // prefer these over the legacy `unit` / `base_unit_label` mash.
+  pack_label?: string;        // descriptive container name (carton/box/loose/…)
+  base_unit?: string;         // measurement unit (count/ml/L/g/kg)
   store_id?: string;
   multi_pack_parent_id?: string | null;
   contributes_to_logical_count?: boolean;
@@ -910,8 +915,12 @@ export interface PurchaseCreateRequest {
   name?: string;                    // one of name OR catalog_name_norm
   catalog_name_norm?: string;
   barcode?: string | null;
-  quantity?: number;
-  unit?: string;
+  quantity?: number;                // = pack_count (legacy alias)
+  unit?: string;                    // legacy mixed field (use pack_label + base_unit instead)
+  // UNIT_TYPE_TOUCHPOINT — canonical fields. See unit-type-method.md.
+  pack_label?: string;              // carton / box / loose / pack / …
+  pack_size?: number;               // base units per pack
+  base_unit?: BaseUnit;             // measurement unit
   expiry_raw?: string;              // "tomorrow", "next week", ISO, "no expiry"
   expiry_date?: string;             // ISO overrides expiry_raw
   price?: number;
@@ -922,6 +931,17 @@ export interface PurchaseCreateRequest {
   /** Phase D: store_id to charge this purchase against. Defaults server-side to "unknown". */
   store_id?: string | null;
 }
+
+/**
+ * UNIT_TYPE_TOUCHPOINT — canonical base-unit values.
+ * Source of truth: backend `unit_type_service.VALID_BASE_UNITS_BY_TYPE`.
+ *
+ * Per-unit_type permitted subsets:
+ *   count  → 'count'
+ *   volume → 'ml' | 'L'
+ *   weight → 'g' | 'kg'
+ */
+export type BaseUnit = 'count' | 'ml' | 'L' | 'g' | 'kg';
 
 export interface PurchaseUpdateRequest {
   quantity?: number;

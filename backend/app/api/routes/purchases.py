@@ -73,6 +73,11 @@ async def create_purchase(
         date_bought=data.date_bought,
         location=data.location,
         store_id=data.store_id,
+        # UNIT_TYPE_TOUCHPOINT — canonical fields (pack_label + base_unit
+        # + pack_size). Backend infers when not provided.
+        pack_label=data.pack_label,
+        pack_size=int(data.pack_size) if data.pack_size else 1,
+        base_unit=data.base_unit,
         source="api",
     )
     background_tasks.add_task(_check_milestones_safe, user.uid)
@@ -133,6 +138,11 @@ async def create_multi_pack(
             location=body.get("location"),
             base_unit_label=body.get("base_unit_label"),
             store_id=body.get("store_id"),
+            # UNIT_TYPE_TOUCHPOINT — canonical fields (carton/box/jug/…
+            # plus the measurement unit). Service falls back to
+            # base_unit_label/inference when omitted.
+            pack_label=body.get("pack_label"),
+            base_unit=body.get("base_unit"),
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))

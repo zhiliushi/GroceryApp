@@ -24,9 +24,19 @@ class PurchaseEvent(BaseDoc):
     barcode: Optional[str] = None
     country_code: Optional[str] = None
 
-    # Quantity
+    # Quantity — UNIT_TYPE_TOUCHPOINT
+    # Canonical model (see `.claude/docs/unit-type-method.md`):
+    #   pack_count    = how many physical containers (=alias of `quantity`)
+    #   pack_label    = container name (carton/box/loose/…); descriptive
+    #   pack_size     = base units per pack
+    #   base_unit     = measurement unit (count/ml/L/g/kg)
+    #   total_base_units (derived) = pack_count × pack_size
+    # Legacy fields kept for read-compat: `quantity` aliases pack_count;
+    # `unit` is the legacy mixed field that the backfill replaces.
     quantity: float = 1.0
-    unit: Optional[str] = None  # "pcs" | "g" | "kg" | "ml" | "L"
+    unit: Optional[str] = None              # legacy mixed field; deprecated for new writes
+    pack_label: Optional[str] = None        # canonical: descriptive container name
+    base_unit: Optional[str] = None         # canonical: measurement unit ("ml", "g", "count", …)
 
     # Expiry
     expiry_date: Optional[datetime] = None
@@ -70,8 +80,15 @@ class PurchaseCreate(BaseModel):
 
     # Metadata
     barcode: Optional[str] = None
-    quantity: float = 1.0
-    unit: Optional[str] = None
+    quantity: float = 1.0                     # = pack_count (legacy alias kept for old clients)
+    unit: Optional[str] = None                # legacy mixed field; new clients send pack_label + base_unit
+    # UNIT_TYPE_TOUCHPOINT — canonical fields (see unit-type-method.md).
+    # When supplied, these win over `unit`. The write path also keeps
+    # `unit` populated for read-compat with old clients.
+    pack_label: Optional[str] = None          # carton / box / loose / pack / …
+    pack_size: Optional[float] = None         # base units per pack (≥ 1)
+    base_unit: Optional[str] = None           # ml / L / g / kg / count
+
     expiry_raw: Optional[str] = None          # "tomorrow", "next week", ISO, or "no expiry"
     expiry_date: Optional[datetime] = None    # explicit ISO date overrides expiry_raw
     price: Optional[float] = None
@@ -88,7 +105,11 @@ class PurchaseUpdate(BaseModel):
     """Partial update for a purchase event."""
 
     quantity: Optional[float] = None
-    unit: Optional[str] = None
+    unit: Optional[str] = None                # legacy
+    # UNIT_TYPE_TOUCHPOINT — canonical edit fields
+    pack_label: Optional[str] = None
+    pack_size: Optional[float] = None
+    base_unit: Optional[str] = None
     expiry_raw: Optional[str] = None
     expiry_date: Optional[datetime] = None
     price: Optional[float] = None

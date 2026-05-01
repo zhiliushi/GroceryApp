@@ -1,28 +1,85 @@
-"""Unit-type classification for catalog entries.
+"""Unit-type classification + canonical pack/base-unit helpers.
 
-A catalog item is one of four families:
-  - count     : eggs, apples, yogurt cups — discrete things
-  - volume    : milk, juice, oil — measured in ml
-  - weight    : meat, rice, flour — measured in g
-  - container : bread, bag of chips — opaque "I have one of these"
+UNIT_TYPE_TOUCHPOINT — see `.claude/docs/unit-type-method.md` for the
+canonical model. Two independent axes:
 
-Why this matters: the right input shape for "use this" depends on the family.
-A grocery user who wants "use 250 ml of milk" should NOT be presented with
-"use 0.25 of a 1L carton" — same math, wildly different mental model.
+  USE-AXIS (unit_type, on catalog row):
+    count   — eggs, apples, cartons-as-units, yogurt cups
+    volume  — milk, juice, oil           (base_unit ∈ {ml, L})
+    weight  — sugar, flour, meat         (base_unit ∈ {g, kg})
 
-Stored on the catalog row (catalog_entries.unit_type). Inherited by every
-event of that catalog. Set on:
-  - new catalog row creation (catalog_service.upsert_catalog_entry)
-  - lazy backfill in catalog_overview_service.compute_overview when missing
+  BUY-AXIS (pack_label, on purchase event):
+    free-text. carton, box, pack, bottle, jar, bag, can, sachet,
+    cup, tray, loose, …
+    Doesn't participate in math. Just descriptive.
 
-Re-classification is rare and lives in the catalog page's "Manage entry"
-section.
+`container` is a legacy unit_type kept readable; new writes coerce to
+`count` (see `coerce_legacy_unit_type`). Pack-as-container is captured
+via `pack_label`.
 """
 
 from __future__ import annotations
 
+# Legacy "container" kept in the validator so old records read cleanly.
+# New code paths coerce it to "count" via coerce_legacy_unit_type().
 VALID_UNIT_TYPES = ("count", "volume", "weight", "container")
+CANONICAL_UNIT_TYPES = ("count", "volume", "weight")
 DEFAULT_UNIT_TYPE = "count"
+
+# Base-unit options per unit_type. UI dropdowns filter by these.
+VALID_BASE_UNITS_BY_TYPE: dict[str, tuple[str, ...]] = {
+    "count": ("count",),
+    "volume": ("ml", "L"),
+    "weight": ("g", "kg"),
+    # legacy container behaves like count
+    "container": ("count",),
+}
+
+# What the unit dropdown defaults to when unit_type is set but base_unit
+# isn't (e.g., on first save against a freshly-inferred catalog row).
+DEFAULT_BASE_UNIT_BY_TYPE: dict[str, str] = {
+    "count": "count",
+    "volume": "ml",
+    "weight": "g",
+    "container": "count",
+}
+
+# Suggested pack labels per unit_type — drives the QuickAddModal hint
+# dropdown. Free-text input is still allowed (user can type "tray").
+SUGGESTED_PACK_LABELS_BY_TYPE: dict[str, tuple[str, ...]] = {
+    "count": ("loose", "pack", "carton", "tray", "box"),
+    "volume": ("carton", "bottle", "jug", "can", "sachet"),
+    "weight": ("pack", "box", "bag", "jar", "tin", "loose"),
+    "container": ("loose", "pack", "carton"),
+}
+
+# All pack labels recognised by inference (lowercased). Used during
+# backfill to detect a pack_label inside a free-text legacy `unit` value.
+KNOWN_PACK_LABELS = frozenset(
+    {
+        "loose", "pack", "carton", "box", "bag", "bottle", "jar", "can",
+        "sachet", "tin", "tub", "tray", "punnet", "block", "loaf",
+        "container", "cup", "jug", "packet",
+    }
+)
+
+# Default pack_size when only the pack_label is known (educated guesses
+# for the QuickAddModal pre-fill — user can override). Returns None for
+# unknown labels (UI keeps current pack_size).
+DEFAULT_PACK_SIZE_BY_LABEL: dict[str, dict[str, float]] = {
+    # pack_label → {unit_type → pack_size}
+    "carton": {"volume": 1000.0, "count": 6.0},
+    "bottle": {"volume": 500.0},
+    "jug": {"volume": 1000.0},
+    "can": {"volume": 330.0, "weight": 400.0},
+    "box": {"weight": 500.0, "count": 12.0},
+    "bag": {"weight": 1000.0},
+    "jar": {"weight": 500.0, "volume": 250.0},
+    "sachet": {"weight": 50.0, "volume": 100.0},
+    "tray": {"count": 10.0},
+    "pack": {"count": 6.0},
+    "loose": {"count": 1.0, "volume": 1.0, "weight": 1.0},
+}
 
 # Base-unit-label lookup tables. The label that lands on events from the
 # inference heuristic in migration_v2_dry_run is normalized to lowercase.
@@ -105,7 +162,7 @@ def default_step(unit_type: str, total_base_units: float) -> float:
     - count: integer steps
     - volume: 10 ml for small containers, 50 ml for medium, 100 for jugs
     - weight: 10 g for small packs, 50 g for medium, 100 for big sacks
-    - container: whole containers only (step = full)
+    - container (legacy): coerced to count behaviour (integer step)
     """
     if unit_type == "volume":
         if total_base_units <= 200:
@@ -119,6 +176,96 @@ def default_step(unit_type: str, total_base_units: float) -> float:
         if total_base_units <= 5000:
             return 50.0
         return 100.0
-    if unit_type == "container":
-        return max(total_base_units, 1.0)
-    return 1.0
+    return 1.0  # count + container
+
+
+def coerce_legacy_unit_type(value: str | None) -> str:
+    """Normalise to a canonical unit_type.
+
+    Legacy `"container"` collapses to `"count"` — they're behaviourally
+    identical (whole-piece consumption). The container's character is
+    preserved via `pack_label` on each event.
+    """
+    v = normalize_unit_type(value)
+    if v == "container":
+        return "count"
+    return v
+
+
+def valid_base_units(unit_type: str) -> tuple[str, ...]:
+    """Allowed base_unit values for a given unit_type."""
+    return VALID_BASE_UNITS_BY_TYPE.get(
+        coerce_legacy_unit_type(unit_type), VALID_BASE_UNITS_BY_TYPE["count"]
+    )
+
+
+def default_base_unit(unit_type: str) -> str:
+    """Default base_unit when only unit_type is known."""
+    return DEFAULT_BASE_UNIT_BY_TYPE.get(
+        coerce_legacy_unit_type(unit_type), "count"
+    )
+
+
+def suggested_pack_labels(unit_type: str) -> tuple[str, ...]:
+    """Pack-label dropdown suggestions for the QuickAddModal."""
+    return SUGGESTED_PACK_LABELS_BY_TYPE.get(
+        coerce_legacy_unit_type(unit_type), SUGGESTED_PACK_LABELS_BY_TYPE["count"]
+    )
+
+
+def default_pack_size(pack_label: str | None, unit_type: str | None) -> float | None:
+    """Educated guess for pack_size when only pack_label + unit_type are known.
+
+    Returns None when no guess is available — caller keeps the current
+    pack_size or falls back to 1.
+    """
+    label = (pack_label or "").strip().lower()
+    if not label:
+        return None
+    canonical = coerce_legacy_unit_type(unit_type)
+    by_type = DEFAULT_PACK_SIZE_BY_LABEL.get(label)
+    if not by_type:
+        return None
+    return by_type.get(canonical)
+
+
+def normalize_base_unit(value: str | None, unit_type: str | None = None) -> str:
+    """Validate / coerce a base_unit string to one of the allowed values
+    for the given unit_type.
+
+    Falls back to the unit_type's default if the input doesn't match.
+    Case-insensitive on input ('ML' → 'ml', 'L' kept as 'L').
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return default_base_unit(unit_type or DEFAULT_UNIT_TYPE)
+    # Canonicalise common spellings
+    lower = raw.lower()
+    canonical = {
+        "ml": "ml", "milliliter": "ml", "millilitre": "ml",
+        "l": "L", "liter": "L", "litre": "L",
+        "g": "g", "gram": "g", "grams": "g",
+        "kg": "kg", "kilogram": "kg", "kilograms": "kg",
+        "count": "count", "ct": "count", "pcs": "count", "piece": "count",
+    }.get(lower, raw)
+    allowed = valid_base_units(unit_type or DEFAULT_UNIT_TYPE)
+    if canonical in allowed:
+        return canonical
+    return default_base_unit(unit_type or DEFAULT_UNIT_TYPE)
+
+
+def infer_pack_label(legacy_unit: str | None, pack_size: float | None) -> str:
+    """Backfill helper — derive a pack_label for legacy events.
+
+    Reads the old free-text `unit` field and pack_size to choose a
+    descriptive pack_label:
+      - if `unit` is a recognised pack name ("pack", "carton", …) → use it
+      - else if pack_size > 1 → "pack" (some kind of multi-pack, otherwise unknown)
+      - else → "loose"
+    """
+    raw = (legacy_unit or "").strip().lower()
+    if raw in KNOWN_PACK_LABELS:
+        return raw
+    if pack_size is not None and pack_size > 1:
+        return "pack"
+    return "loose"

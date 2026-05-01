@@ -598,7 +598,10 @@ def test_unit_type_inferred_from_name(fresh_uid):
     assert eggs["entry"]["unit_type"] == "count"
     assert milk["entry"]["unit_type"] == "volume"
     assert beef["entry"]["unit_type"] == "weight"
-    assert bread["entry"]["unit_type"] == "container"
+    # UNIT_TYPE_TOUCHPOINT — bread previously inferred to "container" but
+    # the canonical model coerces container → count (see unit-type-method.md).
+    # The bread row's container-ness is now captured per-event via pack_label.
+    assert bread["entry"]["unit_type"] == "count"
 
 
 def test_unit_type_user_override_via_update(fresh_uid):

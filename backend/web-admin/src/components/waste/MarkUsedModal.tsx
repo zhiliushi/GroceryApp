@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useChangePurchaseStatus } from '@/api/mutations/usePurchaseMutations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
+import {
+  readBaseUnit,
+  stepForBaseUnit,
+  totalBaseUnits as totalBaseUnitsOf,
+  formatPackBreakdown,
+} from '@/utils/unitType';
 import type { PurchaseEvent } from '@/types/api';
 
 interface MarkUsedModalProps {
@@ -34,10 +40,13 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
   const changeStatus = useChangePurchaseStatus();
   const undoable = useUndoableAction();
 
+  // UNIT_TYPE_TOUCHPOINT — read canonical fields with graceful fallback
+  // through `readBaseUnit`. Step heuristic mirrors backend `default_step`
+  // via `stepForBaseUnit`.
   const packSize = Math.max(1, event?.pack_size ?? 1);
-  const baseUnit = (event?.base_unit_label || event?.unit || 'unit').toLowerCase();
-  const totalBaseUnits = (event?.quantity ?? 0) * packSize;
-  const { step, decimal } = stepForUnit(baseUnit, totalBaseUnits);
+  const baseUnit = readBaseUnit(event);
+  const totalBaseUnits = totalBaseUnitsOf(event);
+  const { step, decimal } = stepForBaseUnit(baseUnit, totalBaseUnits);
   const inputMin = step;
 
   useEffect(() => {
@@ -94,7 +103,9 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
             Available: {formatNum(totalBaseUnits, decimal)} {baseUnit}
             {totalBaseUnits === 1 ? '' : 's'}
             {packSize > 1 && (
-              <span className="ml-1">({event.quantity} pack{event.quantity === 1 ? '' : 's'} × {packSize} {baseUnit}{packSize === 1 ? '' : 's'}/pack)</span>
+              <span className="ml-1">
+                ({formatPackBreakdown(event)})
+              </span>
             )}
           </p>
         </div>
@@ -187,40 +198,9 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
   );
 }
 
-/**
- * UNIT_TYPE_TOUCHPOINT — see .claude/docs/feature-inventory.md.
- *
- * Step heuristic for the slider/spinner: maps `base_unit_label` strings
- * (ml, g, L, kg, count, etc.) to step + decimal. Today the heuristic is
- * keyed off the unit string, not unit_type directly, because the event
- * carries `base_unit_label` but not `unit_type`. The step ranges below
- * mirror `unit_type_service.default_step()` on the backend — keep them
- * aligned if you change either.
- *
- * If you add a new unit_type or change ranges, also update:
- *   - backend/app/services/unit_type_service.py:default_step
- *   - backend/web-admin/src/components/quickadd/QuickAddModal.tsx
- *     (defaultUnitForType — defaults the unit dropdown by unit_type)
- *   - backend/web-admin/src/pages/catalog/CatalogEntryPage.tsx
- *     (UnitTypeEditor — the user-facing override)
- */
-function stepForUnit(baseUnit: string, total: number): { step: number; decimal: boolean } {
-  const u = baseUnit.toLowerCase();
-  if (u === 'ml') {
-    if (total <= 200) return { step: 10, decimal: false };
-    if (total <= 2000) return { step: 50, decimal: false };
-    return { step: 100, decimal: false };
-  }
-  if (u === 'g' || u === 'gram' || u === 'grams') {
-    if (total <= 500) return { step: 10, decimal: false };
-    if (total <= 5000) return { step: 50, decimal: false };
-    return { step: 100, decimal: false };
-  }
-  if (u === 'l' || u === 'liter' || u === 'litre' || u === 'kg') {
-    return { step: 0.1, decimal: true };
-  }
-  return { step: 1, decimal: false };
-}
+// UNIT_TYPE_TOUCHPOINT — step heuristic moved to `utils/unitType.ts`
+// (`stepForBaseUnit`) so it stays canonical with the backend's
+// `unit_type_service.default_step`. Don't reintroduce a local copy here.
 
 function formatNum(n: number, decimal: boolean): string {
   if (decimal) return (Math.round(n * 10) / 10).toFixed(1);

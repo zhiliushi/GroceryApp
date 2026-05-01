@@ -7,6 +7,13 @@ import {
 } from '@/api/mutations/usePurchaseMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { useLocations } from '@/api/queries/useLocations';
+import {
+  validBaseUnits,
+  defaultBaseUnit,
+  suggestedPackLabels,
+  effectiveUnitType,
+  type UnitType,
+} from '@/utils/unitType';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useAuthStore } from '@/stores/authStore';
@@ -31,38 +38,14 @@ interface QuickAddModalProps {
   };
 }
 
-const UNITS = ['count', 'pack', 'g', 'kg', 'ml', 'L'];
 // Common currencies for the dropdown — user can also type a 3-letter code if missing.
 const CURRENCIES = ['SGD', 'MYR', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'IDR', 'THB', 'PHP', 'VND', 'INR', 'AUD'];
 
-/**
- * Default purchase-event unit when the matched catalog row has a
- * `unit_type` set. Lets the dropdown default to a sensible option
- * instead of always 'count' regardless of what's being bought.
- *
- * UNIT_TYPE_TOUCHPOINT — see .claude/docs/feature-inventory.md.
- * If you add a new unit_type or change an existing one, also update:
- *   - backend/app/services/unit_type_service.py (inference + defaults)
- *   - backend/web-admin/src/components/waste/MarkUsedModal.tsx
- *     (the stepForUnit heuristic — keep step ranges aligned)
- *   - backend/web-admin/src/pages/catalog/CatalogEntryPage.tsx
- *     (the UnitTypeEditor select options)
- */
-function defaultUnitForType(
-  unitType: 'count' | 'volume' | 'weight' | 'container' | null | undefined,
-): string {
-  switch (unitType) {
-    case 'volume':
-      return 'ml';
-    case 'weight':
-      return 'g';
-    case 'container':
-      return 'pack';
-    case 'count':
-    default:
-      return 'count';
-  }
-}
+// UNIT_TYPE_TOUCHPOINT — base_unit + pack_label come from the canonical
+// helpers in `utils/unitType.ts` (which mirrors backend
+// `unit_type_service`). Don't reintroduce a local `UNITS` array here —
+// the unit dropdown is filtered by the matched catalog's unit_type.
+// See `.claude/docs/unit-type-method.md` for the data model.
 
 export default function QuickAddModal({ open, onClose, defaults }: QuickAddModalProps) {
   const [name, setName] = useState('');
@@ -86,6 +69,9 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   const [packCount, setPackCount] = useState<number>(1);
   const [unitsPerPack, setUnitsPerPack] = useState<number>(1);
   const [pricePerPack, setPricePerPack] = useState<string>('');
+  // UNIT_TYPE_TOUCHPOINT — descriptive container name (carton/box/bag/…).
+  // Defaults from suggestedPackLabels(unit_type) when matched, else 'pack'.
+  const [packLabel, setPackLabel] = useState<string>('pack');
   // Phase D — store_id of where this purchase came from
   const [storeId, setStoreId] = useState<string | null>(null);
   const [storeLabel, setStoreLabel] = useState<string>('');
@@ -128,9 +114,10 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       );
       setExpiryRaw('');
       setQuantity(1);
-      // Default unit follows the catalog row's unit_type when available
-      // — buying milk shouldn't show 'count' by default. UNIT_TYPE_TOUCHPOINT.
-      setUnit(defaultUnitForType(defaults?.catalogEntry?.unit_type));
+      // UNIT_TYPE_TOUCHPOINT — default base_unit follows the catalog
+      // row's unit_type when available. Buying milk should default to
+      // 'ml', not 'count'.
+      setUnit(defaultBaseUnit(defaults?.catalogEntry?.unit_type));
       setPrice('');
       setCurrency(userCurrency);
       setPaymentMethod('');
@@ -143,6 +130,9 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setMultiPackOn(false);
       setPackCount(1);
       setUnitsPerPack(1);
+      setPackLabel(
+        suggestedPackLabels(defaults?.catalogEntry?.unit_type)[0] ?? 'pack',
+      );
       setPricePerPack('');
       setStoreId(null);
       setStoreLabel('');
@@ -251,15 +241,20 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       if (entry.default_location && location === fallbackLocation) {
         setLocation(entry.default_location);
       }
-      // Default unit follows the matched row's unit_type (volume → ml,
-      // weight → g, container → pack). Only override when the user
-      // hasn't deliberately changed it from the initial 'count'.
-      // UNIT_TYPE_TOUCHPOINT.
+      // UNIT_TYPE_TOUCHPOINT — default base_unit follows the matched
+      // row's unit_type (volume → ml, weight → g, count → count). Only
+      // override when the user hasn't deliberately changed it from the
+      // initial 'count'.
       if (entry.unit_type && unit === 'count') {
-        setUnit(defaultUnitForType(entry.unit_type));
+        setUnit(defaultBaseUnit(entry.unit_type));
       }
     }
   }
+
+  // UNIT_TYPE_TOUCHPOINT — read the catalog row's effective unit_type
+  // (count by default; legacy 'container' coerced via the canonical
+  // helper). Drives base_unit dropdown filtering + pack_label suggestions.
+  const matchedUnitType: UnitType = effectiveUnitType(matchedEntry);
 
   function handleSave() {
     if (!canSave) return;
@@ -275,6 +270,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           expiry_raw: expiryRaw.trim() || null,
           location,
           store_id: storeId || null,
+          // UNIT_TYPE_TOUCHPOINT — pass canonical fields per
+          // `.claude/docs/unit-type-method.md`.
+          base_unit_label: unit,
+          base_unit: unit,
+          pack_label: packLabel,
         },
         {
           onSuccess: () => onClose(),
@@ -291,7 +291,12 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
         name: name.trim(),
         barcode: barcode.trim() || null,
         quantity,
+        // UNIT_TYPE_TOUCHPOINT — write canonical fields. Single-pack
+        // mode means loose-by-default, pack_size=1.
         unit: unit || undefined,
+        pack_label: 'loose',
+        pack_size: 1,
+        base_unit: unit as 'count' | 'ml' | 'L' | 'g' | 'kg' | undefined,
         expiry_raw: expiryRaw.trim() || undefined,
         location,
         price: price ? parseFloat(price) : undefined,
@@ -465,7 +470,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                     className="flex-1 min-w-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                     aria-label="Unit"
                   >
-                    {UNITS.map((u) => (
+                    {/* UNIT_TYPE_TOUCHPOINT — base_unit options filtered
+                        by the matched catalog row's unit_type. Drop the
+                        old "pack" option (pack is a buy-side label, not
+                        a measurement unit; see unit-type-method.md). */}
+                    {validBaseUnits(matchedUnitType).map((u) => (
                       <option key={u} value={u}>
                         {u}
                       </option>
@@ -506,10 +515,52 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
             </label>
             {multiPackOn && (
               <div className="mt-3 space-y-3 bg-ga-bg-hover/30 rounded-md p-3">
+                {/* UNIT_TYPE_TOUCHPOINT — pack_label + base_unit row.
+                    pack_label is a free-text descriptive container name
+                    (carton, box, bag, …); base_unit is the measurement
+                    (filtered by the matched catalog row's unit_type). */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      Pack label
+                    </label>
+                    <input
+                      type="text"
+                      list="pack-label-suggestions"
+                      value={packLabel}
+                      onChange={(e) =>
+                        setPackLabel(e.target.value.trim().toLowerCase())
+                      }
+                      placeholder="carton / box / bag / …"
+                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    />
+                    <datalist id="pack-label-suggestions">
+                      {suggestedPackLabels(matchedUnitType).map((label) => (
+                        <option key={label} value={label} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      Base unit
+                    </label>
+                    <select
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                      className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                    >
+                      {validBaseUnits(matchedUnitType).map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      # Packs
+                      # {packLabel}{packCount === 1 ? '' : 's'}
                     </label>
                     <input
                       type="number"
@@ -522,7 +573,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   </div>
                   <div>
                     <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      Units / pack
+                      {unit}/{packLabel}
                     </label>
                     <input
                       type="number"
@@ -535,7 +586,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   </div>
                   <div>
                     <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                      Price / pack
+                      Price/{packLabel}
                     </label>
                     <input
                       type="number"

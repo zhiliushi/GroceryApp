@@ -44,8 +44,10 @@ class CatalogUpdate(BaseModel):
     barcode: Optional[str] = None  # use empty string to unlink
     default_location: Optional[str] = None
     default_category: Optional[str] = None
-    # Catalog evolution post-deploy: re-classify item type
-    # (count / volume / weight / container) — drives Use modal input shape.
+    # UNIT_TYPE_TOUCHPOINT — re-classify item type. Canonical values are
+    # count / volume / weight. Legacy "container" still accepted on read,
+    # coerced to "count" by the service layer (see
+    # `unit_type_service.coerce_legacy_unit_type`).
     unit_type: Optional[str] = None
 
 

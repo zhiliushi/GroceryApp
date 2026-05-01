@@ -8,6 +8,7 @@ import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import MarkUsedModal from '@/components/waste/MarkUsedModal';
 import MoveLocationModal from '@/components/waste/MoveLocationModal';
 import ThrowAwayModal from '@/components/waste/ThrowAwayModal';
+import { readBaseUnit } from '@/utils/unitType';
 import { cn } from '@/utils/cn';
 import type { PurchaseEvent } from '@/types/api';
 
@@ -338,7 +339,8 @@ function PackRow({
 }) {
   const packSize = Math.max(1, event.pack_size ?? 1);
   const baseUnits = (event.quantity ?? 0) * packSize;
-  const baseUnit = (event.base_unit_label || event.unit || 'unit').toLowerCase();
+  // UNIT_TYPE_TOUCHPOINT — canonical read with fallback through legacy fields.
+  const baseUnit = readBaseUnit(event);
   const expiryInfo = expiryStatus(event.expiry_date);
 
   return (

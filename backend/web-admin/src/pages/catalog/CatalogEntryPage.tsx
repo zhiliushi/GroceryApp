@@ -21,6 +21,10 @@ import MoveLocationModal from '@/components/waste/MoveLocationModal';
 import MarkUsedModal from '@/components/waste/MarkUsedModal';
 import { usePurchase } from '@/api/queries/usePurchases';
 import { getCatalogEntryActions, type Action } from '@/utils/actionResolver';
+import {
+  effectiveUnitType,
+  UNIT_TYPE_DESCRIPTIONS,
+} from '@/utils/unitType';
 import { cn } from '@/utils/cn';
 import type { CatalogEntry, CatalogOverview } from '@/types/api';
 
@@ -661,46 +665,62 @@ function buildHeroBanner(o: CatalogOverview): HeroBanner {
 }
 
 /**
- * Unit-type editor — surfaces the catalog row's unit_type so the user can
- * re-classify mis-inferred items (e.g. "milk" inferred as count when it's
- * really volume). The Use modal reads this to pick its input shape:
- *   count     → integer spinner ("3 eggs")
- *   volume    → ml/L slider with adaptive step
- *   weight    → g/kg slider with adaptive step
- *   container → whole-pack toggle (mark the carton, not its contents)
+ * UNIT_TYPE_TOUCHPOINT — see `.claude/docs/unit-type-method.md`.
  *
- * Editor is one-line, save-on-change. Lives in "Manage this item" because
- * it's a rare per-item config knob, not a daily action.
+ * Three canonical options:
+ *   count   — whole pieces. Use modal: integer spinner.
+ *   volume  — measured in ml/L. Use modal: ml/L slider.
+ *   weight  — measured in g/kg. Use modal: g/kg slider.
+ *
+ * The legacy "container" value is read-compat (coerced to "count" by
+ * `effectiveUnitType` and by the backend service on next write). Not
+ * shown as a selectable option — it duplicated count behaviour and
+ * confused users. The "container-ness" of a purchase (carton, box,
+ * bag, …) is now stored as `pack_label` on each event.
+ *
+ * Editor is save-on-change. Lives in "Manage this item" because it's
+ * a rare per-item config knob.
  */
 function UnitTypeEditor({ entry }: { entry: CatalogEntry }) {
   const update = useUpdateCatalogEntry();
-  const current: 'count' | 'volume' | 'weight' | 'container' =
-    (entry.unit_type as 'count' | 'volume' | 'weight' | 'container' | null | undefined) ??
-    'count';
+  const current = effectiveUnitType(entry); // count / volume / weight only
+  const desc = UNIT_TYPE_DESCRIPTIONS[current];
+
   return (
-    <div className="mb-3 flex items-center gap-2 text-xs text-ga-text-secondary">
-      <span>Unit type:</span>
-      <select
-        value={current}
-        disabled={update.isPending}
-        onChange={(e) =>
-          update.mutate({
-            nameNorm: entry.name_norm,
-            data: {
-              unit_type: e.target.value as 'count' | 'volume' | 'weight' | 'container',
-            },
-          })
-        }
-        className="px-2 py-1 text-xs bg-ga-bg-card border border-ga-border rounded text-ga-text-primary focus:outline-none focus:border-ga-accent"
-      >
-        <option value="count">Count (eggs, bottles)</option>
-        <option value="volume">Volume (ml, L)</option>
-        <option value="weight">Weight (g, kg)</option>
-        <option value="container">Container (whole pack)</option>
-      </select>
-      <span className="text-[10px] text-ga-text-secondary">
-        Drives the input shape on the "Use" dialog.
-      </span>
+    <div className="mb-3 space-y-1.5">
+      <div className="flex items-center gap-2 text-xs text-ga-text-secondary">
+        <span>Unit type:</span>
+        <select
+          value={current}
+          disabled={update.isPending}
+          onChange={(e) =>
+            update.mutate({
+              nameNorm: entry.name_norm,
+              data: {
+                unit_type: e.target.value as 'count' | 'volume' | 'weight',
+              },
+            })
+          }
+          className="px-2 py-1 text-xs bg-ga-bg-card border border-ga-border rounded text-ga-text-primary focus:outline-none focus:border-ga-accent"
+        >
+          <option value="count">Count (eggs, apples, cartons-as-units)</option>
+          <option value="volume">Volume (milk, juice, oil)</option>
+          <option value="weight">Weight (sugar, flour, meat)</option>
+        </select>
+      </div>
+      {/* Plain-language explanation of what the user just picked, so it's
+          obvious how the choice flows through the rest of the app. */}
+      <p className="text-[11px] text-ga-text-secondary leading-snug pl-1">
+        {desc.description}
+      </p>
+      {entry.unit_type === 'container' && (
+        <p className="text-[10px] text-amber-600 leading-snug pl-1">
+          Note: this row was previously "container", which has been merged
+          into "count". On your next save, it'll be normalised. Carton /
+          box / jar context is now captured as the per-purchase "pack
+          label" instead.
+        </p>
+      )}
     </div>
   );
 }

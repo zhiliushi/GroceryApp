@@ -79,6 +79,12 @@ def create_purchase(
     base_unit_label: Optional[str] = None,
     store_id: Optional[str] = None,
     multi_pack_parent_id: Optional[str] = None,
+    # UNIT_TYPE_TOUCHPOINT — canonical fields per
+    # `.claude/docs/unit-type-method.md`. When provided, written to the
+    # event alongside the legacy fields. Frontends that don't yet send
+    # them get inferred values via the backfill script.
+    pack_label: Optional[str] = None,
+    base_unit: Optional[str] = None,
 ) -> dict:
     """Create a purchase event. Transactionally upserts catalog entry + increments counters.
 
@@ -159,6 +165,21 @@ def create_purchase(
     inferred_label, _ = _mig_helpers._infer_base_unit_label(display_name)
     resolved_unit_label = base_unit_label or inferred_label
 
+    # UNIT_TYPE_TOUCHPOINT — derive canonical pack_label + base_unit.
+    # When the frontend sends them explicitly, pass through. Otherwise
+    # infer from legacy fields (mirrors the backfill script's inference).
+    from app.services import unit_type_service as _ut
+    catalog_unit_type = catalog_entry.get("unit_type") or "count"
+    catalog_unit_type = _ut.coerce_legacy_unit_type(catalog_unit_type)
+    resolved_base_unit = (
+        _ut.normalize_base_unit(base_unit, catalog_unit_type)
+        if base_unit
+        else _ut.normalize_base_unit(resolved_unit_label, catalog_unit_type)
+    )
+    resolved_pack_label = (
+        pack_label.strip().lower() if pack_label else _ut.infer_pack_label(unit, pack_size_int)
+    )
+
     unit_price: Optional[float] = None
     if display_fields["display_amount"] is not None and quantity:
         try:
@@ -193,6 +214,9 @@ def create_purchase(
         # v2 fields (catalog_evolution.md Phase A schema, Phase B write-path)
         "pack_size": pack_size_int,
         "base_unit_label": resolved_unit_label,
+        # UNIT_TYPE_TOUCHPOINT — canonical fields, always populated on new writes
+        "pack_label": resolved_pack_label,
+        "base_unit": resolved_base_unit,
         "store_id": store_id or "unknown",
         "multi_pack_parent_id": multi_pack_parent_id,
         "contributes_to_logical_count": True,  # original event; splits flip to False later
@@ -255,6 +279,11 @@ def create_multi_pack(
     date_bought: Optional[datetime] = None,
     store_id: Optional[str] = None,
     source: str = "manual",
+    # UNIT_TYPE_TOUCHPOINT — canonical pack_label + base_unit (see
+    # `.claude/docs/unit-type-method.md`). When omitted, inferred from
+    # base_unit_label and the catalog's unit_type.
+    pack_label: Optional[str] = None,
+    base_unit: Optional[str] = None,
 ) -> dict:
     """Create N events sharing a `multi_pack_parent_id`.
 
@@ -297,6 +326,11 @@ def create_multi_pack(
             base_unit_label=base_unit_label,
             multi_pack_parent_id=parent_id,
             store_id=store_id,
+            # UNIT_TYPE_TOUCHPOINT — pass canonical fields through. When
+            # caller didn't supply pack_label, default to "pack" because
+            # multi-pack mode is by definition a packed purchase.
+            pack_label=pack_label or "pack",
+            base_unit=base_unit,
         )
         events.append(ev)
 
