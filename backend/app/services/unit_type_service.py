@@ -229,17 +229,30 @@ def default_pack_size(pack_label: str | None, unit_type: str | None) -> float | 
     return by_type.get(canonical)
 
 
-def normalize_base_unit(value: str | None, unit_type: str | None = None) -> str:
-    """Validate / coerce a base_unit string to one of the allowed values
-    for the given unit_type.
+CANONICAL_BASE_UNITS = ("count", "ml", "L", "g", "kg")
 
-    Falls back to the unit_type's default if the input doesn't match.
-    Case-insensitive on input ('ML' → 'ml', 'L' kept as 'L').
+
+def normalize_base_unit(value: str | None, unit_type: str | None = None) -> str:
+    """Validate / canonicalise a base_unit string.
+
+    UNIT_TYPE_TOUCHPOINT — soft-constraint policy. unit_type on the catalog
+    row is a HINT for sensible defaults (slider step heuristic, default
+    dropdown selection), NOT a hard constraint on which base_units are
+    accepted. The user is free to record "1 g of milk powder" against a
+    catalog row whose unit_type was inferred as "volume"; we trust them.
+
+    Behaviour:
+      - Empty / falsy input → default for the unit_type (or "count")
+      - Recognised spelling (e.g. "ML", "litre", "Grams") → canonicalised
+        ("ml", "L", "g")
+      - Unknown string → fallback to default (don't store junk)
+      - Validates against ALL canonical base units, NOT a unit_type-filtered
+        subset (the previous bug — silently rewrote user's "g" to "ml" when
+        unit_type happened to be "volume").
     """
     raw = (value or "").strip()
     if not raw:
         return default_base_unit(unit_type or DEFAULT_UNIT_TYPE)
-    # Canonicalise common spellings
     lower = raw.lower()
     canonical = {
         "ml": "ml", "milliliter": "ml", "millilitre": "ml",
@@ -248,9 +261,9 @@ def normalize_base_unit(value: str | None, unit_type: str | None = None) -> str:
         "kg": "kg", "kilogram": "kg", "kilograms": "kg",
         "count": "count", "ct": "count", "pcs": "count", "piece": "count",
     }.get(lower, raw)
-    allowed = valid_base_units(unit_type or DEFAULT_UNIT_TYPE)
-    if canonical in allowed:
+    if canonical in CANONICAL_BASE_UNITS:
         return canonical
+    # Truly unknown — fall back to a sensible default rather than store junk.
     return default_base_unit(unit_type or DEFAULT_UNIT_TYPE)
 
 

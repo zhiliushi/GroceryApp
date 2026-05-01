@@ -190,13 +190,27 @@ greps the source for the specific patterns this rule prohibits. Wired
 into `npm run build`. See `.claude/docs/project_context.md`
 "UI label discipline" for the full rule + risky-name list.
 
-**Filtering rules**:
-- `base_unit` dropdown is filtered by the matched catalog row's
-  `unit_type` (volume → ml/L; weight → g/kg; count → count). On no-match
-  it shows all canonical units.
+**Filtering policy — soft hint, not constraint**:
+- `unit_type` on the catalog row is a HINT for sensible defaults
+  (slider step heuristic in MarkUsedModal, default selection in the
+  base_unit dropdown), NOT a constraint on which base_units the user
+  can pick. The user is free to record "1 g of milk powder" against
+  a catalog row whose unit_type happens to be "volume". We trust the
+  user.
+- `base_unit` dropdown ALWAYS shows all 5 canonical units
+  (count / ml / L / g / kg). The dropdown's default selection comes
+  from `defaultBaseUnit(matched_unit_type)` (volume → ml; weight →
+  g; count → count) — that's the hint.
 - `pack_label` datalist suggests common labels per `unit_type`
   (volume → carton/bottle/jug; weight → box/bag/jar; count →
   loose/carton/pack/tray). User can type anything.
+
+**Backend write path**: `normalize_base_unit(value, unit_type)`
+canonicalises the unit string (e.g. "ML" → "ml", "Grams" → "g") and
+validates against the 5-unit canonical set, NOT a unit_type-filtered
+subset. This was previously a strict-coerce silent rewrite ("user
+picked g for a volume row → silently overwritten to ml"). Soft-coerce
+now: if user picks `g` for a `unit_type=volume` row, we store `g`.
 
 ### USE (MarkUsedModal)
 

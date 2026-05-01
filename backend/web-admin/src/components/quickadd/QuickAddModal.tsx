@@ -8,7 +8,7 @@ import {
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { useLocations } from '@/api/queries/useLocations';
 import {
-  baseUnitsForInput,
+  ALL_BASE_UNITS,
   defaultBaseUnit,
   suggestedPackLabels,
   effectiveUnitType,
@@ -520,15 +520,12 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                     className="flex-1 min-w-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                     aria-label="Unit"
                   >
-                    {/* UNIT_TYPE_TOUCHPOINT — base_unit options. When the
-                        matched catalog row has a known unit_type, narrow
-                        to its valid subset (volume → ml/L; weight → g/kg;
-                        count → count). When NO match (new item, no name
-                        typed yet, or a row without unit_type), show ALL
-                        canonical units so the user can pick any measurement.
-                        Reads matchedEntry?.unit_type RAW (not the coerced
-                        UnitType) so undefined → all units. */}
-                    {baseUnitsForInput(matchedEntry?.unit_type).map((u) => (
+                    {/* UNIT_TYPE_TOUCHPOINT — always show all 5 canonical
+                        units. unit_type on the catalog row is a soft hint
+                        for sensible DEFAULTS (see defaultBaseUnit calls in
+                        open-reset / handleAutocomplete), NOT a constraint
+                        on what the user can pick. See unit-type-method.md. */}
+                    {ALL_BASE_UNITS.map((u) => (
                       <option key={u} value={u}>
                         {u}
                       </option>
@@ -618,11 +615,10 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                 </div>
               </div>
 
-              {/* Unit of measurement on its own row — the canonical base_unit
-                  for every item in this purchase. UNIT_TYPE_TOUCHPOINT.
-                  When no catalog row is matched yet, all 5 canonical units
-                  show (count / ml / L / g / kg) so the user can pick. When
-                  matched, the list narrows to the row's unit_type subset. */}
+              {/* Unit of measurement — UNIT_TYPE_TOUCHPOINT.
+                  Always shows all 5 canonical units. unit_type on the
+                  catalog row is a soft hint for sensible defaults, not
+                  a constraint. User picks freely. */}
               <div>
                 <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
                   Unit of measurement
@@ -632,7 +628,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   onChange={(e) => setUnit(e.target.value)}
                   className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                 >
-                  {baseUnitsForInput(matchedEntry?.unit_type).map((u) => (
+                  {ALL_BASE_UNITS.map((u) => (
                     <option key={u} value={u}>
                       {u}
                     </option>
