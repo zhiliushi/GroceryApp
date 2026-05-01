@@ -116,6 +116,9 @@ Changing `_DEFAULT_TIERS` in `config_service.py` requires:
 2. Updating the tier matrix in `feature-inventory.md`.
 3. Verifying `useVisibility()` consumers still work (TierRoute gated pages, `canUseTool` for tools).
 
+### UI labels must be static (data-model leak prevention)
+Column headers, section titles, and form field labels MUST be static strings — never composed from runtime data-model values like `pack_label`, `unit_type`, `name_norm`. The classic leak: `<label># {packLabel}</label>` rendered as "# LOOSE" when `pack_label="loose"`. Discipline + risky-name list in `.claude/docs/project_context.md` "UI label discipline". Quick post-build check: `cd backend/web-admin && npm run check:label-leaks` (also runs as part of `npm run build`).
+
 ## Key Patterns
 
 - Shell: Git Bash on Windows (use `export` not `set`)

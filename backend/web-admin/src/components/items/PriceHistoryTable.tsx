@@ -82,7 +82,7 @@ export default function PriceHistoryTable({ priceHistory, baseUnitLabel = 'unit'
                     <tr>
                       <th className="text-left py-1">Date</th>
                       <th className="text-right py-1">Paid</th>
-                      <th className="text-right py-1">Per {baseUnitLabel}</th>
+                      <th className="text-right py-1">Per {baseUnitLabel}</th>{/* LABEL_OK: baseUnitLabel is already display-clean (ml/g/L/kg/count). */}
                       <th className="text-right py-1">Qty</th>
                     </tr>
                   </thead>

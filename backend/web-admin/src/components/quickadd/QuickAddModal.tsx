@@ -480,7 +480,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           {!multiPackOn && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-ga-text-secondary mb-1">
+                <label className="block text-xs text-ga-text-secondary mb-1">{/* LABEL_OK: unit_type values (count/volume/weight) are themselves display-clean. */}
                   Quantity
                   {matchedEntry?.unit_type && (
                     <span className="ml-1 text-[10px] text-ga-text-secondary font-normal">

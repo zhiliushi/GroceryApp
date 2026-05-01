@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run check:label-leaks",
+    "build:no-checks": "tsc -b && vite build",
     "lint": "eslint .",
+    "check:label-leaks": "node scripts/check-label-leaks.cjs",
     "preview": "vite preview"
   },
   "dependencies": {

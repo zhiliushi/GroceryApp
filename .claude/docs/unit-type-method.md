@@ -185,6 +185,11 @@ Each pack becomes its own purchase event sharing a
 "COUNT/LOOSE" by composing the field values into headers — confused
 users because pack_label is technical jargon to them.
 
+**Quick check**: `cd backend/web-admin && npm run check:label-leaks`
+greps the source for the specific patterns this rule prohibits. Wired
+into `npm run build`. See `.claude/docs/project_context.md`
+"UI label discipline" for the full rule + risky-name list.
+
 **Filtering rules**:
 - `base_unit` dropdown is filtered by the matched catalog row's
   `unit_type` (volume → ml/L; weight → g/kg; count → count). On no-match

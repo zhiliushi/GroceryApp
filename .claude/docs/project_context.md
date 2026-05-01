@@ -119,6 +119,51 @@ If a page legitimately needs the top strip (rare — a hero image, a
 full-bleed map), it can fight the wrapper with `md:!pt-0` and
 position its own pill clearance.
 
+## UI label discipline (data-model leak prevention)
+
+**Rule**: User-facing UI labels (column headers, section titles, field
+labels, modal headers) MUST be static strings. Never compose them at
+render-time from raw data-model values (enum keys, snake_case property
+names, location keys, technical IDs).
+
+**The classic leak** (caught May 2026 in QuickAddModal):
+
+```tsx
+// ❌ BAD — composes data-model values into column headers
+<label># {packLabel}{packCount === 1 ? '' : 's'}</label>
+<label>{unit}/{packLabel}</label>
+<label>Price/{packLabel}</label>
+```
+
+When `pack_label="loose"`, these render as "# LOOSE", "COUNT/LOOSE",
+"Price/loose" — confusing the user with internal jargon.
+
+```tsx
+// ✓ GOOD — static labels, descriptive and stable
+<label># Packs</label>
+<label>Items / pack</label>
+<label>Size / item</label>
+```
+
+**Variables that should never be rendered directly as UI text** (the
+risky-name list):
+- `pack_label`, `packLabel`
+- `unit_type`, `unitType`
+- `name_norm`, `nameNorm`
+- `base_unit_label`, `baseUnitLabel`
+
+These hold technical enum/key values. If they happen to be display-clean
+in a specific case (e.g. `base_unit_label="ml"` is fine to render), tag
+the line with `// LABEL_OK: <reason>` to acknowledge.
+
+**Quick check**: `cd backend/web-admin && npm run check:label-leaks`.
+Greps `src/**/*.{ts,tsx}` for known leak patterns. Run automatically as
+part of `npm run build`. Use `npm run build:no-checks` to skip when you
+need to ship a hotfix and have a known acceptable leak.
+
+**Related canonical doc**: `.claude/docs/unit-type-method.md`
+"static labels rule".
+
 ## Glossary
 
 User-facing and engineering terms whose meaning isn't obvious from
