@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useChangePurchaseStatus } from '@/api/mutations/usePurchaseMutations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import {
   readBaseUnit,
   stepForBaseUnit,
@@ -39,6 +40,7 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
   const [portion, setPortion] = useState<number>(1);
   const changeStatus = useChangePurchaseStatus();
   const undoable = useUndoableAction();
+  useBodyScrollLock(open);
 
   // UNIT_TYPE_TOUCHPOINT — read canonical fields with graceful fallback
   // through `readBaseUnit`. Step heuristic mirrors backend `default_step`
@@ -89,13 +91,16 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4" onClick={onClose}>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+      {/* Card: capped height + flex-col so the body scrolls instead
+          of falling through to page-behind. See useBodyScrollLock for
+          the page-scroll lock. */}
       <div
-        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full"
+        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full max-h-[calc(100vh-2rem)] sm:max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-ga-border">
+        <div className="px-5 py-4 border-b border-ga-border flex-shrink-0">
           <h3 className="text-base font-semibold text-ga-text-primary">
             Mark "{event.catalog_display}" as used
           </h3>
@@ -110,10 +115,11 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
           </p>
         </div>
 
-        {/* Single-unit case: slider + spinner are meaningless (min == max ==
-            1). Show a confirmation-only body so the user isn't confused by
-            disabled controls. The Mark used button still fires the same
-            handleConfirm path. */}
+        {/* Scrollable middle. Single-unit case: slider + spinner are
+            meaningless (min == max == 1). Show a confirmation-only body
+            so the user isn't confused by disabled controls. The Mark
+            used button still fires the same handleConfirm path. */}
+        <div className="flex-1 overflow-y-auto">
         {totalBaseUnits <= step + 1e-9 ? (
           <div className="px-5 py-5">
             <p className="text-sm text-ga-text-primary">
@@ -177,8 +183,9 @@ export default function MarkUsedModal({ open, event, onClose }: MarkUsedModalPro
             </div>
           </div>
         )}
+        </div>
 
-        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2">
+        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-3 py-1.5 text-sm border border-ga-border rounded-md text-ga-text-primary hover:bg-ga-bg-hover"

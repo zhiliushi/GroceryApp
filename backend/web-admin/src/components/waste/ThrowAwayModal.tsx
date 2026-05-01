@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useChangePurchaseStatus } from '@/api/mutations/usePurchaseMutations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { cn } from '@/utils/cn';
 import type { ConsumeReason, PurchaseEvent } from '@/types/api';
 
@@ -37,6 +38,7 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
   const [portion, setPortion] = useState<number>(1);
   const changeStatus = useChangePurchaseStatus();
   const undoable = useUndoableAction();
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (open && event) {
@@ -92,18 +94,21 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4" onClick={onClose}>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full"
+        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full max-h-[calc(100vh-2rem)] sm:max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-ga-border">
+        <div className="px-5 py-4 border-b border-ga-border flex-shrink-0">
           <h3 className="text-base font-semibold text-ga-text-primary">
             Throw "{event.catalog_display}"
           </h3>
           <p className="text-xs text-ga-text-secondary mt-1">Pick a reason — helps build your waste stats</p>
         </div>
+
+        {/* Scrollable middle (slider + reasons + optional note). */}
+        <div className="flex-1 overflow-y-auto">
 
         <div className="px-5 py-3 border-b border-ga-border space-y-2">
           <div className="flex items-center justify-between text-xs text-ga-text-secondary">
@@ -213,8 +218,9 @@ export default function ThrowAwayModal({ open, event, onClose }: ThrowAwayModalP
             />
           </div>
         </div>
+        </div>
 
-        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2">
+        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-3 py-1.5 text-sm border border-ga-border rounded-md text-ga-text-primary hover:bg-ga-bg-hover"

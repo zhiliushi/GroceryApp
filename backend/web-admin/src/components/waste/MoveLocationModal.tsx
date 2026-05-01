@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMovePurchase } from '@/api/mutations/usePurchaseMutations';
 import { useLocations, useRecentLocations } from '@/api/queries/useLocations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import {
   readBaseUnit,
   readPackLabel,
@@ -34,6 +35,7 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
   const [destination, setDestination] = useState<string>('fridge');
   const moveMutation = useMovePurchase();
   const undoable = useUndoableAction();
+  useBodyScrollLock(open);
   // LOCATION_TOUCHPOINT — registered list + recent free-text strings.
   // Default destination is the first registered location that isn't
   // the current one. User can ALSO type any custom destination via the
@@ -118,13 +120,13 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4" onClick={onClose}>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full"
+        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full max-h-[calc(100vh-2rem)] sm:max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-ga-border">
+        <div className="px-5 py-4 border-b border-ga-border flex-shrink-0">
           <h3 className="text-base font-semibold text-ga-text-primary">
             Move "{event.catalog_display}"
           </h3>
@@ -139,6 +141,10 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
           </p>
         </div>
 
+        {/* Scrollable middle. Contains the slider/spinner section AND
+            the destination picker. Keeps the page-behind from scrolling
+            when content overflows the viewport. */}
+        <div className="flex-1 overflow-y-auto">
         {/* UNIT_TYPE_TOUCHPOINT — slider mode adapts. See class doc above. */}
         {sliderMode === 'indivisible' ? (
           <div className="px-5 py-4 border-b border-ga-border">
@@ -273,8 +279,9 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
             </datalist>
           </div>
         </div>
+        </div>
 
-        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2">
+        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-3 py-1.5 text-sm border border-ga-border rounded-md text-ga-text-primary hover:bg-ga-bg-hover"

@@ -7,6 +7,7 @@ import {
 } from '@/api/mutations/usePurchaseMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { useLocations, useRecentLocations } from '@/api/queries/useLocations';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import {
   ALL_BASE_UNITS,
   defaultBaseUnit,
@@ -104,6 +105,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   // 30 distinct values each (backend `quota_service`).
   const [state, setState] = useState<string>('');
   const [country, setCountry] = useState<string>('');
+
+  // Lock the page-behind from scrolling while this modal is open.
+  // Without this, scroll events over the backdrop (or after the modal
+  // body's overflow scroll-end) fall through to document.body.
+  useBodyScrollLock(open);
 
   const createMutation = useCreatePurchase();
   const multiPackMutation = useCreateMultiPack();
@@ -337,8 +343,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
     );
   }
 
+  // Outer: full-viewport flex container. Mobile gets less top padding
+  // (pt-4) so the modal has more vertical room when the soft keyboard
+  // is open. Desktop stays at pt-[8vh].
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-0 sm:pt-[8vh]" onClick={onClose}>
       <QuotaHitPicker
         open={quotaDetails !== null}
         details={quotaDetails}
@@ -350,18 +359,22 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
         }}
       />
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+      {/* Card: flex column with capped height. Header + footer are
+          flex-shrink-0 (always visible); body is flex-1 + overflow-y-auto
+          (scrolls). Fixes the original "page behind scrolls instead of
+          form" bug. */}
       <div
-        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full mx-4"
+        className="relative bg-ga-bg-card border border-ga-border rounded-xl shadow-2xl max-w-md w-full max-h-[calc(100vh-2rem)] sm:max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-ga-border flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-ga-border flex items-center justify-between flex-shrink-0">
           <h3 className="text-base font-semibold text-ga-text-primary">Add item</h3>
           <button onClick={onClose} className="text-ga-text-secondary hover:text-ga-text-primary">
             ✕
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {scanning ? (
             <ScannerView
               engine={scanner.engine}
@@ -934,7 +947,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2">
+        <div className="px-5 py-3 border-t border-ga-border flex justify-end gap-2 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-3 py-1.5 text-sm border border-ga-border rounded-md text-ga-text-primary hover:bg-ga-bg-hover"
