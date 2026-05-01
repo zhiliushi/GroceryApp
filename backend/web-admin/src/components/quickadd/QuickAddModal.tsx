@@ -8,7 +8,7 @@ import {
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { useLocations } from '@/api/queries/useLocations';
 import {
-  validBaseUnits,
+  baseUnitsForInput,
   defaultBaseUnit,
   suggestedPackLabels,
   effectiveUnitType,
@@ -520,11 +520,15 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                     className="flex-1 min-w-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                     aria-label="Unit"
                   >
-                    {/* UNIT_TYPE_TOUCHPOINT — base_unit options filtered
-                        by the matched catalog row's unit_type. Drop the
-                        old "pack" option (pack is a buy-side label, not
-                        a measurement unit; see unit-type-method.md). */}
-                    {validBaseUnits(matchedUnitType).map((u) => (
+                    {/* UNIT_TYPE_TOUCHPOINT — base_unit options. When the
+                        matched catalog row has a known unit_type, narrow
+                        to its valid subset (volume → ml/L; weight → g/kg;
+                        count → count). When NO match (new item, no name
+                        typed yet, or a row without unit_type), show ALL
+                        canonical units so the user can pick any measurement.
+                        Reads matchedEntry?.unit_type RAW (not the coerced
+                        UnitType) so undefined → all units. */}
+                    {baseUnitsForInput(matchedEntry?.unit_type).map((u) => (
                       <option key={u} value={u}>
                         {u}
                       </option>
@@ -561,6 +565,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
               confusion is the reason). See unit-type-method.md. */}
           {multiPackOn && (
             <div className="bg-ga-bg-hover/30 rounded-md p-3 space-y-3">
+              {/* Three numeric inputs in a grid row — # Packs, Items / pack,
+                  Size / item. Earlier iteration crammed the unit dropdown
+                  into the third cell with the size input; the input
+                  collapsed to ~0px and the user couldn't see what they
+                  typed. Unit is now on its own row below. */}
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
@@ -596,30 +605,39 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
                     Size / item
                   </label>
-                  <div className="flex gap-1">
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={sizePerItem}
-                      onChange={(e) =>
-                        setSizePerItem(Math.max(0.1, parseFloat(e.target.value) || 1))
-                      }
-                      className="w-full min-w-0 px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
-                    />
-                    <select
-                      value={unit}
-                      onChange={(e) => setUnit(e.target.value)}
-                      className="flex-shrink-0 px-2 py-2 pr-7 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-                    >
-                      {validBaseUnits(matchedUnitType).map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={sizePerItem}
+                    onChange={(e) =>
+                      setSizePerItem(Math.max(0.1, parseFloat(e.target.value) || 1))
+                    }
+                    className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary text-center tabular-nums focus:outline-none focus:border-ga-accent"
+                  />
                 </div>
+              </div>
+
+              {/* Unit of measurement on its own row — the canonical base_unit
+                  for every item in this purchase. UNIT_TYPE_TOUCHPOINT.
+                  When no catalog row is matched yet, all 5 canonical units
+                  show (count / ml / L / g / kg) so the user can pick. When
+                  matched, the list narrows to the row's unit_type subset. */}
+              <div>
+                <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                  Unit of measurement
+                </label>
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+                >
+                  {baseUnitsForInput(matchedEntry?.unit_type).map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Live total + per-item caption. Anchors the user back to

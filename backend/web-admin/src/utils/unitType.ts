@@ -74,6 +74,28 @@ export function validBaseUnits(unitType: string | null | undefined): BaseUnit[] 
   return VALID_BASE_UNITS_BY_TYPE[coerceLegacyUnitType(unitType)];
 }
 
+/** All canonical base units in fixed display order. */
+export const ALL_BASE_UNITS: BaseUnit[] = ['count', 'ml', 'L', 'g', 'kg'];
+
+/**
+ * Base-unit options for an INPUT dropdown — wider than `validBaseUnits`.
+ *
+ * When the catalog row's unit_type is known, narrow the options to that
+ * type's valid subset (e.g. volume → ml/L). When unknown (no catalog
+ * match yet, or row has no unit_type), return ALL canonical units so
+ * the user can pick any measurement.
+ *
+ * Use this in QuickAddModal etc. where the user hasn't necessarily
+ * picked / matched a catalog row yet. Use `validBaseUnits` only when
+ * you're sure the unit_type is known and want strict filtering.
+ */
+export function baseUnitsForInput(
+  unitType: string | null | undefined,
+): BaseUnit[] {
+  if (!unitType) return ALL_BASE_UNITS;
+  return VALID_BASE_UNITS_BY_TYPE[coerceLegacyUnitType(unitType)];
+}
+
 export function defaultBaseUnit(unitType: string | null | undefined): BaseUnit {
   return DEFAULT_BASE_UNIT_BY_TYPE[coerceLegacyUnitType(unitType)];
 }
