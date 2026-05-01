@@ -35,13 +35,13 @@ action-driving.
    anything is past expiry. Headline shows "N expired · M expiring in 3
    days · 1 in fridge · 2 in pantry". Per-item "Use…" buttons stop click
    propagation so they don't toggle the card.
-6. 2-col bottom row: `<InventoryListCard />` · `<FrequentlyBoughtCard />`.
-   InventoryListCard renders up to 8 catalog rows currently in stock,
-   sorted by expiry urgency. Each row links to the new
-   `/inventory/:nameNorm` page (housewife view, current state only).
-   Replaces the earlier InventoryStatsCard (4 abstract counts) — real
-   users want to see *which* items they have, not aggregate numbers,
-   and one tap should land them on the action page for that item.
+6. 2-col bottom row: `<StorageListCard />` · `<FrequentlyBoughtCard />`.
+   StorageListCard renders one row per registered storage location
+   (Fridge, Pantry, Freezer, plus an Unsorted bucket if any active
+   events have no location), sorted by expiry urgency. Each row links
+   to `/storage/:locationKey` — the per-storage detail view ("what's
+   in my fridge right now?"). Mirrors how the user thinks about her
+   kitchen — by storage area — rather than abstract aggregate counts.
 7. Full-width `<InsightsCard />` (auto-hides when empty).
 8. Admin-only stats grid + Quick Actions (gated by `isAdmin`).
 
@@ -65,7 +65,8 @@ All widgets fetch their own data via hooks:
   (`/api/waste/summary?period=...`). Response includes `top_wasted`
   sorted by `total_value` desc.
 - `usePurchases({ status: 'active', limit: 200 })` — for ExpiringSoonCard
-- `usePurchases({status:'active', limit:200})` — also feeds InventoryListCard (cache-shared with ExpiringSoonCard)
+- `usePurchases({status:'active', limit:200})` — also feeds StorageListCard (cache-shared with ExpiringSoonCard)
+- `useLocations()` — feeds StorageListCard (registered storage locations)
 - `useDashboard()` — admin stats (legacy)
 - `useFeatureFlags()` — `/api/admin/features` (admin) or
   `/api/features/public` (user)

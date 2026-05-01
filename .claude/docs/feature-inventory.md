@@ -36,8 +36,8 @@ User-facing pages (admin-only pages omitted — see `Sidebar.tsx adminNav`).
 | Dashboard | `/dashboard` | `pages/dashboard/DashboardPage.tsx` | free | `receipt_scanning` (plus) |
 | My Items | `/my-items` | `pages/my-items/MyItemsPage.tsx` | free (was `inventory`) | `bulk_actions` (plus), `receipt_scanning` (plus), `export` (pro, disabled by default) |
 | Catalog | `/catalog` | `pages/catalog/CatalogListPage.tsx` | free | — |
-| Inventory Detail | `/inventory/:nameNorm` | `pages/inventory/InventoryDetailPage.tsx` | free | — (housewife view; current state only) |
-| Storage | `/storage` | `pages/storage/StoragePage.tsx` | free | — |
+| Storage (manage) | `/storage` | `pages/storage/StoragePage.tsx` | free | — (admin-style: add/rename/reorder locations) |
+| Storage Detail | `/storage/:locationKey` | `pages/storage/StorageDetailPage.tsx` | free | — (housewife view: what's in this location right now) |
 | Shopping Lists | `/shopping-lists` | `pages/shopping-lists/ShoppingListsPage.tsx` | free | `checkout_flow`, `trip_notes`, `receipt_scanning` (all plus) |
 | Foodbanks | `/foodbanks` | `pages/foodbanks/FoodbanksListPage.tsx` | always-free | `sources_panel` (admin) |
 | Meals | `/meals` | `pages/meals/MealsPage.tsx` | free | — |

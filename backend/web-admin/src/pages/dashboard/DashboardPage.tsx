@@ -9,7 +9,7 @@ import ProgressiveNudge from '@/components/nudge/ProgressiveNudge';
 import SpendingScoreboard from '@/components/dashboard/SpendingScoreboard';
 import WasteScoreboard from '@/components/dashboard/WasteScoreboard';
 import ExpiringSoonCard from '@/components/dashboard/ExpiringSoonCard';
-import InventoryListCard from '@/components/dashboard/InventoryListCard';
+import StorageListCard from '@/components/dashboard/StorageListCard';
 import InsightsCard from '@/components/dashboard/InsightsCard';
 import FrequentlyBoughtCard from '@/components/dashboard/FrequentlyBoughtCard';
 import { useAuthStore } from '@/stores/authStore';
@@ -23,9 +23,10 @@ import { truncateUid } from '@/utils/format';
  *
  * Mobile-first ordering: each scoreboard features "This month" full-width
  * with This-week + Last-month compact below (see SpendingScoreboard for
- * the grid+order trick). Bottom row pairs InventoryListCard (live list
- * of catalog rows in stock, sorted by expiry urgency, click → per-item
- * inventory detail page) with FrequentlyBoughtCard.
+ * the grid+order trick). Bottom row pairs StorageListCard (list of
+ * storage locations — Fridge, Pantry, Freezer — with at-a-glance
+ * counts and urgency; click → per-storage detail page) with
+ * FrequentlyBoughtCard.
  *
  * Admin stats stay in their own block, gated by isAdmin, untouched.
  *
@@ -73,13 +74,13 @@ export default function DashboardPage() {
         <ExpiringSoonCard />
       </div>
 
-      {/* Bottom row: live inventory list (clickable rows → /inventory/:nameNorm
-          for per-item detail) + frequently-bought (one-tap re-buy). The list
-          replaces the previous abstract InventoryStatsCard — real users want
-          to see *which* items they have and what needs attention, not aggregate
+      {/* Bottom row: storage locations list (clickable → /storage/:locationKey
+          for "what's in my fridge / pantry / freezer right now?") +
+          frequently-bought (one-tap re-buy). Mirrors how the user actually
+          thinks about her kitchen — by storage area, not by aggregate
           counts. Sorted by expiry urgency. On mobile they stack. */}
       <div className="grid md:grid-cols-2 gap-3 md:gap-4 mb-3 md:mb-4">
-        <InventoryListCard />
+        <StorageListCard />
         <FrequentlyBoughtCard />
       </div>
 

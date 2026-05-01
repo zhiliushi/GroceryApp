@@ -50,7 +50,7 @@ const MigrationDryRunPage = lazy(() => import('@/pages/admin/MigrationDryRunPage
 const AdminMigrationPage = lazy(() => import('@/pages/admin/AdminMigrationPage'));
 const ExperimentalPage = lazy(() => import('@/pages/admin/ExperimentalPage'));
 const UserManualPage = lazy(() => import('@/pages/help/UserManualPage'));
-const InventoryDetailPage = lazy(() => import('@/pages/inventory/InventoryDetailPage'));
+const StorageDetailPage = lazy(() => import('@/pages/storage/StorageDetailPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -135,15 +135,16 @@ export const router = createBrowserRouter([
       { path: 'catalog', element: <SuspenseWrapper><CatalogListPage /></SuspenseWrapper> },
       { path: 'catalog/:nameNorm', element: <SuspenseWrapper><CatalogEntryPage /></SuspenseWrapper> },
       { path: 'insights', element: <SuspenseWrapper><InsightsPage /></SuspenseWrapper> },
-      // Legacy URL support — redirect old /inventory list → /my-items.
-      // /inventory/:nameNorm is the new lightweight per-catalog inventory
-      // view (current state only; manager view stays at /catalog/:nameNorm).
+      // Legacy URL support — redirect old /inventory → /my-items.
       { path: 'inventory', element: <Navigate to="/my-items" replace /> },
-      { path: 'inventory/:nameNorm', element: <SuspenseWrapper><InventoryDetailPage /></SuspenseWrapper> },
       { path: 'inventory/:uid/:itemId', element: <Navigate to="/my-items" replace /> },
       { path: 'item/:barcode', element: <Navigate to="/catalog" replace /> },
       { path: 'analytics', element: <Navigate to="/insights" replace /> },
       { path: 'storage', element: <TierGated page="storage"><StoragePage /></TierGated> },
+      // Per-location detail — lightweight, current-state-only view of one
+      // storage location ("what's in my fridge right now?"). Manager view
+      // for adding/renaming/reordering locations stays at /storage.
+      { path: 'storage/:locationKey', element: <TierGated page="storage"><StorageDetailPage /></TierGated> },
       { path: 'shopping-lists', element: <TierGated page="shopping_lists"><ShoppingListsPage /></TierGated> },
       { path: 'shopping-lists/:uid/:listId', element: <TierGated page="shopping_lists"><ShoppingListDetailPage /></TierGated> },
       { path: 'foodbanks', element: <TierGated page="foodbanks"><FoodbanksListPage /></TierGated> },

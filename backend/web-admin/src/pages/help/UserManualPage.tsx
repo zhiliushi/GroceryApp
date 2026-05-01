@@ -323,45 +323,50 @@ function TrackingItems() {
         to do.
       </p>
 
-      <H3>From the dashboard — quick glance</H3>
+      <H3>From the dashboard — by storage location</H3>
       <p>
-        The <strong>"What's in your kitchen"</strong> card on the dashboard
-        lists up to 8 items you have right now, sorted by what's expiring
-        first. Each row shows the quantity, where it's stored, and an
-        expiry chip (red / orange / yellow / green). Tap any row to open
-        its detail page.
+        The <strong>"Your storage"</strong> card on the dashboard shows
+        one row per storage location you have set up (Fridge, Pantry,
+        Freezer, plus an Unsorted bucket if any items don't have a
+        location). Each row shows the icon, name, pack count, the
+        soonest-expiry chip, and a red "N expired" badge if anything is
+        past expiry. Tap any row to open that location's detail page.
       </p>
 
-      <H3>Per-item inventory detail</H3>
+      <H3>Per-storage detail page</H3>
       <p>
-        Tap an item from the dashboard list (or the item name on My Items)
-        to open the inventory detail page at <code>/inventory/{'{name}'}</code>.
-        It's a focused, action-first view of one item:
+        At <code>/storage/{'{location}'}</code> you get a focused,
+        action-first view of one storage area:
       </p>
       <ul className="list-disc pl-5 space-y-1">
         <li>
-          <strong>Hero</strong> — name, total available across all packs
-          (in eggs / ml / g — base units), urgency banner.
+          <strong>Hero</strong> — location icon + name, pack count,
+          most-urgent expiry banner.
         </li>
         <li>
-          <strong>Per-location chips</strong> — "Fridge: 6 · Pantry: 12".
+          <strong>Stat chips</strong> — "⚠ N expired", "⏰ N expiring
+          soon" (only when there's something to flag).
         </li>
         <li>
-          <strong>Per-pack list</strong> — every active pack as its own
-          row with Use / Move / Throw / Give-away buttons. Sorted so the
-          most urgent pack is at the top.
+          <strong>Pack list</strong> — every active pack stored here,
+          sorted so the most urgent is on top. Each pack: item name +
+          qty in base units + colored expiry chip + Use / Move / Throw
+          buttons. Tap the item name to jump to that catalog row's full
+          history.
         </li>
         <li>
-          <strong>"+ Buy more"</strong> top-right opens Quick Add prefilled
-          with this item.
+          <strong>"+ Add here"</strong> top-right opens Quick Add
+          prefilled with this location.
         </li>
       </ul>
       <p className="text-xs text-ga-text-secondary">
-        The inventory page is deliberately current-state only. For price
-        history, waste analysis, or to rename / merge / delete the catalog
-        row, use the <strong>"Full price history & analysis →"</strong> link
-        at the bottom (goes to the manager view at{' '}
-        <code>/catalog/{'{name}'}</code>).
+        The storage detail page is deliberately current-state only — no
+        waste history, no price analytics. To manage the location itself
+        (rename, change icon/color, reorder, add new locations), go to{' '}
+        <Link to="/storage" className="text-ga-accent hover:underline">
+          Storage
+        </Link>{' '}
+        from the sidebar.
       </p>
 
       <H3>The full list — My Items</H3>
