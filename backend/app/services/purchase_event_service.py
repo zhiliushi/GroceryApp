@@ -25,7 +25,7 @@ from app.core.feature_flags import is_enabled
 from app.core.metadata import apply_create_metadata, apply_update_metadata
 from app.core.slow_query import timed
 from app.schemas.purchase import VALID_STATUSES, VALID_CONSUME_REASONS, VALID_PAYMENT_METHODS
-from app.services import catalog_service, country_service, currency_service, nl_expiry
+from app.services import catalog_service, country_service, currency_service, nl_expiry, quota_service
 from app.services import migration_v2_dry_run as _mig_helpers  # for _infer_base_unit_label
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,11 @@ def create_purchase(
     # them get inferred values via the backfill script.
     pack_label: Optional[str] = None,
     base_unit: Optional[str] = None,
+    # Validation-stage hooks for later location search + regional analytics.
+    # Optional. Free-tier users capped at 30 distinct states + 30 distinct
+    # countries via quota_service.check_state_quota / check_country_quota.
+    state: Optional[str] = None,
+    country: Optional[str] = None,
 ) -> dict:
     """Create a purchase event. Transactionally upserts catalog entry + increments counters.
 
@@ -103,6 +108,14 @@ def create_purchase(
 
     if quantity <= 0:
         raise ValidationError("quantity must be > 0")
+
+    # Validation-stage state/country quotas — free tier capped at 30
+    # distinct each. No-op when fields are empty / already in user's set
+    # / user is on a paid tier. Raises QuotaExceededError otherwise.
+    if state:
+        quota_service.check_state_quota(user_id, state)
+    if country:
+        quota_service.check_country_quota(user_id, country)
 
     # If caller provided a name, upsert the catalog entry first (outside transaction)
     # — this is idempotent and safe to retry
@@ -203,6 +216,8 @@ def create_purchase(
         "payment_method": payment_method,
         "date_bought": date_bought or now,
         "location": location or catalog_entry.get("default_location"),
+        "state": (state or "").strip() or None,
+        "country": (country or "").strip() or None,
         "status": "active",
         "consumed_date": None,
         "consumed_reason": None,
@@ -520,6 +535,11 @@ def validate_status_transition(
     normalized_reason = reason
     if new_status == "thrown":
         normalized_reason = reason or "expired"
+        # Legacy alias: 'bad' was renamed to 'unexpected_event' (broader
+        # coverage: spillage / freezer burn / mouldy / pet incident / …).
+        # Old clients + old test fixtures keep working.
+        if normalized_reason == "bad":
+            normalized_reason = "unexpected_event"
         if normalized_reason not in VALID_CONSUME_REASONS:
             raise ValidationError(f"Invalid thrown reason: {normalized_reason!r}")
 
@@ -542,6 +562,7 @@ def update_status(
     reason: Optional[str] = None,
     transferred_to: Optional[str] = None,
     quantity: Optional[float] = None,
+    reason_text: Optional[str] = None,
 ) -> dict:
     """Change status. Validates transition + handles catalog counter.
 
@@ -605,6 +626,7 @@ def update_status(
             status=status,
             reason=reason,
             transferred_to=transferred_to,
+            reason_text=reason_text,
         )
 
     # Whole-event transition (legacy path).
@@ -617,6 +639,8 @@ def update_status(
         event_updates["consumed_reason"] = "used_up"
     elif reason:
         event_updates["consumed_reason"] = reason
+    if reason_text and reason_text.strip():
+        event_updates["consumed_reason_text"] = reason_text.strip()
     if transferred_to:
         event_updates["transferred_to"] = transferred_to
 
@@ -651,6 +675,7 @@ def _split_and_terminate(
     status: str,
     reason: Optional[str],
     transferred_to: Optional[str],
+    reason_text: Optional[str] = None,
 ) -> dict:
     """Split a purchase event: portion -> new terminal event, original stays active.
 
@@ -697,6 +722,7 @@ def _split_and_terminate(
             reason if reason is not None
             else ("used_up" if status == "used" else None)
         ),
+        "consumed_reason_text": (reason_text or "").strip() or None,
         "transferred_to": transferred_to,
         "reminder_stage": 0,
         "last_reminded_at": None,

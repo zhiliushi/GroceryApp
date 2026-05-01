@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMovePurchase } from '@/api/mutations/usePurchaseMutations';
-import { useLocations } from '@/api/queries/useLocations';
+import { useLocations, useRecentLocations } from '@/api/queries/useLocations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
 import {
   readBaseUnit,
@@ -34,10 +34,12 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
   const [destination, setDestination] = useState<string>('fridge');
   const moveMutation = useMovePurchase();
   const undoable = useUndoableAction();
-  // LOCATION_TOUCHPOINT — registered list, not a hardcoded array.
+  // LOCATION_TOUCHPOINT — registered list + recent free-text strings.
   // Default destination is the first registered location that isn't
-  // the current one, so user-renamed/added locations work.
+  // the current one. User can ALSO type any custom destination via the
+  // free-text input below the quick-pick grid.
   const { locations } = useLocations();
+  const recentLocations = useRecentLocations();
 
   // Slider-mode derivation per the canonical rules above.
   const packCount = event?.quantity ?? 0;
@@ -238,6 +240,37 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
                 </button>
               );
             })}
+          </div>
+
+          {/* LOCATION_TOUCHPOINT — free-text destination. Pick a registered
+              location above for one tap; OR type any custom destination
+              here. Backend stores the literal string. */}
+          <div>
+            <label className="block text-[11px] text-ga-text-secondary mt-2 mb-1">
+              Or type a custom destination:
+            </label>
+            <input
+              type="text"
+              list="move-location-suggestions"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="e.g. Mum's house, Office fridge…"
+              className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent text-sm"
+            />
+            <datalist id="move-location-suggestions">
+              {locations.map((l) => (
+                <option key={`reg-${l.key}`} value={l.name}>
+                  {l.icon} {l.name}
+                </option>
+              ))}
+              {recentLocations
+                .filter((rl) => !locations.find((l) => l.name === rl || l.key === rl))
+                .map((rl) => (
+                  <option key={`recent-${rl}`} value={rl}>
+                    {rl} (recent)
+                  </option>
+                ))}
+            </datalist>
           </div>
         </div>
 

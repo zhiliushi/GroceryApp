@@ -188,3 +188,120 @@ def _iso(v: Any) -> Optional[str]:
         return v.isoformat() if hasattr(v, "isoformat") else str(v)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# State / country distinct quotas (validation-stage hook)
+# ---------------------------------------------------------------------------
+
+# Free tier: 30 distinct values each. Plus / pro / admin: unlimited.
+# Distinct = case-insensitive, trimmed comparison.
+STATE_QUOTA_FREE = 30
+COUNTRY_QUOTA_FREE = 30
+
+
+def _user_doc(user_id: str) -> dict:
+    snap = _db().collection(_USER_COLLECTION).document(user_id).get()
+    return (snap.to_dict() or {}) if snap.exists else {}
+
+
+def _norm(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    return s or None
+
+
+def _is_unlimited_tier(user: dict) -> bool:
+    """Plus / pro / admin bypass distinct-quota caps."""
+    if user.get("role") == "admin":
+        return True
+    tier = (user.get("tier") or "free").lower()
+    return tier in ("plus", "pro")
+
+
+def _count_distinct_field(user_id: str, field: str) -> int:
+    """Live count of distinct (case-insensitive, trimmed) values for a
+    purchase-event field across the user's events.
+
+    Used as the truth source. We could also denormalize counters on the
+    user doc; keeping it live for now — distinct counts on a single
+    user's purchase collection don't grow huge.
+    """
+    db = _db()
+    seen: set[str] = set()
+    q = db.collection(_USER_COLLECTION).document(user_id).collection("purchases")
+    for doc in q.stream():
+        data = doc.to_dict() or {}
+        norm = _norm(data.get(field))
+        if norm:
+            seen.add(norm)
+    return len(seen)
+
+
+def check_state_quota(user_id: str, new_state: Optional[str]) -> None:
+    """Raise QuotaExceededError if adding `new_state` would push past the
+    free-tier distinct-state cap. No-op when state is empty / already in
+    the user's set / user is on a paid tier.
+    """
+    norm = _norm(new_state)
+    if not norm:
+        return
+    user = _user_doc(user_id)
+    if _is_unlimited_tier(user):
+        return
+    limit = int(user.get("state_quota_limit") or STATE_QUOTA_FREE)
+    distinct = _count_distinct_field(user_id, "state")
+    # If norm already exists, no quota cost.
+    seen = _collect_distinct_field(user_id, "state")
+    if norm in seen:
+        return
+    if distinct >= limit:
+        raise QuotaExceededError(
+            f"Free-tier limit: {limit} distinct states. Upgrade to add more.",
+            details={
+                "type": "state_quota_exceeded",
+                "used": distinct,
+                "limit": limit,
+                "field": "state",
+            },
+        )
+
+
+def check_country_quota(user_id: str, new_country: Optional[str]) -> None:
+    """Raise QuotaExceededError if adding `new_country` would push past
+    the free-tier distinct-country cap. Symmetric with check_state_quota.
+    """
+    norm = _norm(new_country)
+    if not norm:
+        return
+    user = _user_doc(user_id)
+    if _is_unlimited_tier(user):
+        return
+    limit = int(user.get("country_quota_limit") or COUNTRY_QUOTA_FREE)
+    seen = _collect_distinct_field(user_id, "country")
+    if norm in seen:
+        return
+    if len(seen) >= limit:
+        raise QuotaExceededError(
+            f"Free-tier limit: {limit} distinct countries. Upgrade to add more.",
+            details={
+                "type": "country_quota_exceeded",
+                "used": len(seen),
+                "limit": limit,
+                "field": "country",
+            },
+        )
+
+
+def _collect_distinct_field(user_id: str, field: str) -> set[str]:
+    """Same scan as _count_distinct_field but returns the set."""
+    db = _db()
+    seen: set[str] = set()
+    q = db.collection(_USER_COLLECTION).document(user_id).collection("purchases")
+    for doc in q.stream():
+        data = doc.to_dict() or {}
+        norm = _norm(data.get(field))
+        if norm:
+            seen.add(norm)
+    return seen

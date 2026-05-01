@@ -114,6 +114,37 @@ is the engineer's index.
 | Update unit_type | UnitTypeEditor inside CatalogEntryPage | `PATCH /api/catalog/{name_norm}` `{unit_type}` |
 | Set currency preference | SettingsPage | `PATCH /api/users/me` `{currency_preference}` |
 
+## Validation-stage hooks (TODOs)
+
+These are deliberately-deferred items, flagged in code with comments
+matching the section headings. Surface them when the validation phase
+ends and we move toward the production product.
+
+- **Location search** — locations are now free-text; eventually we
+  want geo-aware search ("show me anything in Selangor"). Hook in
+  `useRecentLocations()` (client-side derivation today, server-side
+  endpoint later) and on `state` / `country` fields of
+  `PurchaseEvent` (validation-stage capped at 30 distinct each for
+  free tier via `quota_service.check_state_quota` /
+  `check_country_quota`).
+- **Free-text payment method** — currently 4-value enum (cash /
+  ewallet / debit_card / credit_card). Variation in real usage
+  (GrabPay, voucher, split tender) will accumulate; switch to
+  free-text + suggested dropdown when patterns are clear. Touchpoint
+  in `VALID_PAYMENT_METHODS` (frozenset in `app/schemas/purchase.py`)
+  and `PaymentMethod` type alias (`web-admin/src/types/api.ts`).
+- **Free-text consume reason aggregation** — `consumed_reason_text`
+  (free-text) is stored alongside the canonical 4-value enum
+  (`used_up | expired | unexpected_event | gift`). Insights work
+  later: cluster + surface common free-text patterns ("you tend to
+  throw chicken because freezer burn"). Touchpoint in
+  `ThrowAwayModal.tsx` (the optional Note input) and
+  `app/services/insights_service` (where future aggregation goes).
+- **Status enum simplification** — the user has flagged
+  `active | used | thrown | transferred` as potentially-too-coarse;
+  revisit once usage data accumulates. See note in
+  `app/schemas/purchase.py:VALID_STATUSES`.
+
 ## location touchpoints
 
 Storage locations are user-configurable (`Fridge`, `Pantry`, `Freezer`,

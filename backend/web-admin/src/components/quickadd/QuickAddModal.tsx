@@ -6,7 +6,7 @@ import {
   type QuotaExceededDetails,
 } from '@/api/mutations/usePurchaseMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
-import { useLocations } from '@/api/queries/useLocations';
+import { useLocations, useRecentLocations } from '@/api/queries/useLocations';
 import {
   ALL_BASE_UNITS,
   defaultBaseUnit,
@@ -97,8 +97,13 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   // the canonical-method rule; never reintroduce a per-component
   // hardcoded LOCATIONS array.
   const { locations } = useLocations();
+  const recentLocations = useRecentLocations();
   const fallbackLocation =
     locations.find((l) => l.key === 'pantry')?.key ?? locations[0]?.key ?? 'pantry';
+  // State / country — optional regional metadata. Free-tier capped at
+  // 30 distinct values each (backend `quota_service`).
+  const [state, setState] = useState<string>('');
+  const [country, setCountry] = useState<string>('');
 
   const createMutation = useCreatePurchase();
   const multiPackMutation = useCreateMultiPack();
@@ -142,6 +147,8 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
       setPricePerPack('');
       setStoreId(null);
       setStoreLabel('');
+      setState('');
+      setCountry('');
     }
   }, [open, defaults, userCurrency]);
 
@@ -282,7 +289,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           price_per_pack: pricePerPack ? parseFloat(pricePerPack) : null,
           currency: currency || null,
           expiry_raw: expiryRaw.trim() || null,
-          location,
+          location: location.trim() || undefined,
           store_id: storeId || null,
           base_unit_label: unit,
           base_unit: unit,
@@ -310,7 +317,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
         pack_size: 1,
         base_unit: unit as 'count' | 'ml' | 'L' | 'g' | 'kg' | undefined,
         expiry_raw: expiryRaw.trim() || undefined,
-        location,
+        location: location.trim() || undefined,
+        // Optional regional metadata. Free-tier capped at 30 distinct values
+        // each (backend `quota_service`) — empty string = not sent.
+        state: state.trim() || undefined,
+        country: country.trim() || undefined,
         price: price ? parseFloat(price) : undefined,
         currency: price && currency ? currency : undefined,
         payment_method: paymentMethod || undefined,
@@ -534,18 +545,22 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-ga-text-secondary mb-1">Location</label>
-                <select
+                <label className="block text-xs text-ga-text-secondary mb-1">
+                  Location
+                </label>
+                {/* LOCATION_TOUCHPOINT — free-text input with combined
+                    datalist (registered + recently-used by this user).
+                    User can type ANY string. Backend stores as-is; no
+                    validation against registered list. Hook for later:
+                    geo location search via `useRecentLocations`. */}
+                <input
+                  type="text"
+                  list="qa-location-suggestions"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-                >
-                  {locations.map((l) => (
-                    <option key={l.key} value={l.key}>
-                      {l.icon} {l.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="e.g. Fridge, Kitchen Counter, Mum's house"
+                  className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent"
+                />
               </div>
             </div>
           )}
@@ -742,17 +757,15 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   <label className="block text-xs text-ga-text-secondary mb-1">
                     Location
                   </label>
-                  <select
+                  {/* LOCATION_TOUCHPOINT — free-text + datalist suggestions */}
+                  <input
+                    type="text"
+                    list="qa-location-suggestions"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
-                  >
-                    {locations.map((l) => (
-                      <option key={l.key} value={l.key}>
-                        {l.icon} {l.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="e.g. Fridge, Pantry, Mum's house"
+                    className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent"
+                  />
                 </div>
               </div>
 
@@ -763,6 +776,24 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
               </p>
             </div>
           )}
+
+          {/* Shared datalist for both single-mode and bulk-mode location
+              inputs. Combines registered locations + user's recently-used
+              ad-hoc strings. LOCATION_TOUCHPOINT. */}
+          <datalist id="qa-location-suggestions">
+            {locations.map((l) => (
+              <option key={`reg-${l.key}`} value={l.name}>
+                {l.icon} {l.name}
+              </option>
+            ))}
+            {recentLocations
+              .filter((rl) => !locations.find((l) => l.name === rl || l.key === rl))
+              .map((rl) => (
+                <option key={`recent-${rl}`} value={rl}>
+                  {rl} (recent)
+                </option>
+              ))}
+          </datalist>
 
           <button
             onClick={() => setShowMore(!showMore)}
@@ -833,23 +864,68 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-ga-text-secondary mb-1">Payment</label>
-                    <div className="flex gap-2">
-                      {(['cash', 'card'] as const).map((m) => (
+                    <label className="block text-xs text-ga-text-secondary mb-1">
+                      Payment
+                    </label>
+                    {/* Expanded from cash|card to 4 canonical options.
+                        Free-text is on the future-hooks list — see
+                        feature-inventory.md "Validation-stage hooks". */}
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          { key: 'cash', icon: '💵', label: 'Cash' },
+                          { key: 'ewallet', icon: '📱', label: 'eWallet' },
+                          { key: 'debit_card', icon: '🟦', label: 'Debit' },
+                          { key: 'credit_card', icon: '💳', label: 'Credit' },
+                        ] as const
+                      ).map((m) => (
                         <button
-                          key={m}
+                          key={m.key}
                           type="button"
-                          onClick={() => setPaymentMethod(paymentMethod === m ? '' : m)}
+                          onClick={() =>
+                            setPaymentMethod(paymentMethod === m.key ? '' : m.key)
+                          }
                           className={cn(
-                            'px-4 py-1.5 text-sm rounded border',
-                            paymentMethod === m
+                            'px-3 py-1.5 text-sm rounded border',
+                            paymentMethod === m.key
                               ? 'bg-ga-accent text-white border-ga-accent'
                               : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
                           )}
                         >
-                          {m === 'cash' ? '💵 Cash' : '💳 Card'}
+                          {m.icon} {m.label}
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* State + Country — optional regional metadata.
+                      Validation-stage hook for later location-search +
+                      regional analytics work. Free-tier capped at 30
+                      distinct values each (backend `quota_service`). */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-ga-text-secondary mb-1">
+                        State / Region (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        placeholder="e.g. Selangor"
+                        className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ga-text-secondary mb-1">
+                        Country (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        placeholder="e.g. Malaysia"
+                        className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent"
+                      />
                     </div>
                   </div>
                 </>

@@ -78,6 +78,10 @@ async def create_purchase(
         pack_label=data.pack_label,
         pack_size=int(data.pack_size) if data.pack_size else 1,
         base_unit=data.base_unit,
+        # Optional regional metadata (free-tier capped at 30 distinct
+        # values each; QuotaExceededError otherwise).
+        state=data.state,
+        country=data.country,
         source="api",
     )
     background_tasks.add_task(_check_milestones_safe, user.uid)
@@ -218,6 +222,7 @@ async def change_status(
         event_id=event_id,
         status=data.status,
         reason=data.reason,
+        reason_text=data.reason_text,
         transferred_to=data.transferred_to,
         quantity=data.quantity,
     )

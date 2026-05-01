@@ -804,8 +804,14 @@ export interface OverpassNode {
 // ============================================================================
 
 export type PurchaseStatus = 'active' | 'used' | 'thrown' | 'transferred';
-export type ConsumeReason = 'used_up' | 'expired' | 'bad' | 'gift';
-export type PaymentMethod = 'cash' | 'card';
+// Updated 2026-05 (validation-stage): new canonical enum.
+// Legacy 'bad' is read-compat only; backend coerces to 'unexpected_event'.
+// Waste filter (waste_service): only `expired` + `unexpected_event` count.
+export type ConsumeReason = 'used_up' | 'expired' | 'unexpected_event' | 'gift';
+
+// Expanded from cash|card. "Free-text payment method" is on the future
+// hooks list — see `.claude/docs/feature-inventory.md`.
+export type PaymentMethod = 'cash' | 'ewallet' | 'debit_card' | 'credit_card';
 
 export interface CatalogEntry {
   id: string;
@@ -853,10 +859,13 @@ export interface PurchaseEvent {
   currency: string | null;
   payment_method: PaymentMethod | null;
   date_bought: string;
-  location: string | null;
+  location: string | null;          // free-text; registered or ad-hoc
+  state?: string | null;            // optional region (validation-stage hook for location search)
+  country?: string | null;          // optional country
   status: PurchaseStatus;
   consumed_date: string | null;
   consumed_reason: ConsumeReason | null;
+  consumed_reason_text?: string | null;  // optional free-text complement
   transferred_to: string | null;
   reminder_stage: number;
   last_reminded_at: string | null;
@@ -927,7 +936,11 @@ export interface PurchaseCreateRequest {
   currency?: string;
   payment_method?: PaymentMethod;
   date_bought?: string;
-  location?: string;
+  location?: string;                // free-text; registered or ad-hoc
+  /** Optional regional metadata. Free-tier capped at 30 distinct values
+   *  each via quota_service. Hook for later location-search work. */
+  state?: string;
+  country?: string;
   /** Phase D: store_id to charge this purchase against. Defaults server-side to "unknown". */
   store_id?: string | null;
 }
@@ -951,11 +964,16 @@ export interface PurchaseUpdateRequest {
   price?: number;
   payment_method?: PaymentMethod;
   location?: string;
+  state?: string;
+  country?: string;
 }
 
 export interface PurchaseStatusUpdateRequest {
   status: Exclude<PurchaseStatus, 'active'>;
   reason?: ConsumeReason;
+  /** Optional free-text complement to the canonical reason — e.g.
+   *  "fed to dog", "kid spilled", "found mouldy". */
+  reason_text?: string;
   transferred_to?: string;
   /**
    * Optional partial portion. When 0 < quantity < event.quantity, the server

@@ -10,9 +10,26 @@ from pydantic import BaseModel, Field
 from .common import BaseDoc
 
 # Valid status transitions
+# NOTE (validation-stage flag): the user has flagged this status enum as
+# potentially-too-coarse; revisit when usage data accumulates. Keep stable
+# for now — partial-action splits and waste counting depend on these.
 VALID_STATUSES = frozenset({"active", "used", "thrown", "transferred"})
-VALID_CONSUME_REASONS = frozenset({"used_up", "expired", "bad", "gift"})
-VALID_PAYMENT_METHODS = frozenset({"cash", "card"})
+
+# Consume reasons. `bad` was merged into `unexpected_event` (broader cover
+# for spillage / freezer burn / pet incident / found mouldy / etc.).
+# Free-text complement lives in `consumed_reason_text`.
+# Waste flagging: see `waste_service` — only `expired` + `unexpected_event`
+# count as waste; `used_up` and `gift` don't.
+VALID_CONSUME_REASONS = frozenset(
+    {"used_up", "expired", "unexpected_event", "gift"}
+)
+WASTE_REASONS = frozenset({"expired", "unexpected_event"})
+
+# Payment methods. Expanded from the old binary cash|card to cover
+# Malaysian-context payment variety. Free-text method coming later (hook).
+VALID_PAYMENT_METHODS = frozenset(
+    {"cash", "ewallet", "debit_card", "credit_card"}
+)
 
 
 class PurchaseEvent(BaseDoc):
@@ -50,11 +67,14 @@ class PurchaseEvent(BaseDoc):
 
     # Lifecycle
     date_bought: datetime
-    location: Optional[str] = None
-    status: str = "active"                # active | used | thrown | transferred
+    location: Optional[str] = None         # free-text; registered or ad-hoc
+    state: Optional[str] = None            # optional region/state (e.g. "Selangor")
+    country: Optional[str] = None          # optional country (e.g. "Malaysia")
+    status: str = "active"                 # active | used | thrown | transferred
     consumed_date: Optional[datetime] = None
-    consumed_reason: Optional[str] = None
-    transferred_to: Optional[str] = None  # uid or foodbank_id
+    consumed_reason: Optional[str] = None  # canonical reason from VALID_CONSUME_REASONS
+    consumed_reason_text: Optional[str] = None  # optional free-text complement
+    transferred_to: Optional[str] = None   # uid or foodbank_id
 
     # Reminders
     reminder_stage: int = 0               # 0=none, 1=7d, 2=14d, 3=21d
@@ -93,9 +113,14 @@ class PurchaseCreate(BaseModel):
     expiry_date: Optional[datetime] = None    # explicit ISO date overrides expiry_raw
     price: Optional[float] = None
     currency: Optional[str] = None
-    payment_method: Optional[str] = None
+    payment_method: Optional[str] = None      # cash | ewallet | debit_card | credit_card
     date_bought: Optional[datetime] = None    # defaults to now
-    location: Optional[str] = None
+    location: Optional[str] = None            # free-text; registered or ad-hoc
+    # Optional geo metadata. Validation-stage hooks for later location
+    # search + regional analytics. Free-tier capped at 30 distinct values
+    # each via quota_service (see purchase_event_service.create_purchase).
+    state: Optional[str] = None
+    country: Optional[str] = None
     # v2 store-of-purchase (catalog_evolution.md Phase D §2.2 #9). Defaults
     # to "unknown" server-side when omitted.
     store_id: Optional[str] = None
@@ -115,6 +140,8 @@ class PurchaseUpdate(BaseModel):
     price: Optional[float] = None
     payment_method: Optional[str] = None
     location: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
 
 class PurchaseStatusUpdate(BaseModel):
@@ -128,7 +155,8 @@ class PurchaseStatusUpdate(BaseModel):
     """
 
     status: str                                # "used" | "thrown" | "transferred"
-    reason: Optional[str] = None               # "used_up" | "expired" | "bad" | "gift"
+    reason: Optional[str] = None               # canonical: VALID_CONSUME_REASONS
+    reason_text: Optional[str] = None          # optional free-text complement (any user input)
     transferred_to: Optional[str] = None       # uid or foodbank_id
     quantity: Optional[float] = None           # partial portion; None = whole event
 

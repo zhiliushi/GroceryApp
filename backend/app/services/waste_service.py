@@ -305,12 +305,21 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
     Args:
         period: "month" (default) | "week" | "last_month" | "year" | "all"
 
+    Waste filter (validation-stage rule, set by user 2026-05):
+      Only `status='thrown'` events with `consumed_reason ∈ {expired,
+      unexpected_event}` count as waste. `gift` and `used_up` thrown
+      events don't count (e.g. you marked something thrown but the
+      reason was "gave to neighbour" — that's not waste).
+
+      For backward compatibility: pre-existing 'bad' reason (legacy
+      enum) is normalised into 'unexpected_event' here so old data
+      still counts as waste.
+
     Values are converted to the user's current currency_preference at
-    read time (same approach as get_spending_summary). Real-feedback fix:
-    the dashboard previously showed thrown_value in raw event currency,
-    which mixed SGD + MYR + USD into one number.
+    read time.
     """
     from app.services import currency_service
+    from app.schemas.purchase import WASTE_REASONS
 
     now = datetime.now(timezone.utc)
     from_date, to_date, period = _period_range(period, now)
@@ -329,6 +338,13 @@ def get_waste_summary(user_id: str, period: str = "month") -> dict:
 
     for doc in q.stream():
         data = doc.to_dict() or {}
+        # Waste-reason filter — see docstring. Legacy 'bad' coerces to
+        # 'unexpected_event' so old waste totals don't disappear.
+        raw_reason = (data.get("consumed_reason") or "").lower()
+        if raw_reason == "bad":
+            raw_reason = "unexpected_event"
+        if raw_reason not in WASTE_REASONS:
+            continue
         name_norm = data.get("catalog_name_norm", "(unknown)")
         display = data.get("catalog_display", name_norm)
         amount = currency_service.display_amount_for_user(data, user_pref) or 0.0
@@ -437,9 +453,16 @@ def get_financial_summary(user_id: str, period: str = "month") -> dict:
         elif status == "used":
             row["used_count"] += qty
         elif status == "thrown":
-            row["thrown_count"] += qty
-            row["thrown_value"] += price
-            grand_wasted += price
+            # Waste-reason filter (validation-stage rule): only `expired`
+            # + `unexpected_event` count as waste. Legacy `bad` coerces.
+            from app.schemas.purchase import WASTE_REASONS
+            raw_reason = (data.get("consumed_reason") or "").lower()
+            if raw_reason == "bad":
+                raw_reason = "unexpected_event"
+            if raw_reason in WASTE_REASONS:
+                row["thrown_count"] += qty
+                row["thrown_value"] += price
+                grand_wasted += price
 
     # Derived per-row metrics
     for row in rows.values():

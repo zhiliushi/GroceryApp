@@ -496,7 +496,7 @@ function MoveLocationStep({
       )}
 
       {selected && (
-        <div>
+        <div className="space-y-2">
           <div className="text-xs text-ga-text-secondary mb-1.5">Move to:</div>
           <div className="flex flex-wrap gap-2">
             {locations
@@ -512,6 +512,11 @@ function MoveLocationStep({
                 </button>
               ))}
           </div>
+          {/* LOCATION_TOUCHPOINT — quick free-text dest fallback. */}
+          <CustomDestInput
+            currentLocation={selected.location ?? ''}
+            onSubmit={(dest) => onSubmit(selected.id, dest)}
+          />
         </div>
       )}
 
@@ -520,6 +525,49 @@ function MoveLocationStep({
           Cancel
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * LOCATION_TOUCHPOINT — small inline form for typing a custom move
+ * destination when the registered-location quick-pick buttons aren't
+ * what the user wants. Used inside MoveLocationStep.
+ */
+function CustomDestInput({
+  currentLocation,
+  onSubmit,
+}: {
+  currentLocation: string;
+  onSubmit: (destination: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const handleSubmit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === currentLocation) return;
+    onSubmit(trimmed);
+    setDraft('');
+  };
+  return (
+    <div className="flex gap-2 items-center pt-1">
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSubmit();
+        }}
+        placeholder="Or type a custom destination…"
+        className="flex-1 px-3 py-1.5 text-sm bg-ga-bg-hover border border-ga-border rounded text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent"
+      />
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={!draft.trim() || draft.trim() === currentLocation}
+        className="px-3 py-1.5 text-sm rounded bg-ga-accent text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        Move
+      </button>
     </div>
   );
 }
