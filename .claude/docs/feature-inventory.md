@@ -114,6 +114,51 @@ is the engineer's index.
 | Update unit_type | UnitTypeEditor inside CatalogEntryPage | `PATCH /api/catalog/{name_norm}` `{unit_type}` |
 | Set currency preference | SettingsPage | `PATCH /api/users/me` `{currency_preference}` |
 
+## location touchpoints
+
+Storage locations are user-configurable (`Fridge`, `Pantry`, `Freezer`,
+`Counter`, plus any custom rooms the user adds — see the management
+view at `/storage`). They're CANONICAL DATA, not a constant.
+
+**The new method**: every code site that needs the list of locations,
+or maps a location key to display name/icon/color, MUST use
+`useLocations()` (`api/queries/useLocations.ts`). Never hardcode a
+`LOCATIONS = ['fridge', 'freezer', ...]` array.
+
+**Why**: the user can rename "Pantry" → "Storage Room", add new ones
+("My Room"), reorder, or recolor them via `/storage`. A hardcoded
+array misses all of that — selectors show wrong labels, "default to
+pantry" sets a key the user no longer has, etc.
+
+**Sites that touch locations** (search `LOCATION_TOUCHPOINT` in code):
+- `api/queries/useLocations.ts` — the canonical hook + hardcoded
+  fallback (only used during the API's first load, never as the
+  source of truth).
+- `components/quickadd/QuickAddModal.tsx` — single + multi-pack
+  location dropdowns; `fallbackLocation` defaults sensibly.
+- `components/waste/MoveLocationModal.tsx` — destination grid;
+  default destination is "first registered location that isn't the
+  current one".
+- `components/barcode/ContextualScannerModal.tsx` — quick-move flow's
+  destination chips.
+- `components/receipt/ReceiptConfirmStep.tsx` — receipt-confirmed
+  items each get a location.
+- `components/scanner/ProductLabelScanModal.tsx` — label-scan add.
+- `pages/admin-settings/OcrTestScanPage.tsx` — admin test.
+- `pages/storage/StoragePage.tsx`, `StorageDetailPage.tsx` — surface
+  the locations themselves.
+- `components/dashboard/StorageListCard.tsx` — dashboard widget.
+
+**No hardcoded locations** — `utils/constants.ts` deliberately does
+NOT export a STORAGE_LOCATIONS constant. If you find one, that's a
+regression.
+
+**Special key `_unsorted`** — virtual location for events with
+`location: null`. Recognised by `StorageListCard` and the
+`/storage/_unsorted` route in `StorageDetailPage`. Don't render it
+as a normal location in selectors — it has no entry in the
+registered list.
+
 ## unit_type touchpoints
 
 `unit_type` lives on the catalog row (`count` / `volume` / `weight` /

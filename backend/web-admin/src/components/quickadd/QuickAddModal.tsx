@@ -6,6 +6,7 @@ import {
   type QuotaExceededDetails,
 } from '@/api/mutations/usePurchaseMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
+import { useLocations } from '@/api/queries/useLocations';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useAuthStore } from '@/stores/authStore';
@@ -30,7 +31,6 @@ interface QuickAddModalProps {
   };
 }
 
-const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'];
 const UNITS = ['count', 'pack', 'g', 'kg', 'ml', 'L'];
 // Common currencies for the dropdown — user can also type a 3-letter code if missing.
 const CURRENCIES = ['SGD', 'MYR', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'IDR', 'THB', 'PHP', 'VND', 'INR', 'AUD'];
@@ -73,6 +73,10 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   const [price, setPrice] = useState<string>('');
   const [currency, setCurrency] = useState<string>('SGD');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
+  // Default 'pantry' is intentional — useLocations() falls back to a
+  // hardcoded list that includes 'pantry' until the API responds. The
+  // open-reset effect below picks `fallbackLocation` (registered or
+  // 'pantry') so user-renamed locations also work. LOCATION_TOUCHPOINT.
   const [location, setLocation] = useState('pantry');
   const [showMore, setShowMore] = useState(false);
   const [matchedEntry, setMatchedEntry] = useState<CatalogEntry | undefined>();
@@ -97,6 +101,13 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
   const authUser = useAuthStore((s) => s.user);
   const uid = authUser?.uid;
   const userCurrency = authUser?.currency ?? 'SGD';
+  // LOCATION_TOUCHPOINT — the registered list (with hardcoded fallback).
+  // See `.claude/docs/feature-inventory.md` "location touchpoints" for
+  // the canonical-method rule; never reintroduce a per-component
+  // hardcoded LOCATIONS array.
+  const { locations } = useLocations();
+  const fallbackLocation =
+    locations.find((l) => l.key === 'pantry')?.key ?? locations[0]?.key ?? 'pantry';
 
   const createMutation = useCreatePurchase();
   const multiPackMutation = useCreateMultiPack();
@@ -110,7 +121,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
     if (open) {
       setName(defaults?.name ?? defaults?.catalogEntry?.display_name ?? '');
       setBarcode(defaults?.barcode ?? defaults?.catalogEntry?.barcode ?? '');
-      setLocation(defaults?.location ?? defaults?.catalogEntry?.default_location ?? 'pantry');
+      setLocation(
+        defaults?.location ??
+          defaults?.catalogEntry?.default_location ??
+          fallbackLocation,
+      );
       setExpiryRaw('');
       setQuantity(1);
       // Default unit follows the catalog row's unit_type when available
@@ -229,7 +244,11 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
     setMatchedEntry(entry);
     if (entry) {
       if (entry.barcode && !barcode) setBarcode(entry.barcode);
-      if (entry.default_location && location === 'pantry') {
+      // Override the default location with the catalog row's default
+      // when the user hasn't deliberately picked a different one. We
+      // compare against the fallback rather than a literal string so
+      // user-renamed locations still trigger the override.
+      if (entry.default_location && location === fallbackLocation) {
         setLocation(entry.default_location);
       }
       // Default unit follows the matched row's unit_type (volume → ml,
@@ -461,9 +480,9 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                   onChange={(e) => setLocation(e.target.value)}
                   className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                 >
-                  {LOCATIONS.map((l) => (
-                    <option key={l} value={l}>
-                      {l}
+                  {locations.map((l) => (
+                    <option key={l.key} value={l.key}>
+                      {l.icon} {l.name}
                     </option>
                   ))}
                 </select>
@@ -572,9 +591,9 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
                       onChange={(e) => setLocation(e.target.value)}
                       className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                     >
-                      {LOCATIONS.map((l) => (
-                        <option key={l} value={l}>
-                          {l}
+                      {locations.map((l) => (
+                        <option key={l.key} value={l.key}>
+                          {l.icon} {l.name}
                         </option>
                       ))}
                     </select>

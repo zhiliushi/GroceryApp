@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMovePurchase } from '@/api/mutations/usePurchaseMutations';
+import { useLocations } from '@/api/queries/useLocations';
 import { useUndoableAction } from '@/hooks/useUndoableAction';
 import { cn } from '@/utils/cn';
 import type { PurchaseEvent } from '@/types/api';
@@ -10,23 +11,24 @@ interface MoveLocationModalProps {
   onClose: () => void;
 }
 
-const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'];
-
 export default function MoveLocationModal({ open, event, onClose }: MoveLocationModalProps) {
   const [portion, setPortion] = useState<number>(1);
   const [destination, setDestination] = useState<string>('fridge');
   const moveMutation = useMovePurchase();
   const undoable = useUndoableAction();
+  // LOCATION_TOUCHPOINT — registered list, not a hardcoded array.
+  // Default destination is the first registered location that isn't
+  // the current one, so user-renamed/added locations work.
+  const { locations } = useLocations();
 
   useEffect(() => {
     if (open && event) {
       setPortion(event.quantity);
-      // Default to a different location than the current one — usually the user's intent.
-      const current = event.location || 'pantry';
-      const next = LOCATIONS.find((l) => l !== current) || 'pantry';
-      setDestination(next);
+      const current = event.location || '';
+      const next = locations.find((l) => l.key !== current) ?? locations[0];
+      setDestination(next?.key ?? 'pantry');
     }
-  }, [open, event]);
+  }, [open, event, locations]);
 
   useEffect(() => {
     if (!open) return;
@@ -141,17 +143,17 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
         <div className="px-5 py-4 space-y-2">
           <label className="block text-xs text-ga-text-secondary">Move to</label>
           <div className="grid grid-cols-3 gap-2">
-            {LOCATIONS.map((loc) => {
-              const isCurrent = event.location === loc;
-              const isSelected = destination === loc;
+            {locations.map((loc) => {
+              const isCurrent = event.location === loc.key;
+              const isSelected = destination === loc.key;
               return (
                 <button
-                  key={loc}
+                  key={loc.key}
                   type="button"
-                  onClick={() => setDestination(loc)}
+                  onClick={() => setDestination(loc.key)}
                   disabled={isCurrent}
                   className={cn(
-                    'px-3 py-2 text-sm rounded border capitalize',
+                    'px-3 py-2 text-sm rounded border flex items-center justify-center gap-1',
                     isCurrent
                       ? 'border-ga-border text-ga-text-secondary opacity-40 cursor-not-allowed'
                       : isSelected
@@ -160,8 +162,9 @@ export default function MoveLocationModal({ open, event, onClose }: MoveLocation
                   )}
                   title={isCurrent ? 'Already at this location' : undefined}
                 >
-                  {loc}
-                  {isCurrent && <span className="ml-1 text-xs">(current)</span>}
+                  <span>{loc.icon}</span>
+                  <span>{loc.name}</span>
+                  {isCurrent && <span className="text-[10px]">(here)</span>}
                 </button>
               );
             })}

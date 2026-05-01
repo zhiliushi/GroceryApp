@@ -2,8 +2,12 @@ export const PAGE_LIMIT = 50;
 
 export const ITEM_STATUSES = ['active', 'consumed', 'expired', 'discarded'] as const;
 export const REVIEW_STATUSES = ['pending_review', 'approved', 'rejected', 'needs_info'] as const;
-/** @deprecated Use useLocations() hook instead for dynamic locations. Kept as fallback only. */
-export const STORAGE_LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'] as const;
+// LOCATION_TOUCHPOINT note: there is intentionally NO STORAGE_LOCATIONS
+// constant here. Locations are user-configurable and come from
+// `useLocations()` (hook) on the frontend, or `/api/config/locations`
+// directly. If you find yourself wanting a hardcoded list, that's a
+// regression — see `.claude/docs/feature-inventory.md` "location
+// touchpoints" for the rule.
 
 export const FOODBANK_COUNTRIES = [
   { value: 'MY', label: 'Malaysia' },

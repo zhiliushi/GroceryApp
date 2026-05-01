@@ -7,6 +7,7 @@ import { qk } from '@/api/queries/keys';
 import { useAuthStore } from '@/stores/authStore';
 import { useConsumeByCatalog, useUpdatePurchase } from '@/api/mutations/usePurchaseMutations';
 import { usePurchases } from '@/api/queries/usePurchases';
+import { useLocations } from '@/api/queries/useLocations';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import ScanResultPanel, { type ScanResultAction } from './ScanResultPanel';
 import { useScannerEngine } from './useScannerEngine';
@@ -397,13 +398,14 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
 }
 
 
-const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter', 'other'] as const;
-
 /**
  * Move-location step — list this user's active purchases for the scanned
  * catalog entry; user picks one and chooses the destination location.
  * If only one active event exists, skip the picker and jump straight to
  * the destination chooser.
+ *
+ * LOCATION_TOUCHPOINT — pulls the registered list via useLocations(),
+ * not a hardcoded array.
  */
 function MoveLocationStep({
   nameNorm,
@@ -421,6 +423,7 @@ function MoveLocationStep({
     status: 'active',
     limit: 50,
   });
+  const { locations } = useLocations();
 
   const events = data?.items ?? [];
   const [selectedEventId, setSelectedEventId] = useState<string | null>(
@@ -496,15 +499,18 @@ function MoveLocationStep({
         <div>
           <div className="text-xs text-ga-text-secondary mb-1.5">Move to:</div>
           <div className="flex flex-wrap gap-2">
-            {LOCATIONS.filter((loc) => loc !== selected.location).map((loc) => (
-              <button
-                key={loc}
-                onClick={() => onSubmit(selected.id, loc)}
-                className="px-3 py-1.5 text-sm bg-ga-bg-hover border border-ga-border rounded hover:bg-ga-accent hover:text-white capitalize"
-              >
-                {loc}
-              </button>
-            ))}
+            {locations
+              .filter((loc) => loc.key !== selected.location)
+              .map((loc) => (
+                <button
+                  key={loc.key}
+                  onClick={() => onSubmit(selected.id, loc.key)}
+                  className="px-3 py-1.5 text-sm bg-ga-bg-hover border border-ga-border rounded hover:bg-ga-accent hover:text-white flex items-center gap-1.5"
+                >
+                  <span>{loc.icon}</span>
+                  <span>{loc.name}</span>
+                </button>
+              ))}
           </div>
         </div>
       )}
