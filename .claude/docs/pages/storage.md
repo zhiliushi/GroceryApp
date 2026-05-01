@@ -76,10 +76,11 @@ shim). Switched 2026-05-01 for consistency with the new model.
 
 ## Title-row right-padding
 
-`md:pr-[280px]` reserves space for the fixed Scan + Add pills at
-top-right (z-30). Without it the title and the admin "+ Add Location"
-button slide under the pills. Same pattern used on
-`CatalogCleanupBanner`.
+The right-side clearance for the fixed Scan + Add pills is now
+provided globally by `AppLayout`'s Outlet wrapper
+(`md:pr-[260px]`). No per-page padding needed — see
+`.claude/docs/project_context.md` "Layout — global floating-action
+safe-zone".
 
 ## Update discipline
 

@@ -33,8 +33,15 @@ export default function AppLayout() {
           'ml-0 pt-12 md:pt-0',
         )}
       >
+        {/* Banner is sibling of the page-content wrapper so its background
+            spans the full main area; banner content has its own pr for
+            clearance. Page content gets `md:pr-[260px]` to clear the fixed
+            top-right Add/Scan pills (z-30) on desktop, plus `pb-24 md:pb-0`
+            so mobile FAB at bottom-right doesn't cover the last list row. */}
         <CatalogCleanupBanner />
-        <Outlet />
+        <div className="md:pr-[260px] pb-24 md:pb-0 min-w-0">
+          <Outlet />
+        </div>
       </main>
 
       {/* Desktop Add pill + Scan pill (top-right). Mobile uses PrimaryActionFab below. */}

@@ -84,27 +84,27 @@ export default function StoragePage() {
 
   return (
     <div className="p-3 sm:p-6 max-w-5xl mx-auto">
-      {/* Right-padding clears the floating Add/Scan pills (top-right z-30). */}
-      <div className="md:pr-[280px]">
-        <div className="flex items-center justify-between mb-2">
-          <PageHeader
-            title="Storage"
-            icon="🗄️"
-            count={stats.locationCards.length}
-          />
-          {isAdmin && (
-            <button
-              onClick={() => setShowAdd(true)}
-              className="bg-ga-accent hover:bg-ga-accent-hover text-white text-sm font-medium rounded-lg px-3 py-1.5 transition-colors flex-shrink-0"
-            >
-              + Add Location
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-ga-text-secondary mb-5">
-          Tap any location to see what's inside.
-        </p>
+      {/* Right-side floating-pill clearance is now handled globally by
+          AppLayout's Outlet wrapper (`md:pr-[260px]`). No per-page hack
+          needed. */}
+      <div className="flex items-center justify-between mb-2">
+        <PageHeader
+          title="Storage"
+          icon="🗄️"
+          count={stats.locationCards.length}
+        />
+        {isAdmin && (
+          <button
+            onClick={() => setShowAdd(true)}
+            className="bg-ga-accent hover:bg-ga-accent-hover text-white text-sm font-medium rounded-lg px-3 py-1.5 transition-colors flex-shrink-0"
+          >
+            + Add Location
+          </button>
+        )}
       </div>
+      <p className="text-xs text-ga-text-secondary mb-5">
+        Tap any location to see what's inside.
+      </p>
 
       {/* Add form — admin only */}
       {showAdd && (

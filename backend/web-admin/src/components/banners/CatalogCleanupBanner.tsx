@@ -34,16 +34,15 @@ export default function CatalogCleanupBanner() {
   if (!user || (user.schema_version ?? 1) < 2 || dismissed) return null;
 
   // Right-padding on desktop reserves space for the fixed Add/Scan pills
-  // (z-30 top-right in AppLayout). The pills sit in that gap; banner
-  // text + buttons stay clear of them.
+  // (z-30 top-right in AppLayout). Matches the global safe-zone width
+  // applied to page content (`md:pr-[260px]` on the Outlet wrapper).
+  // Banner stays a sibling of that wrapper so its background spans the
+  // full main area — the padding is content-only.
   //
-  // Color discipline: the previous amber-300 / amber-100 text on
-  // amber-500/15 was washed out on the light theme (which is what the
-  // app actually uses — the dark sidebar gave the wrong impression).
-  // Switched to high-contrast dark-on-amber-200 so the warning reads
-  // at a glance regardless of theme.
+  // Color discipline: amber-900/950 text on amber-200 ground for
+  // high contrast on the light theme.
   return (
-    <div className="relative z-40 bg-amber-200 border-b-2 border-amber-500 px-4 py-2.5 text-sm md:pr-[300px] shadow-sm">
+    <div className="relative z-40 bg-amber-200 border-b-2 border-amber-500 px-4 py-2.5 text-sm md:pr-[260px] shadow-sm">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
           <strong className="font-semibold text-amber-950">⚠ Catalog cleanup is now active.</strong>{' '}

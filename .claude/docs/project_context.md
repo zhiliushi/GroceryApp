@@ -84,6 +84,32 @@ cd backend && pip install -r requirements.txt && uvicorn main:app --reload --por
 - `.claude/docs/pages/*.md` — per-page documentation (dashboard, my-items,
   quickadd, insights, catalog-analysis, feature-flags, user-manual).
 
+## Layout — global floating-action safe-zone
+
+The fixed Add (`StickyAddButton`) and Scan (`FloatingScanButton`) pills
+live at `top-4 right-4 z-30` in `AppLayout.tsx`. They're hidden on
+mobile (replaced by `PrimaryActionFab` at bottom-right). On desktop
+they overlap the top-right of every page.
+
+To prevent collisions, `AppLayout` wraps `<Outlet />` in a div with
+`md:pr-[260px] pb-24 md:pb-0`:
+
+- `md:pr-[260px]` reserves 260px of right-side space on desktop,
+  enough to clear "Scan" + "Add item" pills + their margins.
+- `pb-24 md:pb-0` gives mobile pages bottom-padding so the FAB
+  doesn't cover the last list item.
+- `min-w-0` lets flex/grid children shrink properly.
+
+**Implication for new pages**: Don't add per-page `md:pr-[*]` to
+header rows. The wrapper handles it. The only sibling of the wrapper
+is `CatalogCleanupBanner` (full-width by design), which carries its
+own `md:pr-[260px]` for content clearance.
+
+If a page genuinely needs to use the right strip (e.g. a custom
+floating widget that should NOT be obscured by the pills), it must
+either fight the wrapper (`md:!pr-0` + own clearance) or extend
+beyond the wrapper via `position: fixed`.
+
 ## Glossary
 
 User-facing and engineering terms whose meaning isn't obvious from
