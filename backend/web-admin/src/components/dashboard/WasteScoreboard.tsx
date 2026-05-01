@@ -18,15 +18,28 @@ export default function WasteScoreboard() {
           See all →
         </Link>
       </div>
-      <div className="grid sm:grid-cols-3 gap-3">
-        <WastePeriodCard period="week" label="This week" hint="last 7 days" />
-        <WastePeriodCard
-          period="month"
-          label="This month"
-          hint="from the 1st"
-          highlight
-        />
-        <WastePeriodCard period="last_month" label="Last month" hint="full month" />
+      {/* Same mobile-featured layout as SpendingScoreboard (month at top
+          full-width, week + last-month compact below). See SpendingScoreboard
+          for layout reasoning. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-1 sm:order-2">
+          <WastePeriodCard
+            period="month"
+            label="This month"
+            hint="from the 1st"
+            highlight
+          />
+        </div>
+        <div className="sm:order-1">
+          <WastePeriodCard period="week" label="This week" hint="last 7 days" />
+        </div>
+        <div className="sm:order-3">
+          <WastePeriodCard
+            period="last_month"
+            label="Last month"
+            hint="full month"
+          />
+        </div>
       </div>
     </section>
   );

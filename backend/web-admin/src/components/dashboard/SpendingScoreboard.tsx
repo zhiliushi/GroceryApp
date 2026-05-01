@@ -32,15 +32,31 @@ export default function SpendingScoreboard() {
           See all →
         </Link>
       </div>
-      <div className="grid sm:grid-cols-3 gap-3">
-        <SpendingPeriodCard period="week" label="This week" hint="last 7 days" />
-        <SpendingPeriodCard
-          period="month"
-          label="This month"
-          hint="from the 1st"
-          highlight
-        />
-        <SpendingPeriodCard period="last_month" label="Last month" hint="full month" />
+      {/* Mobile layout: featured "This month" full-width, then this-week +
+          last-month side-by-side compact below. Desktop: even 3-column row
+          with month centered. CSS-grid order swaps month into the middle on
+          desktop without changing DOM order — so screen readers still hear
+          "month, week, last_month" in the priority a one-handed user wants. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-1 sm:order-2">
+          <SpendingPeriodCard
+            period="month"
+            label="This month"
+            hint="from the 1st"
+            highlight
+            defaultOpen
+          />
+        </div>
+        <div className="sm:order-1">
+          <SpendingPeriodCard period="week" label="This week" hint="last 7 days" />
+        </div>
+        <div className="sm:order-3">
+          <SpendingPeriodCard
+            period="last_month"
+            label="Last month"
+            hint="full month"
+          />
+        </div>
       </div>
     </section>
   );

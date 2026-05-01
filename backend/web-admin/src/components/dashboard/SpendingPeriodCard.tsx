@@ -77,42 +77,12 @@ export default function SpendingPeriodCard({
       {open && (
         <div className="px-4 pb-3 -mt-1">
           <div className="border-t border-ga-border pt-2">
-            <div className="text-[11px] text-ga-text-secondary mb-1.5">
-              Top {Math.min(items.length, 5)} most expensive
-              {items.length === 0 && ' — nothing yet'}
-            </div>
-            {items.length > 0 && (
-              <ul className="space-y-1">
-                {items.map((it, idx) => (
-                  <li
-                    key={it.id}
-                    className="flex items-center justify-between text-xs"
-                  >
-                    <span className="flex items-center gap-1.5 truncate min-w-0">
-                      <span className="text-ga-text-secondary font-mono w-3.5 flex-shrink-0">
-                        {idx + 1}.
-                      </span>
-                      <span className="text-ga-text-primary truncate">
-                        {it.display_name}
-                      </span>
-                      {it.quantity > 1 && (
-                        <span className="text-ga-text-secondary text-[10px] flex-shrink-0">
-                          ×{formatQty(it.quantity)}
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-ga-text-primary font-medium tabular-nums flex-shrink-0 ml-2">
-                      {formatCurrencyWithSymbol(it.amount, currency)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {untracked > 0 && (
-              <p className="mt-2 text-[10px] text-ga-text-secondary">
-                +{untracked} purchase{untracked === 1 ? '' : 's'} with no price recorded.
-              </p>
-            )}
+            <ItemsBody
+              items={items}
+              total={total}
+              currency={currency}
+              untracked={untracked}
+            />
           </div>
         </div>
       )}
@@ -122,4 +92,95 @@ export default function SpendingPeriodCard({
 
 function formatQty(n: number): string {
   return n === Math.floor(n) ? String(n) : n.toFixed(1);
+}
+
+/**
+ * Three-state empty handling — the original copy ("Top 0 most expensive
+ * — nothing yet") was misleading when the card had a non-zero total
+ * (the user sees money but no items, so "nothing" reads as a bug).
+ *
+ * Resolved cases:
+ *   1. total > 0, items present → render the list
+ *   2. total > 0, items empty → backend version mismatch (top_items
+ *      not in response). Tell the user, don't claim "nothing yet".
+ *   3. total === 0 → genuinely no purchases.
+ */
+function ItemsBody({
+  items,
+  total,
+  currency,
+  untracked,
+}: {
+  items: Array<{
+    id: string;
+    display_name: string;
+    amount: number;
+    quantity: number;
+  }>;
+  total: number;
+  currency: string;
+  untracked: number;
+}) {
+  if (items.length > 0) {
+    return (
+      <>
+        <div className="text-[11px] text-ga-text-secondary mb-1.5">
+          Top {Math.min(items.length, 5)} most expensive
+        </div>
+        <ul className="space-y-1">
+          {items.map((it, idx) => (
+            <li key={it.id} className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 truncate min-w-0">
+                <span className="text-ga-text-secondary font-mono w-3.5 flex-shrink-0">
+                  {idx + 1}.
+                </span>
+                <span className="text-ga-text-primary truncate">{it.display_name}</span>
+                {it.quantity > 1 && (
+                  <span className="text-ga-text-secondary text-[10px] flex-shrink-0">
+                    ×{formatQty(it.quantity)}
+                  </span>
+                )}
+              </span>
+              <span className="text-ga-text-primary font-medium tabular-nums flex-shrink-0 ml-2">
+                {formatCurrencyWithSymbol(it.amount, currency)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {untracked > 0 && (
+          <p className="mt-2 text-[10px] text-ga-text-secondary">
+            +{untracked} purchase{untracked === 1 ? '' : 's'} with no price recorded.
+          </p>
+        )}
+      </>
+    );
+  }
+
+  if (total > 0) {
+    return (
+      <p className="text-[11px] text-ga-text-secondary">
+        Item breakdown unavailable — refresh the page or restart the backend
+        to pick up the latest version.
+        {untracked > 0 && (
+          <>
+            {' '}
+            ({untracked} purchase{untracked === 1 ? '' : 's'} with no price
+            recorded.)
+          </>
+        )}
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[11px] text-ga-text-secondary">
+      No purchases in this period.
+      {untracked > 0 && (
+        <>
+          {' '}
+          {untracked} item{untracked === 1 ? '' : 's'} added without a price.
+        </>
+      )}
+    </p>
+  );
 }

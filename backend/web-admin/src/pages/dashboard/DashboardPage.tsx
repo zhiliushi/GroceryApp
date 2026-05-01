@@ -9,7 +9,7 @@ import ProgressiveNudge from '@/components/nudge/ProgressiveNudge';
 import SpendingScoreboard from '@/components/dashboard/SpendingScoreboard';
 import WasteScoreboard from '@/components/dashboard/WasteScoreboard';
 import ExpiringSoonCard from '@/components/dashboard/ExpiringSoonCard';
-import InventoryGlance from '@/components/dashboard/InventoryGlance';
+import InventoryStatsCard from '@/components/dashboard/InventoryStatsCard';
 import InsightsCard from '@/components/dashboard/InsightsCard';
 import FrequentlyBoughtCard from '@/components/dashboard/FrequentlyBoughtCard';
 import { useAuthStore } from '@/stores/authStore';
@@ -19,12 +19,15 @@ import { truncateUid } from '@/utils/format';
  * Dashboard — laid out around the two questions the user (Malaysian
  * housewife archetype, MYR) actually asks when she opens the app:
  *   1. "Did I overspend?"   → SpendingScoreboard at the top.
- *   2. "What goes bad next?" → ExpiringSoonCard immediately under it.
+ *   2. "What goes bad next?" → ExpiringSoonCard.
  *
- * Everything below is reference (waste cost, frequently-bought, plain
- * inventory glance). The old "Inventory Health 73" hero was dropped in
- * favor of InventoryGlance — a one-line plain-language status. Admin
- * stats stay in their own block, gated by isAdmin, untouched.
+ * Mobile-first ordering: each scoreboard features "This month" full-width
+ * with This-week + Last-month compact below (see SpendingScoreboard for
+ * the grid+order trick). Bottom row pairs InventoryStatsCard (4 mini
+ * stats — in stock / fresh / use soon / expired) with FrequentlyBoughtCard
+ * so a one-handed mobile user has both reference panels in one screen.
+ *
+ * Admin stats stay in their own block, gated by isAdmin, untouched.
  *
  * Add Item / Scan controls live in AppLayout (StickyAddButton +
  * FloatingScanButton).
@@ -42,43 +45,49 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <PageHeader title="Dashboard" subtitle={today} />
 
       {/* Nudge stack — opt-in product hints, kept above the fold so they
           don't get lost. Ordered by intrusiveness: progressive < banner. */}
-      <div className="mb-4 space-y-3">
+      <div className="mb-3 md:mb-4 space-y-3">
         <ProgressiveNudge />
         <NudgeBanner />
       </div>
 
-      {/* Spending scoreboard — three period cards (week / month / last
-          month). Each expands to its top-5 most expensive purchases. */}
-      <div className="mb-4">
+      {/* Spending scoreboard — three period cards. On mobile "This month"
+          is featured full-width on top with week + last_month compact
+          below. Each card expands to its top-5 most expensive purchases. */}
+      <div className="mb-3 md:mb-4">
         <SpendingScoreboard />
       </div>
 
-      {/* Waste scoreboard — same structure as spending so the user can
-          compare "spent vs thrown" period-by-period at a glance. */}
-      <div className="mb-4">
+      {/* Waste scoreboard — same shape as spending, mirrored. */}
+      <div className="mb-3 md:mb-4">
         <WasteScoreboard />
       </div>
 
       {/* Use these soon — collapsed by default; auto-opens when anything
           is already past expiry (urgent enough to warrant the click). */}
-      <div className="mb-4">
+      <div className="mb-3 md:mb-4">
         <ExpiringSoonCard />
       </div>
 
-      {/* One-line inventory glance — replaces the abstract score-out-of-100. */}
-      <div className="mb-6">
-        <InventoryGlance />
+      {/* Bottom row: kitchen-at-a-glance stats + frequently-bought. Both
+          are reference / quick-action panels — putting them side-by-side
+          on desktop avoids leaving FrequentlyBought as a lonely full-width
+          card, and pairs the "what's in the kitchen" stats with the
+          "what to buy next" shortcut. On mobile they stack. */}
+      <div className="grid md:grid-cols-2 gap-3 md:gap-4 mb-3 md:mb-4">
+        <InventoryStatsCard />
+        <FrequentlyBoughtCard />
       </div>
 
-      {/* Reference cards: suggestions + quick re-buy. */}
-      <div className="grid md:grid-cols-2 gap-4 mb-6">
+      {/* Insights — full-width below; auto-hides when there are no
+          insights to surface, so an empty value doesn't take screen
+          real estate. */}
+      <div className="mb-6">
         <InsightsCard />
-        <FrequentlyBoughtCard />
       </div>
 
       {/* User Info */}

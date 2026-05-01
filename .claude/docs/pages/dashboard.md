@@ -22,22 +22,26 @@ action-driving.
    - `<ProgressiveNudge />` — 5/10/20-item threshold nudges (gated by
      `progressive_nudges` flag).
    - `<NudgeBanner />` — top 7/14/21-day reminder (if any).
-3. `<SpendingScoreboard />` — three independent `SpendingPeriodCard`s
-   side-by-side: `week`, `month` (highlighted), `last_month`. Each card
-   collapses by default; tap to reveal top-5 most-expensive purchases for
-   that period.
-4. `<WasteScoreboard />` — symmetric mirror of spending. Three
-   `WastePeriodCard`s. Top-5 most-expensive *thrown* items in each, sorted
-   by `total_value` desc.
+3. `<SpendingScoreboard />` — three `SpendingPeriodCard`s. **Mobile**:
+   "This month" is featured full-width with `defaultOpen`; "This week"
+   and "Last month" wrap to a compact 2-col row below. **Desktop
+   (≥sm)**: three equal columns with month center via CSS-grid `order`
+   (DOM order stays month / week / last_month so screen readers hear
+   the priority order).
+4. `<WasteScoreboard />` — symmetric mirror of spending, same featured
+   layout. Top-5 most-expensive *thrown* items per period, sorted by
+   `total_value` desc.
 5. `<ExpiringSoonCard />` — collapsed by default, auto-opens when
    anything is past expiry. Headline shows "N expired · M expiring in 3
    days · 1 in fridge · 2 in pantry". Per-item "Use…" buttons stop click
    propagation so they don't toggle the card.
-6. `<InventoryGlance />` — one-line plain-language pill row: "26 items in
-   stock · 3 expiring in 3 days · 3 already expired". Replaces the old
-   `<HealthBar />` "Inventory Health 73" hero (still available at
-   `/health-score` for users who want the score).
-7. 2-col reference row: `<InsightsCard />` · `<FrequentlyBoughtCard />`.
+6. 2-col bottom row: `<InventoryStatsCard />` · `<FrequentlyBoughtCard />`.
+   InventoryStatsCard shows 4 mini stats (in-stock / fresh / use soon /
+   expired), each a Link drilling to the relevant My Items / health-score
+   tab. Replaces the previous `<InventoryGlance />` pill row — same data
+   source (`useHealthScore`), more presence, no longer leaves
+   `<FrequentlyBoughtCard />` lonely as a full-width card.
+7. Full-width `<InsightsCard />` (auto-hides when empty).
 8. Admin-only stats grid + Quick Actions (gated by `isAdmin`).
 
 ## Feature flag gating
@@ -52,11 +56,15 @@ action-driving.
 All widgets fetch their own data via hooks:
 
 - `useSpendingSummary(period)` × 3 — week / month / last_month
-  (`/api/waste/spending?period=...`)
+  (`/api/waste/spending?period=...`). Response includes `top_items`
+  (top-5 by amount). Frontend handles three states: items present →
+  list; total>0 but items empty (backend version mismatch) → "refresh
+  the page" hint; total=0 → "no purchases".
 - `useWasteSummary(period)` × 3 — same three periods
-  (`/api/waste/summary?period=...`)
+  (`/api/waste/summary?period=...`). Response includes `top_wasted`
+  sorted by `total_value` desc.
 - `usePurchases({ status: 'active', limit: 200 })` — for ExpiringSoonCard
-- `useHealthScore()` — for InventoryGlance counts (reuses existing endpoint)
+- `useHealthScore()` — for InventoryStatsCard counts (reuses existing endpoint)
 - `useDashboard()` — admin stats (legacy)
 - `useFeatureFlags()` — `/api/admin/features` (admin) or
   `/api/features/public` (user)
