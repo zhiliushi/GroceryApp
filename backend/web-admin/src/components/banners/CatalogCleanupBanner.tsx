@@ -33,12 +33,16 @@ export default function CatalogCleanupBanner() {
 
   if (!user || (user.schema_version ?? 1) < 2 || dismissed) return null;
 
+  // Right-padding on desktop reserves space for the fixed Add/Scan pills
+  // (top-right z-30 on AppLayout). Without it the banner text slid under
+  // the pills and the dismiss button was unclickable. Numbers chosen to
+  // clear roughly Add pill (~110px) + Scan pill (~85px) + gap = ~290px.
   return (
-    <div className="bg-amber-500/10 border-b border-amber-500/40 px-4 py-2 text-sm">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-        <div className="text-amber-300">
-          <strong>Catalog cleanup is now active.</strong>{' '}
-          <span className="text-amber-200/80">
+    <div className="relative z-40 bg-amber-500/15 border-b border-amber-500/50 px-4 py-2 text-sm md:pr-[300px]">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-amber-100 flex-1 min-w-0">
+          <strong className="font-semibold">Catalog cleanup is now active.</strong>{' '}
+          <span className="text-amber-200">
             Items in your catalog without a barcode have a 30-day idle counter — touch them to
             keep, or remove from the list. (Paid users exempt.)
           </span>
@@ -46,7 +50,7 @@ export default function CatalogCleanupBanner() {
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link
             to="/catalog"
-            className="px-3 py-1 rounded bg-amber-500/20 text-amber-100 text-xs hover:bg-amber-500/30"
+            className="px-3 py-1 rounded bg-amber-400/30 text-amber-50 text-xs font-medium hover:bg-amber-400/40"
           >
             Show me
           </Link>
