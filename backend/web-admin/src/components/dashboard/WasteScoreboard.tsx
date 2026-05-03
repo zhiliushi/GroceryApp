@@ -9,14 +9,16 @@ import WastePeriodCard from './WastePeriodCard';
  * Each period card is collapsed by default; expanding shows the top-5
  * most expensive thrown items in that window.
  */
-export default function WasteScoreboard() {
+export default function WasteScoreboard({ hideSeeAllLink = false }: { hideSeeAllLink?: boolean } = {}) {
   return (
     <section>
       <div className="flex items-baseline justify-between mb-2">
         <h3 className="text-sm font-semibold text-ga-text-primary">What you wasted</h3>
-        <Link to="/waste" className="text-xs text-ga-accent hover:underline">
-          See all →
-        </Link>
+        {!hideSeeAllLink && (
+          <Link to="/waste" className="text-xs text-ga-accent hover:underline">
+            See all →
+          </Link>
+        )}
       </div>
       {/* Same mobile-featured layout as SpendingScoreboard (month at top
           full-width, week + last-month compact below). See SpendingScoreboard

@@ -3,6 +3,7 @@ import { useWasteSummary } from '@/api/queries/useWaste';
 import PageHeader from '@/components/shared/PageHeader';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import WasteScoreboard from '@/components/dashboard/WasteScoreboard';
 import { cn } from '@/utils/cn';
 
 type Period = 'week' | 'month' | 'year' | 'all';
@@ -21,6 +22,13 @@ export default function WastePage() {
     <div className="p-6 space-y-4">
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Waste' }]} />
       <PageHeader title="Waste breakdown" icon="🗑️" />
+
+      {/* Top scoreboard — week / month / last_month at a glance, before
+          drilling into a single-period view below. Symmetric with the
+          home dashboard's WasteScoreboard. */}
+      <WasteScoreboard hideSeeAllLink />
+
+      <div className="pt-2 border-t border-ga-border" />
 
       <div className="flex gap-2">
         {PERIODS.map((p) => (
