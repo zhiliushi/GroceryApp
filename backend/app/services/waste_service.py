@@ -527,7 +527,9 @@ def get_spending_summary(user_id: str, period: str = "month") -> dict:
         method = data.get("payment_method")
         if method == "cash":
             cash_total += amount
-        elif method == "card":
+        elif method in ("debit_card", "credit_card", "ewallet", "card"):
+            # "card" kept for legacy rows; new writes use the 4-option canonical set
+            # (debit_card / credit_card / ewallet) — all classified as cashless here.
             card_total += amount
         else:
             other_total += amount
