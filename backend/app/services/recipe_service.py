@@ -472,6 +472,146 @@ def restore_revision(uid: str, recipe_id: str, revision_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Per-ingredient social layer (H3 — homemaker.social)
+# ---------------------------------------------------------------------------
+#
+# Schema additions on each ingredient dict:
+#   stars: list[str]            # uids who starred (deduped). Empty by default.
+#   comments: list[dict]        # [{id, by_uid, by_name, text, created_at}]
+#   pin_by: str | None          # uid of pinner; null/missing = unpinned
+#
+# Sort order on read: pinned ingredients first (by pin_at if present, else
+# array index), then by len(stars) desc, then by original array index.
+#
+# H3 v1 scope: own-recipes only. Cross-user / household-scoped social is a
+# follow-up (needs a path-or-collection-group access pattern that the
+# meals routes don't yet have).
+
+
+import uuid
+
+
+def _ingredient_at(uid: str, recipe_id: str, idx: int) -> Optional[Dict[str, Any]]:
+    """Read recipe + return the ingredient at idx, or None on bad bounds."""
+    doc = _recipes_ref(uid).document(recipe_id).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    ings = data.get("ingredients") or []
+    if idx < 0 or idx >= len(ings):
+        return None
+    return data
+
+
+def _save_ingredients(uid: str, recipe_id: str, ingredients: list) -> None:
+    """Write the ingredients list back. Doesn't run auto-match — the social
+    layer never touches name/quantity/category, so the existing match
+    metadata stays intact."""
+    _recipes_ref(uid).document(recipe_id).update({
+        "ingredients": ingredients,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+
+
+def toggle_ingredient_star(
+    uid: str, recipe_id: str, idx: int, actor_uid: str,
+) -> Optional[Dict[str, Any]]:
+    """Add/remove `actor_uid` from the ingredient's star list. Idempotent
+    on the operation (toggle), so calling twice flips and flips back.
+    Returns the updated ingredient dict, or None on bad bounds."""
+    data = _ingredient_at(uid, recipe_id, idx)
+    if data is None:
+        return None
+    ings = data["ingredients"]
+    ing = dict(ings[idx])
+    stars = list(ing.get("stars") or [])
+    if actor_uid in stars:
+        stars = [u for u in stars if u != actor_uid]
+    else:
+        stars.append(actor_uid)
+    ing["stars"] = stars
+    ings[idx] = ing
+    _save_ingredients(uid, recipe_id, ings)
+    return ing
+
+
+def set_ingredient_pin(
+    uid: str, recipe_id: str, idx: int, actor_uid: str, pinned: bool,
+) -> Optional[Dict[str, Any]]:
+    """Set or clear the pin flag. `pin_by` records who pinned (informational);
+    sort treats any pinned ingredient the same."""
+    data = _ingredient_at(uid, recipe_id, idx)
+    if data is None:
+        return None
+    ings = data["ingredients"]
+    ing = dict(ings[idx])
+    if pinned:
+        ing["pin_by"] = actor_uid
+        ing["pin_at"] = datetime.utcnow().isoformat()
+    else:
+        ing.pop("pin_by", None)
+        ing.pop("pin_at", None)
+    ings[idx] = ing
+    _save_ingredients(uid, recipe_id, ings)
+    return ing
+
+
+def add_ingredient_comment(
+    uid: str, recipe_id: str, idx: int,
+    actor_uid: str, actor_name: str, text: str,
+) -> Optional[Dict[str, Any]]:
+    """Append a comment. Returns the inserted comment dict, or None on bad
+    bounds. Comment text is trimmed + capped at 500 chars."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    data = _ingredient_at(uid, recipe_id, idx)
+    if data is None:
+        return None
+    ings = data["ingredients"]
+    ing = dict(ings[idx])
+    comments = list(ing.get("comments") or [])
+    new_comment = {
+        "id": uuid.uuid4().hex[:12],
+        "by_uid": actor_uid,
+        "by_name": actor_name or actor_uid,
+        "text": text[:500],
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    comments.append(new_comment)
+    ing["comments"] = comments
+    ings[idx] = ing
+    _save_ingredients(uid, recipe_id, ings)
+    return new_comment
+
+
+def delete_ingredient_comment(
+    uid: str, recipe_id: str, idx: int, comment_id: str, actor_uid: str,
+) -> bool:
+    """Remove a comment. Allowed only when actor is the author of the
+    comment OR the recipe owner. Returns True on success, False on bad
+    bounds / not-found / not-authorized."""
+    data = _ingredient_at(uid, recipe_id, idx)
+    if data is None:
+        return False
+    ings = data["ingredients"]
+    ing = dict(ings[idx])
+    comments = list(ing.get("comments") or [])
+    target = next((c for c in comments if c.get("id") == comment_id), None)
+    if not target:
+        return False
+    is_author = target.get("by_uid") == actor_uid
+    is_owner = actor_uid == uid
+    if not (is_author or is_owner):
+        return False
+    comments = [c for c in comments if c.get("id") != comment_id]
+    ing["comments"] = comments
+    ings[idx] = ing
+    _save_ingredients(uid, recipe_id, ings)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Write-time ingredient auto-match (Phase 0)
 # ---------------------------------------------------------------------------
 

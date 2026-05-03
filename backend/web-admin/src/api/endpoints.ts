@@ -13,6 +13,17 @@ export const API = {
   SHOPPING_LISTS: '/api/admin/shopping-lists',
   SHOPPING_LIST: (uid: string, id: string) => `/api/admin/shopping-lists/${uid}/${id}`,
 
+  // v2 user-side shopping lists (uid implicit from auth — never in URL)
+  MY_SHOPPING_LISTS: '/api/shopping-lists',
+  MY_SHOPPING_LIST: (id: string) => `/api/shopping-lists/${id}`,
+  MY_SHOPPING_LIST_ITEMS: (listId: string) => `/api/shopping-lists/${listId}/items`,
+  MY_SHOPPING_LIST_ITEM: (listId: string, itemId: string) =>
+    `/api/shopping-lists/${listId}/items/${itemId}`,
+  MY_SHOPPING_LIST_ITEM_PRICES: (listId: string, itemId: string) =>
+    `/api/shopping-lists/${listId}/items/${itemId}/prices`,
+  MY_SHOPPING_LIST_ITEM_PRICE: (listId: string, itemId: string, priceId: string) =>
+    `/api/shopping-lists/${listId}/items/${itemId}/prices/${priceId}`,
+
   PRODUCTS: '/api/admin/products',
   PRODUCT: (barcode: string) => `/api/admin/products/${barcode}`,
   PRODUCT_LOOKUP: (barcode: string) => `/api/admin/products/lookup/${barcode}`,
@@ -56,6 +67,14 @@ export const API = {
   MEALS_RECIPE_REVISIONS: (id: string) => `/api/meals/recipes/${id}/revisions`,
   MEALS_RECIPE_REVISION_RESTORE: (id: string, revId: string) =>
     `/api/meals/recipes/${id}/revisions/${revId}/restore`,
+  MEALS_INGREDIENT_STAR: (rid: string, idx: number) =>
+    `/api/meals/recipes/${rid}/ingredients/${idx}/star`,
+  MEALS_INGREDIENT_PIN: (rid: string, idx: number) =>
+    `/api/meals/recipes/${rid}/ingredients/${idx}/pin`,
+  MEALS_INGREDIENT_COMMENT: (rid: string, idx: number) =>
+    `/api/meals/recipes/${rid}/ingredients/${idx}/comment`,
+  MEALS_INGREDIENT_COMMENT_ITEM: (rid: string, idx: number, cid: string) =>
+    `/api/meals/recipes/${rid}/ingredients/${idx}/comment/${cid}`,
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',

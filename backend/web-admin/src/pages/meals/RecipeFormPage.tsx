@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
@@ -8,6 +8,7 @@ import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { useHomemaker } from '@/hooks/useHomemaker';
 import RecipeHistoryModal from '@/components/meals/RecipeHistoryModal';
 import RecipeCostCard from '@/components/meals/RecipeCostCard';
+import IngredientSocialRow from '@/components/meals/IngredientSocialRow';
 import type { Recipe, RecipeIngredient } from '@/types/api';
 
 interface FormIngredient extends RecipeIngredient {
@@ -124,6 +125,24 @@ export default function RecipeFormPage() {
   const canSave = name.trim().length >= 2 && ingredients.some((i) => i.name.trim());
   const isPending = createMutation.isPending || updateMutation.isPending;
 
+  // H3 social — render-only sort: pinned first, then by star count desc,
+  // then by original array index. The underlying `ingredients` state stays
+  // in author-given order so Save preserves what was typed; we only reorder
+  // visually. Each entry carries `originalIdx` so the social mutations
+  // address the right backend slot regardless of render position.
+  const sortedIngredients = useMemo(() => {
+    const indexed = ingredients.map((ing, originalIdx) => ({ ing, originalIdx }));
+    return [...indexed].sort((a, b) => {
+      const aPinned = !!a.ing.pin_by;
+      const bPinned = !!b.ing.pin_by;
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      const aStars = (a.ing.stars ?? []).length;
+      const bStars = (b.ing.stars ?? []).length;
+      if (aStars !== bStars) return bStars - aStars;
+      return a.originalIdx - b.originalIdx;
+    });
+  }, [ingredients]);
+
   return (
     <div className="p-6 max-w-2xl">
       {/* Breadcrumb + History (homemaker.versioning, edit mode only) */}
@@ -196,16 +215,25 @@ export default function RecipeFormPage() {
         <div>
           <label className="block text-xs text-ga-text-secondary mb-1">Ingredients *</label>
           <div className="space-y-1.5">
-            {ingredients.map((ing) => (
-              <div key={ing._key} className="flex items-center gap-2">
-                <input value={ing.name} onChange={(e) => updateIngredient(ing._key, 'name', e.target.value)}
-                  placeholder="Ingredient name"
-                  className="flex-1 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary" />
-                <input type="number" value={ing.quantity ?? ''} onChange={(e) => updateIngredient(ing._key, 'quantity', e.target.value ? parseFloat(e.target.value) : null)}
-                  placeholder="Qty" className="w-16 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary text-center" />
-                <input value={ing.unit ?? ''} onChange={(e) => updateIngredient(ing._key, 'unit', e.target.value || null)}
-                  placeholder="Unit" className="w-20 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary" />
-                <button onClick={() => removeIngredient(ing._key)} className="text-red-400 hover:text-red-300 text-xs">🗑</button>
+            {sortedIngredients.map(({ ing, originalIdx }) => (
+              <div key={ing._key}>
+                <div className="flex items-center gap-2">
+                  <input value={ing.name} onChange={(e) => updateIngredient(ing._key, 'name', e.target.value)}
+                    placeholder="Ingredient name"
+                    className="flex-1 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary" />
+                  <input type="number" value={ing.quantity ?? ''} onChange={(e) => updateIngredient(ing._key, 'quantity', e.target.value ? parseFloat(e.target.value) : null)}
+                    placeholder="Qty" className="w-16 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary text-center" />
+                  <input value={ing.unit ?? ''} onChange={(e) => updateIngredient(ing._key, 'unit', e.target.value || null)}
+                    placeholder="Unit" className="w-20 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary" />
+                  <button onClick={() => removeIngredient(ing._key)} className="text-red-400 hover:text-red-300 text-xs">🗑</button>
+                </div>
+                {isEdit && id && homemaker.social && (
+                  <IngredientSocialRow
+                    recipeId={id}
+                    idx={originalIdx}
+                    ingredient={ing}
+                  />
+                )}
               </div>
             ))}
           </div>

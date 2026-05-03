@@ -141,6 +141,102 @@ async def restore_recipe_revision(
 
 
 # ---------------------------------------------------------------------------
+# Per-ingredient social layer (H3 — homemaker.social)
+# ---------------------------------------------------------------------------
+
+
+def _require_homemaker_social(user: UserInfo) -> None:
+    """403 if the user can't see homemaker.social."""
+    from app.services import user_service
+    if not user_service.is_homemaker_enabled(user.uid, "social"):
+        raise HTTPException(
+            status_code=403,
+            detail="Per-ingredient social layer requires homemaker access.",
+        )
+
+
+@router.post("/recipes/{recipe_id}/ingredients/{idx}/star")
+async def toggle_recipe_ingredient_star(
+    recipe_id: str,
+    idx: int,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Toggle the calling user's star on the ingredient. Idempotent
+    flip — second call removes their star. Homemaker-only."""
+    _require_homemaker_social(user)
+    result = recipe_service.toggle_ingredient_star(
+        uid=user.uid, recipe_id=recipe_id, idx=idx, actor_uid=user.uid,
+    )
+    if result is None:
+        raise HTTPException(404, "Recipe or ingredient not found")
+    return {"ingredient": result}
+
+
+@router.post("/recipes/{recipe_id}/ingredients/{idx}/pin")
+async def set_recipe_ingredient_pin(
+    recipe_id: str,
+    idx: int,
+    body: dict,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Pin or unpin an ingredient. Body: `{"pinned": bool}`.
+    Pinned items render at the top of the ingredient list. Homemaker-only."""
+    _require_homemaker_social(user)
+    pinned = body.get("pinned")
+    if not isinstance(pinned, bool):
+        raise HTTPException(400, "`pinned` must be a boolean")
+    result = recipe_service.set_ingredient_pin(
+        uid=user.uid, recipe_id=recipe_id, idx=idx,
+        actor_uid=user.uid, pinned=pinned,
+    )
+    if result is None:
+        raise HTTPException(404, "Recipe or ingredient not found")
+    return {"ingredient": result}
+
+
+@router.post("/recipes/{recipe_id}/ingredients/{idx}/comment")
+async def add_recipe_ingredient_comment(
+    recipe_id: str,
+    idx: int,
+    body: dict,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Append a comment to an ingredient. Body: `{"text": str}`. Text is
+    trimmed + capped at 500 chars; empty text returns 400. Homemaker-only."""
+    _require_homemaker_social(user)
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Comment text required")
+    actor_name = user.display_name or user.email or user.uid
+    new_comment = recipe_service.add_ingredient_comment(
+        uid=user.uid, recipe_id=recipe_id, idx=idx,
+        actor_uid=user.uid, actor_name=actor_name, text=text,
+    )
+    if new_comment is None:
+        raise HTTPException(404, "Recipe or ingredient not found")
+    return {"comment": new_comment}
+
+
+@router.delete("/recipes/{recipe_id}/ingredients/{idx}/comment/{comment_id}")
+async def delete_recipe_ingredient_comment(
+    recipe_id: str,
+    idx: int,
+    comment_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Remove a comment. Allowed only if the calling user authored the
+    comment OR owns the recipe. Homemaker-only."""
+    _require_homemaker_social(user)
+    ok = recipe_service.delete_ingredient_comment(
+        uid=user.uid, recipe_id=recipe_id, idx=idx,
+        comment_id=comment_id, actor_uid=user.uid,
+    )
+    if not ok:
+        raise HTTPException(404, "Comment not found or not authorized")
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
 # Recipe finance (F1 base — per-ingredient pricing from buy history)
 # ---------------------------------------------------------------------------
 

@@ -158,27 +158,58 @@ export interface ContributedResponse {
 }
 
 // === Shopping Lists ===
+// v1 (legacy mobile) shape preserved for the admin cross-user view.
+// v2 user-side adds: weight/volume pair, prices array, added_at, source.
+// Frontend code reads BOTH shapes — fall back across casing variants.
 export interface ShoppingList {
   id: string;
   user_id: string;
   name: string;
-  created_at: number | null;
-  createdDate: number | null;
+  // v2 uses snake_case; v1 docs sometimes only have createdDate
+  created_at?: string | number | null;
+  updated_at?: string | null;
+  createdDate?: number | null;
   item_count?: number;
   isCompleted?: boolean;
+  schema_version?: number;
+}
+
+export interface ShoppingListPrice {
+  id: string;
+  price: number;
+  currency: string;
+  brand: string | null;
+  store_name: string | null;
+  barcode: string | null;
+  added_at: string;
 }
 
 export interface ShoppingListItem {
   id: string;
-  itemName: string;
-  quantity: number | null;
-  unitId: string | null;
-  categoryId: string | null;
-  isPurchased: boolean;
-  barcode: string | null;
-  brand: string | null;
-  price: number | null;
-  notes: string | null;
+  // v2 (snake_case) fields
+  item_name?: string;
+  name_norm?: string;
+  quantity?: number | null;
+  unit?: string | null;
+  weight_value?: number | null;
+  weight_unit?: string | null;
+  volume_value?: number | null;
+  volume_unit?: string | null;
+  notes?: string | null;
+  barcode?: string | null;
+  source_catalog_name_norm?: string | null;
+  prices?: ShoppingListPrice[];
+  added_at?: string;
+  source?: string;
+  schema_version?: number;
+  // v1 (legacy mobile camelCase) — kept so the admin cross-user view
+  // can render legacy docs without rewriting them.
+  itemName?: string;
+  unitId?: string | null;
+  categoryId?: string | null;
+  isPurchased?: boolean;
+  brand?: string | null;
+  price?: number | null;
 }
 
 export interface ShoppingListsResponse {
@@ -189,6 +220,28 @@ export interface ShoppingListsResponse {
 export interface ShoppingListDetailResponse {
   list: ShoppingList;
   items: ShoppingListItem[];
+}
+
+export interface AddShoppingListItemPayload {
+  item_name: string;
+  quantity?: number;
+  unit?: string;
+  weight_value?: number;
+  weight_unit?: string;
+  volume_value?: number;
+  volume_unit?: string;
+  notes?: string;
+  barcode?: string;
+  source_catalog_name_norm?: string;
+  source?: 'manual' | 'catalog' | 'scan' | 'cross_page' | 'receipt';
+}
+
+export interface AddShoppingListPricePayload {
+  price: number;
+  currency?: string;
+  brand?: string;
+  store_name?: string;
+  barcode?: string;
 }
 
 // === Price Records ===
@@ -502,6 +555,14 @@ export interface ItemOverview {
 
 // === Recipes / Meals ===
 
+export interface RecipeIngredientComment {
+  id: string;
+  by_uid: string;
+  by_name: string;
+  text: string;
+  created_at: string;
+}
+
 export interface RecipeIngredient {
   name: string;
   quantity: number | null;
@@ -515,6 +576,13 @@ export interface RecipeIngredient {
   common_name_norm?: string;
   /** Phase-0 auto-match — origin tag for debugging / UI hints. */
   match_source?: 'user_catalog' | 'user_catalog_fuzzy' | 'common' | 'common_fuzzy' | 'free_text';
+  /** H3 social layer (homemaker.social). Uids who starred this ingredient. */
+  stars?: string[];
+  /** H3 social layer. Append-only thread of comments. */
+  comments?: RecipeIngredientComment[];
+  /** H3 social layer. Uid of pinner; absent = unpinned. */
+  pin_by?: string;
+  pin_at?: string;
 }
 
 export interface RecipeRevision {
