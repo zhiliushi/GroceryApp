@@ -263,6 +263,16 @@ async def on_startup():
         # important than data hygiene. The next startup retries.
         logger.exception("unit-type backfill failed (non-fatal)")
 
+    # Common-ingredients seed — Phase 0 of meals auto-match. Cheap probe
+    # (one doc read) skips the seed when already populated, so this only
+    # does work on the very first startup against an empty collection.
+    try:
+        from scripts import seed_common_ingredients
+        summary = seed_common_ingredients.run_if_empty()
+        logger.info("common_ingredients seed: %s", summary)
+    except Exception:
+        logger.exception("common_ingredients seed failed (non-fatal)")
+
     scheduler.start()
     logger.info("Background scheduler started")
 

@@ -39,7 +39,7 @@ def _recipes_ref(uid: str):
 
 
 def create_recipe(uid: str, data: Dict[str, Any], tier: str = "free") -> Dict[str, Any]:
-    """Create a recipe. Enforces tier limit."""
+    """Create a recipe. Enforces tier limit. Auto-links ingredients."""
     limit = TIER_RECIPE_LIMITS.get(tier, 15)
     current = count_user_recipes(uid)
     if current >= limit:
@@ -51,7 +51,7 @@ def create_recipe(uid: str, data: Dict[str, Any], tier: str = "free") -> Dict[st
         "description": (data.get("description") or "").strip()[:500],
         "servings": data.get("servings", 1),
         "prep_time_min": data.get("prep_time_min", 0),
-        "ingredients": data.get("ingredients", []),
+        "ingredients": _attach_ingredient_match_metadata(uid, data.get("ingredients", [])),
         "steps": data.get("steps", []),
         "tags": data.get("tags", []),
         "created_at": now,
@@ -94,6 +94,11 @@ def update_recipe(uid: str, recipe_id: str, data: Dict[str, Any]) -> bool:
     if not ref.get().exists:
         return False
     data["updated_at"] = datetime.utcnow().isoformat()
+    # Re-run ingredient match if the caller is updating ingredients. Skipping
+    # when only metadata fields (name, description, etc.) change avoids
+    # touching auto-resolved fields the user may have manually adjusted.
+    if "ingredients" in data:
+        data["ingredients"] = _attach_ingredient_match_metadata(uid, data["ingredients"])
     ref.update(data)
     return True
 
@@ -274,6 +279,126 @@ def _active_inventory_for_matching(uid: str) -> List[Dict[str, Any]]:
             "location": d.get("location"),
         })
     return items
+
+
+# ---------------------------------------------------------------------------
+# Write-time ingredient auto-match (Phase 0)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_ingredient_name(raw: str) -> str:
+    """Match the normalization used by catalog_service so user-catalog
+    lookups by name_norm hit the same key. Kept inline (rather than
+    importing from catalog_service) to avoid a service-layer cycle."""
+    import re
+    if not raw:
+        return ""
+    stripped = raw.strip().lower()
+    cleaned = re.sub(r"[^\w\s]", "", stripped)
+    return re.sub(r"\s+", "_", cleaned).strip("_")
+
+
+def _load_user_catalog_for_match(uid: str) -> List[Dict[str, Any]]:
+    """All of the user's `catalog_entries`, flattened for in-memory match.
+    Single Firestore query; entries are typically <100 per user."""
+    from google.cloud.firestore_v1.base_query import FieldFilter
+    out: List[Dict[str, Any]] = []
+    q = _db().collection("catalog_entries").where(
+        filter=FieldFilter("user_id", "==", uid)
+    )
+    for doc in q.stream():
+        d = doc.to_dict() or {}
+        nn = d.get("name_norm")
+        if not nn:
+            continue
+        out.append({
+            "name_norm": nn,
+            "display_name": d.get("display_name") or nn,
+            "default_category": d.get("default_category") or "",
+        })
+    return out
+
+
+def _resolve_one(
+    norm: str,
+    user_entries: List[Dict[str, Any]],
+    common_entries: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Match priority: exact user → exact common → fuzzy user → fuzzy common.
+    Fuzzy = substring containment in either direction. Returns None for
+    free-text fallback."""
+    if not norm:
+        return None
+
+    # Exact passes first — preferred over any fuzzy match.
+    for e in user_entries:
+        if e["name_norm"] == norm:
+            return {**e, "_source": "user_catalog"}
+    for e in common_entries:
+        if e["name_norm"] == norm:
+            return {**e, "_source": "common"}
+
+    # Fuzzy substring (cheap; entry sets stay small).
+    for e in user_entries:
+        en = e["name_norm"]
+        if en and (norm in en or en in norm):
+            return {**e, "_source": "user_catalog_fuzzy"}
+    for e in common_entries:
+        en = e["name_norm"]
+        if en and (norm in en or en in norm):
+            return {**e, "_source": "common_fuzzy"}
+
+    return None
+
+
+def _attach_ingredient_match_metadata(
+    uid: str,
+    ingredients: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """For each ingredient in `ingredients`, attach link metadata pointing
+    at either the user's catalog or the global common-ingredients
+    collection. Unmatched names stay as free text (preserved as-is so
+    the user can edit/select later).
+
+    Match priority documented in `_resolve_one`. Adds these fields on
+    each ingredient dict (in place) when a match is found:
+      - `catalog_name_norm`  — set when match is in user catalog
+      - `common_name_norm`   — set when match is in common ingredients
+      - `match_source`       — "user_catalog" | "user_catalog_fuzzy"
+                               | "common" | "common_fuzzy" | "free_text"
+      - `category` (only set if not already present on the ingredient)
+
+    The matched ingredient's free-text `name` is preserved verbatim.
+    Cook-flow consumers use `catalog_name_norm` (when present) to deduct
+    the right purchase event.
+    """
+    if not ingredients:
+        return ingredients
+
+    from app.services import common_ingredients_service
+    user_entries = _load_user_catalog_for_match(uid)
+    common_entries = common_ingredients_service.list_all()
+
+    for ing in ingredients:
+        if not isinstance(ing, dict):
+            continue
+        raw_name = (ing.get("name") or "").strip()
+        norm = _normalize_ingredient_name(raw_name)
+        match = _resolve_one(norm, user_entries, common_entries)
+        if match is None:
+            ing["match_source"] = "free_text"
+            continue
+        src = match["_source"]
+        if src.startswith("user_catalog"):
+            ing["catalog_name_norm"] = match["name_norm"]
+        else:
+            ing["common_name_norm"] = match["name_norm"]
+        ing["match_source"] = src
+        # Only fill category if the caller didn't supply one.
+        if not ing.get("category") and match.get("default_category"):
+            ing["category"] = match["default_category"]
+
+    return ingredients
 
 
 def _expiry_text(exp_ms: float, now_ms: float) -> str:
