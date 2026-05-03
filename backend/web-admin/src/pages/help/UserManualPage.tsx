@@ -32,7 +32,8 @@ const SECTIONS: Section[] = [
   { id: 'reminders-insights', title: '7. Reminders & insights' },
   { id: 'catalog', title: '8. Your personal catalog' },
   { id: 'tiers', title: '9. Free vs paid' },
-  { id: 'faq', title: '10. FAQ' },
+  { id: 'meals-homemaker', title: '10. Meals: Homemaker add-on' },
+  { id: 'faq', title: '11. FAQ' },
 ];
 
 export default function UserManualPage() {
@@ -110,6 +111,7 @@ export default function UserManualPage() {
           <RemindersInsights />
           <Catalog />
           <Tiers />
+          <MealsHomemaker />
           <Faq />
 
           <footer className="pt-6 border-t border-ga-border text-xs text-ga-text-secondary">
@@ -745,8 +747,11 @@ function Tiers() {
 
       <p className="text-xs text-ga-text-secondary">
         Smart Cart = pick any 3 tools from the menu. Full Fridge = everything
-        unlocked, no limits. AI Chef (recipe suggestions, smart shopping
-        lists) is a separate add-on, pricing TBD.
+        unlocked, no limits. <strong>Homemaker</strong> (recipe versioning +
+        per-ingredient comments + per-version cost snapshots) is a separate
+        add-on — see <a href="#meals-homemaker" className="text-ga-accent hover:underline">section 10</a>{' '}
+        for what it does and why it's billed separately. AI Chef (recipe
+        suggestions, smart shopping lists) is a future add-on, pricing TBD.
       </p>
     </section>
   );
@@ -765,12 +770,139 @@ function Row({ label, cells }: { label: string; cells: string[] }) {
   );
 }
 
-// ── 10. FAQ ────────────────────────────────────────────────────────────────
+// ── 10. Meals: Homemaker add-on ────────────────────────────────────────────
+
+function MealsHomemaker() {
+  return (
+    <section className="space-y-3">
+      <H2 id="meals-homemaker">10. Meals: Homemaker add-on</H2>
+      <p>
+        Homemaker is a separate add-on for users who treat their recipe
+        collection as a living thing — tweaking ingredients over time,
+        annotating what worked, tracking what each version cost. It sits on
+        top of any plan (Free, Smart Cart, or Full Fridge) and you only pay
+        for it if you actually want these features.
+      </p>
+
+      <div className="bg-ga-bg-card border border-purple-500/30 rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-purple-400">
+          What you get with Homemaker
+        </h3>
+
+        <div>
+          <h4 className="text-sm font-medium text-ga-text-primary">
+            🕘 Recipe versioning
+          </h4>
+          <p className="text-xs text-ga-text-secondary mt-1">
+            Edit a recipe's ingredients and the previous list is saved
+            automatically. Open the <strong>History</strong> button in the
+            recipe edit page to see every version, restore an older one, or
+            compare what's changed. Up to 7 versions per recipe — when you
+            edit the 8th time, the oldest version rotates out.
+          </p>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-ga-text-primary">
+            ★ 📌 💬 Per-ingredient notes
+          </h4>
+          <p className="text-xs text-ga-text-secondary mt-1">
+            Each ingredient row gets a star (you starred it = it bubbles to
+            the top), a pin (manually keep an ingredient at the very top),
+            and a comment thread for notes like "use the smaller eggs" or
+            "skip if making for kids". Pin beats stars; stars are sorted by
+            count.
+          </p>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-ga-text-primary">
+            💰 Per-version cost snapshots
+          </h4>
+          <p className="text-xs text-ga-text-secondary mt-1">
+            The recipe-cost estimate (visible to all users — last-paid price
+            per ingredient) gets <em>captured</em> with each revision. So you
+            can look at a recipe edit from 3 months ago and see what it cost
+            to make at the time, vs today. Useful when comparing pre/post-
+            inflation grocery bills, or seeing whether the "cheaper version"
+            of a recipe actually saves money.
+          </p>
+          <p className="text-[11px] text-ga-text-secondary italic mt-1">
+            v1 uses raw last-paid prices (not portion-aware — 1 egg or 2,
+            same line). A weight × unit-price refinement is on the
+            roadmap.
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-ga-bg-app border border-ga-border rounded-lg p-4 space-y-2">
+        <h3 className="text-sm font-semibold text-ga-text-primary">
+          The fine print
+        </h3>
+        <ul className="text-xs text-ga-text-secondary space-y-1 pl-4 list-disc">
+          <li>
+            Recipe cap: <strong>500 recipes</strong> on Homemaker (vs 50 on
+            Smart Cart / Full Fridge, 15 on free).
+          </li>
+          <li>
+            Ingredient cap: <strong>25 ingredients per recipe</strong> —
+            applies to <em>everyone</em>, Homemaker or not. If you're hitting
+            it, the recipe is probably two recipes (main + sauce).
+          </li>
+          <li>
+            Version cap: <strong>7 per recipe</strong>. The 8th edit rotates
+            the oldest version out automatically. Restore creates a new
+            revision from the current state first, so it's undoable.
+          </li>
+          <li>
+            Comments are currently scoped to your own recipes. Household-
+            wide comments (your spouse can comment on your recipe) is on the
+            roadmap.
+          </li>
+          <li>
+            Cooking method (the <em>steps</em>) is intentionally not
+            versioned. Methods tend to stay constant while ingredients vary
+            — versioning steps would mostly be noise. Tell us if your use
+            case differs.
+          </li>
+        </ul>
+      </div>
+
+      <div className="bg-ga-bg-app border border-ga-border rounded-lg p-4 space-y-2">
+        <h3 className="text-sm font-semibold text-ga-text-primary">
+          Why is this billed separately?
+        </h3>
+        <p className="text-xs text-ga-text-secondary">
+          Honest answer: the app is built and run by one developer (hi 👋)
+          on rented cloud storage. Versioning + comments + per-version
+          finance snapshots write a lot more data per recipe than the
+          base app — multiple times more in some cases. Bundling all of
+          that into the main subscription would mean charging every user,
+          including the ones who just want barcode-scan + waste tracking.
+          A separate billing line keeps the main app affordable for
+          everyone while letting power users opt in to the heavier
+          features without subsidizing them across the whole base.
+        </p>
+        <p className="text-xs text-ga-text-secondary">
+          Pricing isn't pinned yet — it'll surface in{' '}
+          <Link to="/settings" className="text-ga-accent hover:underline">
+            Settings → Subscription
+          </Link>
+          {' '}when activation goes live. Cancel anytime; recipes you've
+          created stay (versions and comments included), you just lose the
+          ability to add new ones until you re-subscribe.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ── 11. FAQ ────────────────────────────────────────────────────────────────
 
 function Faq() {
   return (
     <section className="space-y-2">
-      <H2 id="faq">10. FAQ</H2>
+      <H2 id="faq">11. FAQ</H2>
 
       <Question q="My spending dashboard shows RM but I bought the item in SGD. Why?">
         Spending and waste figures are converted to your{' '}
