@@ -5,6 +5,8 @@ import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useCreateRecipe, useUpdateRecipe, useScanRecipeImage } from '@/api/mutations/useRecipeMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
+import { useHomemaker } from '@/hooks/useHomemaker';
+import RecipeHistoryModal from '@/components/meals/RecipeHistoryModal';
 import type { Recipe, RecipeIngredient } from '@/types/api';
 
 interface FormIngredient extends RecipeIngredient {
@@ -23,6 +25,8 @@ export default function RecipeFormPage() {
   const scanMutation = useScanRecipeImage();
   const { data: flags } = useFeatureFlags();
   const recipeOcrEnabled = flags ? flags.recipe_ocr !== false : false;
+  const homemaker = useHomemaker();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Load existing recipe for edit
   const { data: existing } = useQuery({
@@ -121,11 +125,23 @@ export default function RecipeFormPage() {
 
   return (
     <div className="p-6 max-w-2xl">
-      {/* Breadcrumb */}
-      <div className="mb-4 text-sm">
-        <Link to="/meals" className="text-ga-accent hover:underline">← Meals</Link>
-        <span className="text-ga-text-secondary mx-2">/</span>
-        <span className="text-ga-text-primary">{isEdit ? 'Edit Recipe' : 'Add Recipe'}</span>
+      {/* Breadcrumb + History (homemaker.versioning, edit mode only) */}
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="text-sm">
+          <Link to="/meals" className="text-ga-accent hover:underline">← Meals</Link>
+          <span className="text-ga-text-secondary mx-2">/</span>
+          <span className="text-ga-text-primary">{isEdit ? 'Edit Recipe' : 'Add Recipe'}</span>
+        </div>
+        {isEdit && homemaker.versioning && (
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            className="text-xs px-3 py-1 rounded border border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+            title="View revision history (homemaker)"
+          >
+            🕘 History
+          </button>
+        )}
       </div>
 
       {scannedBanner && (
@@ -241,6 +257,15 @@ export default function RecipeFormPage() {
           </button>
         </div>
       </div>
+
+      {isEdit && id && (
+        <RecipeHistoryModal
+          open={historyOpen}
+          recipeId={id}
+          recipeName={name || 'Recipe'}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 }

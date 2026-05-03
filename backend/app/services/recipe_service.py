@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 TIER_RECIPE_LIMITS = {"free": 15, "plus": 50, "pro": 50, "admin": 999}
 HOMEMAKER_RECIPE_LIMIT = 500  # quota override when user.homemaker_enabled is True
 MAX_INGREDIENTS_PER_RECIPE = 25  # universal cap (all tiers)
+MAX_REVISIONS_PER_RECIPE = 7    # homemaker-only; oldest rotates on overflow
 SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
 
@@ -111,19 +112,39 @@ def list_recipes(uid: str) -> List[Dict[str, Any]]:
 
 def update_recipe(uid: str, recipe_id: str, data: Dict[str, Any]) -> bool:
     ref = _recipes_ref(uid).document(recipe_id)
-    if not ref.get().exists:
+    snap = ref.get()
+    if not snap.exists:
         return False
     data["updated_at"] = datetime.utcnow().isoformat()
-    # Re-run ingredient match if the caller is updating ingredients. Skipping
-    # when only metadata fields (name, description, etc.) change avoids
-    # touching auto-resolved fields the user may have manually adjusted.
+
+    # Snapshot a revision BEFORE applying changes when (a) ingredients are
+    # being patched, (b) they actually differ from current, and (c) the user
+    # has homemaker.versioning. Per Decision 4, only ingredient changes
+    # generate revisions — name/description/steps edits don't.
+    revision_note: Optional[str] = None
+    if "ingredients" in data and isinstance(data.get("revision_note"), str):
+        # Pull off the optional note (caller-supplied free text); never
+        # write it back as a recipe field.
+        revision_note = data.pop("revision_note") or None
+
     if "ingredients" in data:
         if len(data["ingredients"]) > MAX_INGREDIENTS_PER_RECIPE:
             raise ValueError(
                 f"Recipe has {len(data['ingredients'])} ingredients; max is "
                 f"{MAX_INGREDIENTS_PER_RECIPE}. Split into multiple recipes."
             )
+        from app.services import user_service
+        if user_service.is_homemaker_enabled(uid, "versioning"):
+            current = snap.to_dict() or {}
+            if _ingredients_differ(current.get("ingredients") or [], data["ingredients"]):
+                _append_revision(
+                    uid=uid,
+                    recipe_id=recipe_id,
+                    snapshot_ingredients=current.get("ingredients") or [],
+                    note=revision_note,
+                )
         data["ingredients"] = _attach_ingredient_match_metadata(uid, data["ingredients"])
+
     ref.update(data)
     return True
 
@@ -304,6 +325,150 @@ def _active_inventory_for_matching(uid: str) -> List[Dict[str, Any]]:
             "location": d.get("location"),
         })
     return items
+
+
+# ---------------------------------------------------------------------------
+# Recipe revisions (H2 — homemaker.versioning)
+# ---------------------------------------------------------------------------
+
+
+def _revisions_ref(uid: str, recipe_id: str):
+    return (
+        _recipes_ref(uid)
+        .document(recipe_id)
+        .collection("revisions")
+    )
+
+
+def _ingredients_differ(a: List[Dict[str, Any]], b: List[Dict[str, Any]]) -> bool:
+    """Compare two ingredient lists by structural value, ignoring auto-resolved
+    metadata fields that `_attach_ingredient_match_metadata` adds (so a re-save
+    that only re-resolves names doesn't appear as a content change).
+
+    Compared fields: name, quantity, unit, category. That's the user-facing
+    content; everything else is derived.
+    """
+    def signature(ing: Dict[str, Any]) -> tuple:
+        return (
+            (ing.get("name") or "").strip().lower(),
+            ing.get("quantity"),
+            (ing.get("unit") or "").strip().lower(),
+            (ing.get("category") or "").strip().lower(),
+        )
+
+    if len(a) != len(b):
+        return True
+    return any(signature(x) != signature(y) for x, y in zip(a, b))
+
+
+def _append_revision(
+    *,
+    uid: str,
+    recipe_id: str,
+    snapshot_ingredients: List[Dict[str, Any]],
+    note: Optional[str] = None,
+) -> str:
+    """Append one revision to a recipe's history. Enforces the 7-version cap
+    via silent rotation — oldest revision is deleted before the new one is
+    appended.
+
+    Snapshot scope: ingredients only (per Decision 4 — methods/steps are
+    not versioned). `snapshot_finance` is reserved for F1 (base finance) —
+    populated as None until that lands; the schema slot is here so future
+    snapshots can be added without a migration.
+
+    Returns the new revision's doc id.
+    """
+    revs_ref = _revisions_ref(uid, recipe_id)
+    # Stream + sort by edited_at to find the oldest. Cap is small (7), so a
+    # full subcollection scan is cheap.
+    existing = sorted(
+        (d for d in revs_ref.stream()),
+        key=lambda d: (d.to_dict() or {}).get("edited_at", ""),
+    )
+    while len(existing) >= MAX_REVISIONS_PER_RECIPE:
+        oldest = existing.pop(0)
+        oldest.reference.delete()
+        logger.info(
+            "Recipe %s/%s: rotated revision %s (cap=%d)",
+            uid, recipe_id, oldest.id, MAX_REVISIONS_PER_RECIPE,
+        )
+
+    now_iso = datetime.utcnow().isoformat()
+    payload = {
+        "snapshot_ingredients": snapshot_ingredients,
+        "snapshot_finance": None,  # Reserved for F1; see project memory.
+        "edited_at": now_iso,
+        "edited_by": uid,
+        "note": (note or "").strip()[:200] or None,
+    }
+    new_ref = revs_ref.document()
+    new_ref.set(payload)
+    return new_ref.id
+
+
+def list_revisions(uid: str, recipe_id: str) -> List[Dict[str, Any]]:
+    """Return all revisions for a recipe, newest first."""
+    revs = []
+    for doc in _revisions_ref(uid, recipe_id).stream():
+        d = doc.to_dict() or {}
+        d["id"] = doc.id
+        revs.append(d)
+    revs.sort(key=lambda r: r.get("edited_at", ""), reverse=True)
+    return revs
+
+
+def get_revision(
+    uid: str, recipe_id: str, revision_id: str,
+) -> Optional[Dict[str, Any]]:
+    doc = _revisions_ref(uid, recipe_id).document(revision_id).get()
+    if not doc.exists:
+        return None
+    d = doc.to_dict() or {}
+    d["id"] = doc.id
+    return d
+
+
+def restore_revision(uid: str, recipe_id: str, revision_id: str) -> bool:
+    """Apply a revision's `snapshot_ingredients` back onto the live recipe.
+
+    Snapshots a NEW revision from the *current* state first, so the restore
+    itself is undoable. Net effect: `restore_revision(rev=4)` produces a new
+    revision-of-current AND replaces ingredients with rev=4's snapshot.
+    """
+    recipe_ref = _recipes_ref(uid).document(recipe_id)
+    recipe_snap = recipe_ref.get()
+    if not recipe_snap.exists:
+        return False
+
+    rev = get_revision(uid, recipe_id, revision_id)
+    if not rev:
+        return False
+
+    # Snapshot the current state before overwriting.
+    current = recipe_snap.to_dict() or {}
+    _append_revision(
+        uid=uid,
+        recipe_id=recipe_id,
+        snapshot_ingredients=current.get("ingredients") or [],
+        note=f"auto-snapshot before restore of {revision_id}",
+    )
+
+    # Apply the restored snapshot. Run through auto-match again so any
+    # ingredient links pick up new common-catalog entries that may have
+    # been seeded since the snapshot was taken.
+    restored_ingredients = _attach_ingredient_match_metadata(
+        uid, list(rev.get("snapshot_ingredients") or []),
+    )
+    recipe_ref.update({
+        "ingredients": restored_ingredients,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+    logger.info(
+        "Recipe %s/%s: restored from revision %s",
+        uid, recipe_id, revision_id,
+    )
+    return True
 
 
 # ---------------------------------------------------------------------------

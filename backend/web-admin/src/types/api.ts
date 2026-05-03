@@ -507,6 +507,32 @@ export interface RecipeIngredient {
   quantity: number | null;
   unit: string | null;
   category: string;
+  /** Phase-0 auto-match (write-time). Set when an ingredient name resolved
+   *  to the user's `catalog_entries` (point-in-time link). */
+  catalog_name_norm?: string;
+  /** Phase-0 auto-match. Set when the name resolved to the curated
+   *  global `common_ingredients` collection. */
+  common_name_norm?: string;
+  /** Phase-0 auto-match — origin tag for debugging / UI hints. */
+  match_source?: 'user_catalog' | 'user_catalog_fuzzy' | 'common' | 'common_fuzzy' | 'free_text';
+}
+
+export interface RecipeRevision {
+  id: string;
+  snapshot_ingredients: RecipeIngredient[];
+  /** Reserved for F1 (base finance) — null until that lands. */
+  snapshot_finance: null | {
+    currency: string;
+    total_cost: number;
+    lines: Array<{ name: string; qty: number; unit_price: number; line_cost: number }>;
+  };
+  edited_at: string;
+  edited_by: string;
+  note: string | null;
+}
+
+export interface RevisionsListResponse {
+  revisions: RecipeRevision[];
 }
 
 export interface Recipe {

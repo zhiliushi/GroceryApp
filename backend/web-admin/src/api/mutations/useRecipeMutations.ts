@@ -44,3 +44,22 @@ export function useScanRecipeImage() {
     },
   });
 }
+
+/**
+ * Restore a recipe to a prior revision. Backend snapshots the current
+ * state first (so the restore is itself undoable). Invalidates both the
+ * recipe list and the revision list because both change.
+ */
+export function useRestoreRecipeRevision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, revisionId }: { id: string; revisionId: string }) =>
+      apiClient.post(API.MEALS_RECIPE_REVISION_RESTORE(id, revisionId)).then((r) => r.data),
+    onSuccess: (_data, { id }) => {
+      toast.success('Recipe restored from revision');
+      qc.invalidateQueries({ queryKey: ['recipes'] });
+      qc.invalidateQueries({ queryKey: ['recipes', id, 'revisions'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to restore revision'),
+  });
+}

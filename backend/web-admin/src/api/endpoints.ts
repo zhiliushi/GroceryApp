@@ -52,6 +52,9 @@ export const API = {
   MEALS_RECIPE: (id: string) => `/api/meals/recipes/${id}`,
   MEALS_SUGGESTIONS: '/api/meals/suggestions',
   MEALS_SCAN_RECIPE: '/api/meals/scan-recipe',
+  MEALS_RECIPE_REVISIONS: (id: string) => `/api/meals/recipes/${id}/revisions`,
+  MEALS_RECIPE_REVISION_RESTORE: (id: string, revId: string) =>
+    `/api/meals/recipes/${id}/revisions/${revId}/restore`,
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',

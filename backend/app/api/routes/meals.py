@@ -85,6 +85,62 @@ async def get_suggestions(user: UserInfo = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# Recipe revisions (H2 — homemaker.versioning)
+# ---------------------------------------------------------------------------
+
+
+def _require_homemaker_versioning(user: UserInfo) -> None:
+    """403 if the user can't see homemaker.versioning. Two-layer check
+    matches the resolution rule documented on `is_homemaker_enabled`."""
+    from app.services import user_service
+    if not user_service.is_homemaker_enabled(user.uid, "versioning"):
+        raise HTTPException(
+            status_code=403,
+            detail="Recipe versioning requires homemaker access.",
+        )
+
+
+@router.get("/recipes/{recipe_id}/revisions")
+async def list_recipe_revisions(
+    recipe_id: str, user: UserInfo = Depends(get_current_user),
+):
+    """List revisions for a recipe (newest first). Homemaker-only."""
+    _require_homemaker_versioning(user)
+    if not recipe_service.get_recipe(user.uid, recipe_id):
+        raise HTTPException(404, "Recipe not found")
+    return {"revisions": recipe_service.list_revisions(user.uid, recipe_id)}
+
+
+@router.get("/recipes/{recipe_id}/revisions/{revision_id}")
+async def get_recipe_revision(
+    recipe_id: str,
+    revision_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Fetch a single revision. Homemaker-only."""
+    _require_homemaker_versioning(user)
+    rev = recipe_service.get_revision(user.uid, recipe_id, revision_id)
+    if not rev:
+        raise HTTPException(404, "Revision not found")
+    return rev
+
+
+@router.post("/recipes/{recipe_id}/revisions/{revision_id}/restore")
+async def restore_recipe_revision(
+    recipe_id: str,
+    revision_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Restore a recipe's ingredients from a revision. Auto-snapshots
+    the current state first, so the restore is itself undoable.
+    Homemaker-only."""
+    _require_homemaker_versioning(user)
+    if not recipe_service.restore_revision(user.uid, recipe_id, revision_id):
+        raise HTTPException(404, "Recipe or revision not found")
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
 # Recipe scanning (OCR)
 # ---------------------------------------------------------------------------
 
