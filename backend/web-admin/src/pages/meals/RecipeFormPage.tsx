@@ -5,6 +5,7 @@ import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useCreateRecipe, useUpdateRecipe, useScanRecipeImage } from '@/api/mutations/useRecipeMutations';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
+import RecipeCostCard from '@/components/meals/RecipeCostCard';
 import type { Recipe, RecipeIngredient } from '@/types/api';
 
 interface FormIngredient extends RecipeIngredient {
@@ -229,6 +230,10 @@ export default function RecipeFormPage() {
             </div>
           </div>
         </div>
+
+        {/* F1 base — recipe cost estimate. Edit mode only (no recipe id
+            in create flow); rendered for ALL users (not homemaker-gated). */}
+        {isEdit && id && <RecipeCostCard recipeId={id} />}
 
         {/* Actions */}
         <div className="flex justify-end gap-3 pt-2">

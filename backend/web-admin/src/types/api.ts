@@ -545,6 +545,38 @@ export interface SuggestionsResponse {
   count: number;
 }
 
+/**
+ * F1 base recipe finance — per-ingredient last-paid pricing from the user's
+ * recent buy history. Available to ALL users; not homemaker-gated.
+ *
+ * `total_cost` is null when no ingredient has been priced yet.
+ * `total_is_partial` flags when some lines were priced and others weren't —
+ * the UI shows "≈ RM 12 (4 of 6 priced)" for transparency.
+ */
+export interface RecipeCostLine {
+  name: string;
+  catalog_name_norm: string | null;
+  common_name_norm: string | null;
+  match_source: string;
+  /** Last paid price in display currency, or null if user hasn't bought it. */
+  last_paid: number | null;
+  /** ISO 8601 of the source purchase, or null when last_paid is null. */
+  date_bought: string | null;
+  /** Reserved for homemaker enhancement — weight × unit_price math. */
+  pack_size?: number | null;
+  base_unit?: string | null;
+}
+
+export interface RecipeCostEstimate {
+  currency: string;
+  total_cost: number | null;
+  total_is_partial: boolean;
+  priced_count: number;
+  total_count: number;
+  lines: RecipeCostLine[];
+  disclaimer: string;
+}
+
 export interface RecipeScanResult {
   success: boolean;
   provider_used?: string;
