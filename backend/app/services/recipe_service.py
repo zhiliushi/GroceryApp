@@ -122,14 +122,13 @@ def match_recipes_to_inventory(uid: str) -> List[Dict[str, Any]]:
     Only includes recipes with ≥50% ingredient match.
     Each recipe includes match details per ingredient.
     """
-    from app.services import inventory_service
-
     recipes = list_recipes(uid)
     if not recipes:
         return []
 
-    # Get all active items (household-aware)
-    items = inventory_service.get_household_items(uid, limit=500, status="active")
+    # New-model: read from `purchases` (the legacy `grocery_items` reader
+    # used previously was blind to anything added via QuickAddModal).
+    items = _active_inventory_for_matching(uid)
     if not items:
         return []
 
@@ -214,6 +213,67 @@ def match_recipes_to_inventory(uid: str) -> List[Dict[str, Any]]:
     # Sort: most expiring matches first, then highest match score
     results.sort(key=lambda r: (-r["expiring_match_count"], -r["match_score"]))
     return results
+
+
+def _active_inventory_for_matching(uid: str) -> List[Dict[str, Any]]:
+    """Read active purchases as flat items for recipe matching.
+
+    Replaces the legacy `inventory_service.get_household_items` reader,
+    which still hits the deprecated `grocery_items` collection. Items
+    written via the new QuickAddModal flow land in `users/{uid}/purchases`
+    instead, so the legacy reader sees nothing and recipe suggestions
+    silently never fire.
+
+    Category is enriched from `catalog_entries.default_category` so the
+    name+category fuzzy matching used by the suggestion engine still works
+    even though purchase events themselves don't carry a category.
+
+    Household scope: currently scoped to the user's own purchases.
+    Multi-member household aggregation is a follow-up if needed.
+    """
+    from google.cloud.firestore_v1.base_query import FieldFilter
+
+    db = _db()
+
+    # name_norm -> default_category map (single query, in-memory join below).
+    cat_map: Dict[str, str] = {}
+    catalog_q = db.collection("catalog_entries").where(
+        filter=FieldFilter("user_id", "==", uid)
+    )
+    for doc in catalog_q.stream():
+        data = doc.to_dict() or {}
+        nn = data.get("name_norm")
+        if nn:
+            cat_map[nn] = data.get("default_category") or ""
+
+    items: List[Dict[str, Any]] = []
+    purchases_q = (
+        db.collection("users").document(uid).collection("purchases")
+        .where(filter=FieldFilter("status", "==", "active"))
+    )
+    for doc in purchases_q.stream():
+        d = doc.to_dict() or {}
+        nn = d.get("catalog_name_norm") or ""
+        # Convert datetime/Timestamp -> epoch ms; matching code thresholds in ms.
+        exp = d.get("expiry_date")
+        exp_ms: Optional[int] = None
+        if exp is not None:
+            if hasattr(exp, "to_datetime"):
+                exp = exp.to_datetime()
+            try:
+                exp_ms = int(exp.timestamp() * 1000)
+            except (AttributeError, ValueError, TypeError):
+                exp_ms = None
+        items.append({
+            "id": doc.id,
+            "user_id": uid,
+            "name": d.get("catalog_display") or nn,
+            "category": cat_map.get(nn, ""),
+            "expiryDate": exp_ms,
+            "quantity": d.get("quantity"),
+            "location": d.get("location"),
+        })
+    return items
 
 
 def _expiry_text(exp_ms: float, now_ms: float) -> str:

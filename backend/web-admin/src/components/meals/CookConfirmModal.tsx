@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { useChangePurchaseStatus } from '@/api/mutations/usePurchaseMutations';
 import { toast } from 'sonner';
 import type { RecipeMatchResult } from '@/types/api';
 
@@ -11,6 +12,7 @@ interface CookConfirmModalProps {
 
 export default function CookConfirmModal({ recipe, onClose, onCooked }: CookConfirmModalProps) {
   const user = useAuthStore((s) => s.user);
+  const changeStatus = useChangePurchaseStatus();
 
   const matchedIngredients = useMemo(
     () => recipe.ingredient_matches.filter((i) => i.matched),
@@ -34,20 +36,29 @@ export default function CookConfirmModal({ recipe, onClose, onCooked }: CookConf
     if (!user?.uid || checked.size === 0) return;
     setCooking(true);
 
+    // Mark each checked ingredient's matched purchase event as used. We use
+    // the new-model status endpoint (POST /api/purchases/{id}/status) which
+    // handles partial-quantity splits server-side: pass `quantity` to use a
+    // portion, omit it to consume the whole event.
     let consumed = 0;
     for (const idx of checked) {
       const ing = matchedIngredients[idx];
       if (!ing.inventory_item_id) continue;
 
+      const ingQty = ing.quantity ?? undefined;
+      const stockQty = ing.inventory_quantity ?? undefined;
+      const isPartial =
+        ingQty !== undefined && stockQty !== undefined && ingQty < stockQty;
+
       try {
-        // Use the barcode-based consume if barcode exists, otherwise update directly
-        // For now we use the item's inventory data
-        const { apiClient } = await import('@/api/client');
-        await apiClient.put(`/api/admin/inventory/${ing.inventory_user_id}/${ing.inventory_item_id}`, {
-          quantity: Math.max(0, (ing.inventory_quantity ?? 1) - (ing.quantity ?? 1)),
-          ...(((ing.inventory_quantity ?? 1) - (ing.quantity ?? 1)) <= 0
-            ? { status: 'consumed', consumed_date: Date.now(), reason: 'used_up' }
-            : {}),
+        await changeStatus.mutateAsync({
+          id: ing.inventory_item_id,
+          data: {
+            status: 'used',
+            reason: 'used_up',
+            ...(isPartial && ingQty !== undefined ? { quantity: ingQty } : {}),
+          },
+          silent: true,
         });
         consumed++;
       } catch (e) {
