@@ -50,6 +50,7 @@ export const API = {
   // Meals
   MEALS_RECIPES: '/api/meals/recipes',
   MEALS_RECIPE: (id: string) => `/api/meals/recipes/${id}`,
+  MEALS_RECIPE_COST: (id: string) => `/api/meals/recipes/${id}/cost`,
   MEALS_SUGGESTIONS: '/api/meals/suggestions',
   MEALS_SCAN_RECIPE: '/api/meals/scan-recipe',
   MEALS_RECIPE_REVISIONS: (id: string) => `/api/meals/recipes/${id}/revisions`,

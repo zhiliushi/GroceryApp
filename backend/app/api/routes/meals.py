@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 
 from app.core.auth import UserInfo, get_current_user
-from app.services import recipe_service
+from app.services import recipe_service, recipe_finance_service
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,27 @@ async def restore_recipe_revision(
     if not recipe_service.restore_revision(user.uid, recipe_id, revision_id):
         raise HTTPException(404, "Recipe or revision not found")
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Recipe finance (F1 base — per-ingredient pricing from buy history)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/recipes/{recipe_id}/cost")
+async def get_recipe_cost(
+    recipe_id: str, user: UserInfo = Depends(get_current_user),
+):
+    """Estimated recipe cost from the user's recent buy history.
+
+    Available to ALL users (NOT homemaker-gated). Per-ingredient last-paid
+    price + sum. Approximate — not portion-aware. Homemaker enhances this
+    with per-version snapshots + weight × unit_price math (separate phase).
+    """
+    estimate = recipe_finance_service.estimate_for_recipe(user.uid, recipe_id)
+    if estimate is None:
+        raise HTTPException(404, "Recipe not found")
+    return estimate
 
 
 # ---------------------------------------------------------------------------
