@@ -42,6 +42,29 @@ export function useRenameShoppingList() {
   });
 }
 
+/** Generic update — pass any subset of {name, notes}. */
+export function useUpdateShoppingList() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      listId,
+      patch,
+    }: {
+      listId: string;
+      patch: { name?: string; notes?: string };
+    }) =>
+      apiClient.patch<ShoppingList>(API.MY_SHOPPING_LIST(listId), patch).then((r) => r.data),
+    onSuccess: (_, { listId }) => {
+      qc.invalidateQueries({ queryKey: qk.shoppingLists.mine });
+      qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Failed to update list');
+    },
+  });
+}
+
 export function useDeleteShoppingList() {
   const qc = useQueryClient();
   return useMutation({

@@ -33,6 +33,7 @@ class CreateListRequest(BaseModel):
 
 class UpdateListRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=80)
+    notes: Optional[str] = Field(None, max_length=1000)
 
 
 class ItemRequest(BaseModel):
@@ -101,8 +102,10 @@ async def update_list(
     body: UpdateListRequest,
     user: UserInfo = Depends(get_current_user),
 ):
-    """Rename a list."""
-    return shopping_list_service.update_list(user.uid, list_id, name=body.name)
+    """Update list metadata (name and/or notes)."""
+    return shopping_list_service.update_list(
+        user.uid, list_id, name=body.name, notes=body.notes
+    )
 
 
 @router.delete("/{list_id}", status_code=204)

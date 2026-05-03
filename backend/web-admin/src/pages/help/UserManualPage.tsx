@@ -303,6 +303,54 @@ function AddingItems() {
         is one tap.
       </p>
 
+      <H3>
+        D. Shopping list — plan what to buy next{' '}
+        <Link to="/shopping-lists" className="text-xs text-ga-accent hover:underline">
+          (open)
+        </Link>
+      </H3>
+      <p>
+        For things you haven't bought yet but want to remember, use{' '}
+        <Link to="/shopping-lists" className="text-ga-accent hover:underline">
+          Shopping Lists
+        </Link>
+        . Items here are <em>intent</em>, not inventory — they don't count
+        against your catalog quota.
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>Three ways to add</strong>: type the name (qty / weight /
+          volume optional), pick from your existing catalog, or scan a
+          barcode you saw at the store.
+        </li>
+        <li>
+          <strong>Compare prices</strong> — expand any row (▾) to add price
+          entries with brand + store + barcode. Useful when you're deciding
+          which brand of eggs to buy on the next trip.
+        </li>
+        <li>
+          <strong>Buy</strong> — when you're back from the shop, tap{' '}
+          <code>Buy</code> on the row. If you logged multiple prices, pick
+          which one you actually bought; the Quick Add modal opens
+          pre-filled, you confirm storage location and expiry, and the item
+          jumps from list to inventory in one step.
+        </li>
+        <li>
+          <strong>30-day auto-cleanup</strong> — items not bought within 30
+          days drop off the list automatically. The list stays fresh
+          without you having to housekeep.
+        </li>
+        <li>
+          <strong>Cap: 50 items per list</strong>, separate from the
+          catalog quota. Free tier gets 3 lists; Plus / Pro unlimited.
+        </li>
+      </ul>
+      <p className="text-xs text-ga-text-secondary">
+        Cross-page: any catalog item detail page has a{' '}
+        <code>+ Add to shopping list</code> button — the fastest way to
+        say "next time I'm out of this, remind me to buy more."
+      </p>
+
       <H3>Single vs Bulk</H3>
       <p>
         The Add Item modal has a <strong>Single / Bulk</strong> toggle near
@@ -720,7 +768,15 @@ function Tiers() {
           </thead>
           <tbody className="divide-y divide-ga-border">
             <Row label="Items in catalog" cells={['up to 50', 'unlimited', 'unlimited']} />
-            <Row label="Shopping lists" cells={['up to 3', 'unlimited', 'unlimited']} />
+            <Row label="Shopping lists (count)" cells={['up to 3', 'unlimited', 'unlimited']} />
+            <Row
+              label="Shopping list items per list"
+              cells={['up to 50', 'up to 50', 'up to 50']}
+            />
+            <Row
+              label="Shopping list TTL"
+              cells={['30 days', '30 days', '30 days']}
+            />
             <Row label="History retention" cells={['90 days', '365 days', 'unlimited']} />
             <Row label="Barcode scans / day" cells={['20', 'unlimited', 'unlimited']} />
             <Row

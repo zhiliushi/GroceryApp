@@ -165,6 +165,8 @@ export interface ShoppingList {
   id: string;
   user_id: string;
   name: string;
+  /** Free-form notes for this trip / list. Plus-tier feature (`trip_notes`). */
+  notes?: string | null;
   // v2 uses snake_case; v1 docs sometimes only have createdDate
   created_at?: string | number | null;
   updated_at?: string | null;

@@ -284,6 +284,28 @@ These are reuse questions to resolve before writing code:
    keeps the cross-user route under `/api/admin/`. Confirm router
    changes.
 
+## Tier-gated subsections
+
+- `trip_notes` (plus) — **shipped 2026-05-03**. Inline-edited `notes` field
+  (≤1000 chars) on the list-detail page header. Backend allows always;
+  frontend hides editor when `canUseTool('trip_notes')` is false.
+- `receipt_scanning` (plus) — **shipped 2026-05-03** via embedded
+  `<ScanReceiptButton destination="shopping_list" />` on the detail page.
+  Re-uses the existing receipt OCR flow (Mindee). The component handles
+  its own tier-gate via `canUseTool('receipt_scanning_ocr')`.
+- `checkout_flow` (plus) — **NOT YET IMPLEMENTED**. Open question:
+  - Concept A: "trip mode" — full-screen view of the active list with
+    each item rendered as a checkable card; scan or tap to mark "got
+    this," reach the bottom and a single Buy-All button opens
+    QuickAddModal once per item with prefilled defaults. Optimised for
+    use IN the store with phone in hand.
+  - Concept B: "bulk Buy" on the existing detail page — multi-select
+    items (checkboxes), then a "Buy all selected" button that runs the
+    Buy flow N times in sequence with a single confirmation summary.
+  - Concept C: a different design Shahir has in mind.
+  Requires user input on intent (in-store vs at-home, single-flow vs
+  per-item confirmation) before implementation. Tracked here.
+
 ## Out of scope (explicitly deferred)
 
 - Sharing a list with household members.

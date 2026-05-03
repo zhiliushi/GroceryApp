@@ -141,15 +141,25 @@ def list_catalog(
     q = _db().collection(_COLLECTION).where(filter=FieldFilter("user_id", "==", user_id))
 
     # Substring prefix match on name_norm
+    name_filter_active = False
     if query:
         q_norm = _normalize(query)
         if q_norm:
+            name_filter_active = True
             # Firestore prefix search via range
             q = q.where(filter=FieldFilter("name_norm", ">=", q_norm)).where(filter=FieldFilter("name_norm", "<", q_norm + ""))
 
-    # Resolve sort config
-    sort_key = sort_by if sort_by in _SORT_FIELDS else "last_purchased_at"
-    sort_field, sort_direction = _SORT_FIELDS[sort_key]
+    # Resolve sort config. With a name_norm range filter active, Firestore
+    # requires the FIRST order_by to match the inequality field — otherwise
+    # InvalidArgument: "order by clause cannot contain more fields after
+    # the key". Override the user-requested sort to name_norm in that mode;
+    # autocomplete callers don't need a different sort and the prefix
+    # already constrains the result set tightly.
+    if name_filter_active:
+        sort_field, sort_direction = ("name_norm", firestore.Query.ASCENDING)
+    else:
+        sort_key = sort_by if sort_by in _SORT_FIELDS else "last_purchased_at"
+        sort_field, sort_direction = _SORT_FIELDS[sort_key]
 
     # Primary order + doc-id tiebreaker. __name__ direction MUST match the
     # primary sort to reuse the same composite index (see purchase_event_service

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePurchases } from '@/api/queries/usePurchases';
 import MarkUsedModal from '@/components/waste/MarkUsedModal';
+import AddToShoppingListButton from '@/components/shopping-lists/AddToShoppingListButton';
 import { cn } from '@/utils/cn';
 import type { PurchaseEvent } from '@/types/api';
 
@@ -203,6 +204,15 @@ function ItemList({
           >
             Use…
           </button>
+          <AddToShoppingListButton
+            entry={{
+              display_name: ev.catalog_display || '(item)',
+              name_norm: ev.catalog_name_norm,
+              barcode: ev.barcode,
+            }}
+            className="px-2 py-0.5 text-[11px] rounded border border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover flex-shrink-0"
+            label="+ list"
+          />
         </li>
       ))}
     </ul>

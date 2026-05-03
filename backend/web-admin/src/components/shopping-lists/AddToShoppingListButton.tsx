@@ -4,9 +4,16 @@ import { useMyShoppingLists } from '@/api/queries/useShoppingLists';
 import { useAddShoppingListItem } from '@/api/mutations/useShoppingListMutations';
 import type { CatalogEntry, ShoppingList } from '@/types/api';
 
+/** Minimum shape to add an item to a list. CatalogEntry satisfies this. */
+export interface ShoppingListAddTarget {
+  display_name: string;
+  name_norm?: string | null;
+  barcode?: string | null;
+}
+
 interface Props {
-  /** The catalog entry being added to a shopping list. */
-  entry: CatalogEntry;
+  /** The catalog entry / purchase event / row being added to a shopping list. */
+  entry: CatalogEntry | ShoppingListAddTarget;
   /** Optional override class for the trigger button. */
   className?: string;
   /** Optional label override (default: "+ Add to shopping list"). */
@@ -14,8 +21,8 @@ interface Props {
 }
 
 /**
- * Reusable button: pick a shopping list, add the catalog entry to it.
- * Used from CatalogEntryPage and (later) from MyItems / dashboard rows.
+ * Reusable button: pick a shopping list, add the entry to it.
+ * Used from CatalogEntryPage, my-items rows, dashboard cards, etc.
  */
 export default function AddToShoppingListButton({ entry, className, label }: Props) {
   const [open, setOpen] = useState(false);
@@ -31,7 +38,7 @@ export default function AddToShoppingListButton({ entry, className, label }: Pro
         payload: {
           item_name: entry.display_name,
           barcode: entry.barcode || undefined,
-          source_catalog_name_norm: entry.name_norm,
+          source_catalog_name_norm: entry.name_norm || undefined,
           source: 'cross_page',
         },
       },

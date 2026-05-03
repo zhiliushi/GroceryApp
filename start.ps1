@@ -247,6 +247,27 @@ if (-not (Test-Path (Join-Path $backend 'main.py'))) {
 }
 Write-Host "[2/3] Starting backend (port $groceryBackendPort) using $pythonCmd..."
 
+# Quick venv-health probe: try importing a couple of deps that have
+# bitten us before (numpy + sentry_sdk pulled in transitively). If
+# either is missing, auto-install requirements.txt so the launcher
+# survives a partially-built venv. Captured 2026-05-03 after a fresh
+# `start.bat` failed because the venv was stale.
+$probeOut = & $pythonCmd -c 'import numpy, sentry_sdk' 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "      Venv missing deps -- running 'pip install -r requirements.txt' (one-time, ~30s)..." -ForegroundColor Yellow
+    $reqFile = Join-Path $backend 'requirements.txt'
+    if (Test-Path $reqFile) {
+        & $pythonCmd -m pip install -r $reqFile --quiet 2>&1 | Out-File (Join-Path $logDir 'pip-install.log') -Encoding utf8
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "      [!] pip install failed. See $(Join-Path $logDir 'pip-install.log')." -ForegroundColor Red
+        } else {
+            Write-Host '      Deps installed.'
+        }
+    } else {
+        Write-Host "      [!] requirements.txt not found at $reqFile" -ForegroundColor Red
+    }
+}
+
 $backendProc = Start-Process -FilePath $pythonCmd `
     -ArgumentList '-m', 'uvicorn', 'main:app', '--reload', '--port', $groceryBackendPort `
     -WorkingDirectory $backend `

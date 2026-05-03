@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCatalog } from '@/api/queries/useCatalog';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
+import AddToShoppingListButton from '@/components/shopping-lists/AddToShoppingListButton';
 import type { CatalogEntry } from '@/types/api';
 
 /**
@@ -34,12 +35,20 @@ export default function FrequentlyBoughtCard({ limit = 5 }: { limit?: number }) 
                   <span className="text-ga-text-primary truncate">{entry.display_name}</span>
                   <span className="text-ga-text-secondary flex-shrink-0">({entry.total_purchases}×)</span>
                 </span>
-                <button
-                  onClick={() => setAddTarget(entry)}
-                  className="text-xs px-2 py-0.5 bg-ga-accent/20 text-ga-accent rounded hover:bg-ga-accent/30 flex-shrink-0"
-                >
-                  + Add
-                </button>
+                <span className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => setAddTarget(entry)}
+                    title="Buy more — opens Quick Add"
+                    className="text-xs px-2 py-0.5 bg-ga-accent/20 text-ga-accent rounded hover:bg-ga-accent/30"
+                  >
+                    + Add
+                  </button>
+                  <AddToShoppingListButton
+                    entry={entry}
+                    className="text-xs px-2 py-0.5 border border-ga-border text-ga-text-secondary rounded hover:bg-ga-bg-hover"
+                    label="+ list"
+                  />
+                </span>
               </li>
             ))}
           </ul>

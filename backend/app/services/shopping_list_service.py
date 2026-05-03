@@ -203,8 +203,19 @@ def create_list(uid: str, name: str) -> Dict[str, Any]:
     return {"id": doc.id, "user_id": uid, **payload}
 
 
-def update_list(uid: str, list_id: str, *, name: Optional[str] = None) -> Dict[str, Any]:
-    """Rename a list. (No other mutable fields today.)"""
+def update_list(
+    uid: str,
+    list_id: str,
+    *,
+    name: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update mutable list fields (name, notes).
+
+    Pass `notes=""` to clear; pass `None` to leave unchanged.
+    Tier-gating of `notes` (plus only) lives in the frontend via
+    useVisibility('trip_notes'); the service stores whatever is sent.
+    """
     get_list_or_404(uid, list_id)
 
     updates: Dict[str, Any] = {"updated_at": _now_iso()}
@@ -215,6 +226,10 @@ def update_list(uid: str, list_id: str, *, name: Optional[str] = None) -> Dict[s
         if len(name) > 80:
             raise ValidationError("List name must be ≤ 80 characters")
         updates["name"] = name
+    if notes is not None:
+        if len(notes) > 1000:
+            raise ValidationError("Notes must be ≤ 1000 characters")
+        updates["notes"] = notes
 
     db = _get_db()
     db.collection("users").document(uid).collection("shopping_lists").document(list_id).update(updates)

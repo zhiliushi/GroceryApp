@@ -9,7 +9,10 @@ import {
   useDeleteShoppingListItem,
   useDeleteShoppingListPrice,
   useRenameShoppingList,
+  useUpdateShoppingList,
 } from '@/api/mutations/useShoppingListMutations';
+import { useVisibility } from '@/hooks/useVisibility';
+import ScanReceiptButton from '@/components/receipt/ScanReceiptButton';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import EmptyState from '@/components/shared/EmptyState';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
@@ -51,6 +54,9 @@ export default function ShoppingListDetailPage() {
   const { data, isLoading } = useMyShoppingListDetail(listId);
 
   const renameMutation = useRenameShoppingList();
+  const updateMutation = useUpdateShoppingList();
+  const { canUseTool } = useVisibility();
+  const tripNotesEnabled = canUseTool('trip_notes');
   const deleteListMutation = useDeleteShoppingList();
   const deleteItemMutation = useDeleteShoppingListItem();
   const deletePriceMutation = useDeleteShoppingListPrice();
@@ -59,6 +65,8 @@ export default function ShoppingListDetailPage() {
   // Local UI state
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addPriceForId, setAddPriceForId] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -246,6 +254,84 @@ export default function ShoppingListDetailPage() {
         >
           Delete list
         </button>
+      </div>
+
+      {/* Trip notes — plus-tier (gated by `trip_notes` tool) */}
+      {tripNotesEnabled && (
+        <div className="mb-4 rounded-lg border border-ga-border bg-ga-bg-card p-3">
+          {editingNotes ? (
+            <div className="space-y-2">
+              <textarea
+                autoFocus
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                placeholder="Trip notes (e.g. 'Remember to check coupons; Mum wants the small carton')"
+                maxLength={1000}
+                rows={3}
+                className="w-full px-3 py-2 bg-ga-bg-primary border border-ga-border rounded-md text-sm text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent resize-y"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-ga-text-secondary">
+                  {notesDraft.length}/1000
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setEditingNotes(false);
+                      setNotesDraft(list.notes || '');
+                    }}
+                    className="px-3 py-1 text-xs border border-ga-border rounded-md text-ga-text-primary hover:bg-ga-bg-hover"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      updateMutation.mutate(
+                        { listId: listId!, patch: { notes: notesDraft } },
+                        { onSuccess: () => setEditingNotes(false) },
+                      );
+                    }}
+                    disabled={updateMutation.isPending}
+                    className="px-3 py-1 text-xs font-medium rounded-md bg-ga-accent hover:bg-ga-accent-hover text-white disabled:opacity-50"
+                  >
+                    {updateMutation.isPending ? 'Saving…' : 'Save notes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              onClick={() => {
+                setNotesDraft(list.notes || '');
+                setEditingNotes(true);
+              }}
+              className="flex items-start gap-2 cursor-pointer hover:bg-ga-bg-hover -m-3 p-3 rounded-lg"
+              title="Click to edit"
+            >
+              <span className="text-base shrink-0">📝</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-ga-text-secondary mb-0.5">Trip notes</div>
+                {list.notes ? (
+                  <p className="text-sm text-ga-text-primary whitespace-pre-wrap">{list.notes}</p>
+                ) : (
+                  <p className="text-sm text-ga-text-secondary italic">
+                    Click to add notes for this trip…
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bulk add from receipt — plus-tier; ScanReceiptButton handles its
+          own tier check + upgrade banner so we don't need to gate here. */}
+      <div className="mb-4">
+        <ScanReceiptButton
+          destination="shopping_list"
+          listId={listId}
+          pageKey="shopping_lists"
+        />
       </div>
 
       {/* Add row — three entry points */}
