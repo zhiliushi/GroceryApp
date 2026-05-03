@@ -54,6 +54,23 @@ const GROUPS: FlagGroup[] = [
       },
     ],
   },
+  {
+    title: 'Homemaker module',
+    description:
+      'Premium add-on (separate billing line, NOT a tier). Per-user gate is on the user detail page (Homemaker ON/OFF). These flags are global kill-switches — both must be true for a user to actually see the sub-feature.',
+    flags: [
+      {
+        key: 'homemaker_versioning',
+        label: 'Recipe Versioning',
+        description: 'Append-on-edit revision history per recipe (max 7 versions, oldest rotates). Per-version finance snapshot when base finance is in place.',
+      },
+      {
+        key: 'homemaker_social',
+        label: 'Per-Ingredient Social Layer',
+        description: 'Comments, stars, pin, drag-reorder per ingredient row. Household-scoped read/write.',
+      },
+    ],
+  },
 ];
 
 export default function FeatureFlagsTab() {

@@ -53,6 +53,12 @@ DEFAULT_FLAGS: dict[str, Any] = {
     # and the clock expires, legacy endpoints return 410 Gone. The `False` path is
     # only kept for rollback during the 90-day window.
     "legacy_endpoints_use_new_model": False,
+    # Homemaker module — premium add-on. Flags are GLOBAL kill-switches; per-user
+    # access is gated by `users/{uid}.homemaker_enabled`. Resolution:
+    #   user can see feature  ⇔  user.homemaker_enabled AND feature_flag enabled
+    # Underscore (not dot) in keys to avoid Firestore nested-path interpretation.
+    "homemaker_versioning": False,
+    "homemaker_social": False,
     # Thresholds
     "nudge_thresholds": {"expiry": 5, "price": 10, "volume": 20},
 }

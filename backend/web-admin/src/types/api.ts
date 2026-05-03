@@ -14,6 +14,10 @@ export interface AuthUser {
    *  `currency` which is the legacy locale field. */
   currency_preference?: string;
   schema_version?: number;
+  /** Per-user homemaker subscription gate. Combine with the global
+   *  `homemaker_versioning` / `homemaker_social` feature flags via the
+   *  `useHomemaker()` hook to resolve sub-feature access. */
+  homemaker_enabled?: boolean;
 }
 
 // === Dashboard ===
@@ -45,6 +49,13 @@ export interface User {
   tools_changed_at?: number | null;
   tier_changed_at?: number | null;
   tier_changed_by?: string | null;
+  // Homemaker subscription gate (per-user side). The full access check
+  // also requires the corresponding global feature flag (homemaker_versioning,
+  // homemaker_social) to be ON. See useHomemaker() hook on the frontend
+  // and `is_homemaker_enabled` on the backend.
+  homemaker_enabled?: boolean;
+  homemaker_changed_at?: number | null;
+  homemaker_changed_by?: string | null;
   country?: string;
   currency?: string;
   createdAt: number | null;
@@ -1172,6 +1183,10 @@ export interface FeatureFlags {
   milestone_analytics: boolean;
   // Legacy routing
   legacy_endpoints_use_new_model: boolean;
+  // Homemaker module — global kill-switches; per-user access also requires
+  // user.homemaker_enabled. Gate resolution lives in useHomemaker() hook.
+  homemaker_versioning: boolean;
+  homemaker_social: boolean;
   // Thresholds
   nudge_thresholds: NudgeThresholds;
   [key: string]: boolean | NudgeThresholds | unknown;

@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useUser } from '@/api/queries/useUsers';
 import { useInventory } from '@/api/queries/useInventory';
 import { useShoppingLists } from '@/api/queries/useShoppingLists';
-import { useChangeTier } from '@/api/mutations/useUserMutations';
+import { useChangeTier, useChangeHomemaker } from '@/api/mutations/useUserMutations';
 import DataTable, { type Column } from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -220,6 +220,10 @@ export default function UserDetailPage() {
                 <TierToggle uid={user.uid} currentTier={user.tier || 'free'} />
               </div>
               <div>
+                <span className="text-ga-text-secondary block">Homemaker</span>
+                <HomemakerToggle uid={user.uid} enabled={user.homemaker_enabled ?? false} />
+              </div>
+              <div>
                 <span className="text-ga-text-secondary block">Created</span>
                 <span className="text-ga-text-primary">{formatDate(user.createdAt)}</span>
               </div>
@@ -287,5 +291,36 @@ function TierToggle({ uid, currentTier }: { uid: string; currentTier: string }) 
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Per-user homemaker subscription gate. Toggles `homemaker_enabled` on the
+ * user doc — sub-features (versioning, social) also require their global
+ * feature flag. See `useHomemaker()` hook + `is_homemaker_enabled` backend.
+ *
+ * Pricing model is intentionally NOT decided yet (see project memory
+ * `[PRICING-TBD]` tag). This toggle is the manual "user has paid" switch
+ * until billing wires up.
+ */
+function HomemakerToggle({ uid, enabled }: { uid: string; enabled: boolean }) {
+  const mutation = useChangeHomemaker();
+  return (
+    <button
+      onClick={() => {
+        if (mutation.isPending) return;
+        mutation.mutate({ uid, enabled: !enabled });
+      }}
+      disabled={mutation.isPending}
+      className={cn(
+        'px-2 py-0.5 text-[11px] rounded border',
+        enabled
+          ? 'bg-purple-600 text-white border-transparent'
+          : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+      )}
+      title={enabled ? 'Click to disable homemaker access' : 'Click to enable homemaker access'}
+    >
+      {enabled ? 'ON' : 'OFF'}
+    </button>
   );
 }

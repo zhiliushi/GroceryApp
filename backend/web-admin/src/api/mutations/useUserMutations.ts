@@ -29,6 +29,19 @@ export function useChangeTier() {
   });
 }
 
+export function useChangeHomemaker() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ uid, enabled }: { uid: string; enabled: boolean }) =>
+      apiClient.put(API.USER_HOMEMAKER(uid), { enabled }).then((r) => r.data),
+    onSuccess: (_data, { enabled }) => {
+      toast.success(`Homemaker ${enabled ? 'enabled' : 'disabled'}`);
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Failed to update homemaker access'),
+  });
+}
+
 export function useToggleUserStatus() {
   const qc = useQueryClient();
   return useMutation({

@@ -22,7 +22,20 @@ from firebase_admin import firestore
 logger = logging.getLogger(__name__)
 
 TIER_RECIPE_LIMITS = {"free": 15, "plus": 50, "pro": 50, "admin": 999}
+HOMEMAKER_RECIPE_LIMIT = 500  # quota override when user.homemaker_enabled is True
+MAX_INGREDIENTS_PER_RECIPE = 25  # universal cap (all tiers)
 SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+
+
+def _effective_recipe_limit(uid: str, tier: str) -> int:
+    """Resolve the per-user recipe-count limit. Homemaker users get the
+    bumped quota regardless of tier; non-homemaker users fall back to
+    the tier table."""
+    from app.services import user_service
+    user = user_service.get_user(uid) or {}
+    if user.get("homemaker_enabled"):
+        return HOMEMAKER_RECIPE_LIMIT
+    return TIER_RECIPE_LIMITS.get(tier, 15)
 
 
 def _db():
@@ -39,11 +52,18 @@ def _recipes_ref(uid: str):
 
 
 def create_recipe(uid: str, data: Dict[str, Any], tier: str = "free") -> Dict[str, Any]:
-    """Create a recipe. Enforces tier limit. Auto-links ingredients."""
-    limit = TIER_RECIPE_LIMITS.get(tier, 15)
+    """Create a recipe. Enforces quota + ingredient cap. Auto-links ingredients."""
+    limit = _effective_recipe_limit(uid, tier)
     current = count_user_recipes(uid)
     if current >= limit:
         raise ValueError(f"Recipe limit reached ({current}/{limit}). Upgrade for more.")
+
+    raw_ingredients = data.get("ingredients", []) or []
+    if len(raw_ingredients) > MAX_INGREDIENTS_PER_RECIPE:
+        raise ValueError(
+            f"Recipe has {len(raw_ingredients)} ingredients; max is "
+            f"{MAX_INGREDIENTS_PER_RECIPE}. Split into multiple recipes."
+        )
 
     now = datetime.utcnow().isoformat()
     doc_data = {
@@ -51,7 +71,7 @@ def create_recipe(uid: str, data: Dict[str, Any], tier: str = "free") -> Dict[st
         "description": (data.get("description") or "").strip()[:500],
         "servings": data.get("servings", 1),
         "prep_time_min": data.get("prep_time_min", 0),
-        "ingredients": _attach_ingredient_match_metadata(uid, data.get("ingredients", [])),
+        "ingredients": _attach_ingredient_match_metadata(uid, raw_ingredients),
         "steps": data.get("steps", []),
         "tags": data.get("tags", []),
         "created_at": now,
@@ -98,6 +118,11 @@ def update_recipe(uid: str, recipe_id: str, data: Dict[str, Any]) -> bool:
     # when only metadata fields (name, description, etc.) change avoids
     # touching auto-resolved fields the user may have manually adjusted.
     if "ingredients" in data:
+        if len(data["ingredients"]) > MAX_INGREDIENTS_PER_RECIPE:
+            raise ValueError(
+                f"Recipe has {len(data['ingredients'])} ingredients; max is "
+                f"{MAX_INGREDIENTS_PER_RECIPE}. Split into multiple recipes."
+            )
         data["ingredients"] = _attach_ingredient_match_metadata(uid, data["ingredients"])
     ref.update(data)
     return True

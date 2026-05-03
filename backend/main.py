@@ -320,6 +320,10 @@ async def get_current_user_info(request: Request):
         "currency": profile.get("currency"),
         "currency_preference": profile.get("currency_preference"),
         "schema_version": profile.get("schema_version", 1),
+        # Homemaker subscription gate (per-user). Frontend `useHomemaker()`
+        # combines this with the global `homemaker_versioning` /
+        # `homemaker_social` feature flags to decide which sub-features show.
+        "homemaker_enabled": profile.get("homemaker_enabled", False),
     }
 
 

@@ -105,6 +105,28 @@ async def update_user_status(uid: str, body: dict, admin: UserInfo = Depends(req
     return {"success": True, "message": f"User {uid} status set to {status}"}
 
 
+@router.put("/users/{uid}/homemaker")
+async def update_user_homemaker(
+    uid: str, body: dict, admin: UserInfo = Depends(require_admin),
+):
+    """Toggle the homemaker subscription gate for a user.
+
+    Body: `{"enabled": bool}`. Per-user side of the homemaker access
+    check; global feature flags `homemaker_versioning` / `homemaker_social`
+    are the other side. Both must be True for the user to see the feature.
+    """
+    enabled = body.get("enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(status_code=400, detail="`enabled` must be a boolean")
+    success = user_service.update_user_homemaker(uid, enabled, admin.uid)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "success": True,
+        "message": f"User {uid} homemaker_enabled set to {enabled}",
+    }
+
+
 @router.put("/users/{uid}/approve")
 async def approve_user(uid: str, admin: UserInfo = Depends(require_admin)):
     """Approve a pending user."""

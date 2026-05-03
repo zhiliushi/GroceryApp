@@ -85,6 +85,56 @@ def update_user_tier(uid: str, tier: str, admin_uid: str) -> bool:
     return True
 
 
+def update_user_homemaker(uid: str, enabled: bool, admin_uid: str) -> bool:
+    """Toggle a user's homemaker subscription gate.
+
+    `homemaker_enabled` is the per-user side of the homemaker access check.
+    The full gate is: `user.homemaker_enabled AND feature_flag('homemaker_<sub>')`.
+    Both must be True before the corresponding sub-feature (versioning,
+    social) is exposed in API or UI.
+    """
+    db = _get_db()
+    doc = db.collection("users").document(uid).get()
+    if not doc.exists:
+        return False
+    import time
+    db.collection("users").document(uid).update({
+        "homemaker_enabled": bool(enabled),
+        "homemaker_changed_at": int(time.time() * 1000),
+        "homemaker_changed_by": admin_uid,
+    })
+    logger.info(
+        "User %s homemaker_enabled set to %s by %s", uid, enabled, admin_uid,
+    )
+    return True
+
+
+def is_homemaker_enabled(uid: str, sub: str) -> bool:
+    """Resolve homemaker access for a sub-feature.
+
+    Args:
+        uid: target user
+        sub: "versioning" | "social"  (extend when more sub-features land)
+
+    Truth table:
+      user.homemaker_enabled  ×  feature_flag(homemaker_{sub})  →  result
+      False                   ×  *                              →  False
+      True                    ×  False                          →  False  (kill-switch)
+      True                    ×  True                           →  True
+
+    Note: `finance` is intentionally NOT a homemaker sub-feature — base
+    finance is shipped to all users as a separate phase. Per-version
+    finance snapshot rides on `versioning`, not its own gate.
+    """
+    if sub not in ("versioning", "social"):
+        return False
+    user = get_user(uid)
+    if not user or not user.get("homemaker_enabled"):
+        return False
+    from app.core import feature_flags
+    return feature_flags.is_enabled(f"homemaker_{sub}")
+
+
 def update_user_status(uid: str, status: str, reason: str = "") -> bool:
     """Enable or disable a user."""
     if status not in ("active", "disabled"):

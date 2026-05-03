@@ -81,6 +81,7 @@ export const API = {
   USER_APPROVE: (uid: string) => `/api/admin/users/${uid}/approve`,
   USER_DELETE: (uid: string) => `/api/admin/users/${uid}`,
   USER_TOOLS: (uid: string) => `/api/admin/users/${uid}/tools`,
+  USER_HOMEMAKER: (uid: string) => `/api/admin/users/${uid}/homemaker`,
 
   // Product Disputes
   DISPUTES_ADMIN: '/api/admin/disputes',
