@@ -5,7 +5,7 @@ import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
-import { formatRelativeDate } from '@/utils/format';
+import { formatCurrencyWithSymbol, formatRelativeDate } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import type { RecipeRevision } from '@/types/api';
 
@@ -103,6 +103,20 @@ export default function RecipeHistoryModal({ open, recipeId, recipeName, onClose
                         <div className="flex-1 min-w-0">
                           <div className="text-sm text-ga-text-primary font-medium">
                             v{revisions.length - idx} · {ingredientCount} ingredients
+                            {rev.snapshot_finance && rev.snapshot_finance.total_cost != null && (
+                              <span className="ml-2 text-xs text-ga-text-secondary tabular-nums">
+                                · {formatCurrencyWithSymbol(
+                                  rev.snapshot_finance.total_cost,
+                                  rev.snapshot_finance.currency,
+                                )}
+                                {rev.snapshot_finance.total_is_partial && (
+                                  <span className="ml-0.5 text-[10px]">
+                                    ({rev.snapshot_finance.priced_count}/
+                                    {rev.snapshot_finance.total_count})
+                                  </span>
+                                )}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-ga-text-secondary">
                             {formatRelativeDate(rev.edited_at)}

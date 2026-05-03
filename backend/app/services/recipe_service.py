@@ -373,9 +373,11 @@ def _append_revision(
     appended.
 
     Snapshot scope: ingredients only (per Decision 4 — methods/steps are
-    not versioned). `snapshot_finance` is reserved for F1 (base finance) —
-    populated as None until that lands; the schema slot is here so future
-    snapshots can be added without a migration.
+    not versioned). `snapshot_finance` is the H4 wiring of F1's
+    `recipe_finance_service.estimate_recipe_cost` — captures the cost-as-
+    of-now view so future history shows "this version cost RM X, today's
+    version costs RM Y." Failure to capture is non-fatal (we store None
+    so the rest of the schema is consistent).
 
     Returns the new revision's doc id.
     """
@@ -394,10 +396,28 @@ def _append_revision(
             uid, recipe_id, oldest.id, MAX_REVISIONS_PER_RECIPE,
         )
 
+    # H4 — F1 finance snapshot. Run the same cost estimator the live
+    # cost-card uses, on the OLD ingredients (the snapshot we're about to
+    # archive). Stored as plain dict; matches the optional shape on the
+    # frontend's `RecipeRevision.snapshot_finance` type.
+    snapshot_finance = None
+    try:
+        from app.services import recipe_finance_service
+        snapshot_finance = recipe_finance_service.estimate_recipe_cost(
+            uid, snapshot_ingredients,
+        )
+    except Exception:
+        # Don't block the revision over a finance lookup failure — leave
+        # snapshot_finance None and log. Restore + UI still work.
+        logger.exception(
+            "Recipe %s/%s: snapshot_finance capture failed (non-fatal)",
+            uid, recipe_id,
+        )
+
     now_iso = datetime.utcnow().isoformat()
     payload = {
         "snapshot_ingredients": snapshot_ingredients,
-        "snapshot_finance": None,  # Reserved for F1; see project memory.
+        "snapshot_finance": snapshot_finance,
         "edited_at": now_iso,
         "edited_by": uid,
         "note": (note or "").strip()[:200] or None,

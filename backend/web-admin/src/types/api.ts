@@ -588,12 +588,10 @@ export interface RecipeIngredient {
 export interface RecipeRevision {
   id: string;
   snapshot_ingredients: RecipeIngredient[];
-  /** Reserved for F1 (base finance) — null until that lands. */
-  snapshot_finance: null | {
-    currency: string;
-    total_cost: number;
-    lines: Array<{ name: string; qty: number; unit_price: number; line_cost: number }>;
-  };
+  /** H4 — captured by `recipe_finance_service.estimate_recipe_cost` at
+   *  revision-time. Null when finance lookup failed (non-fatal) or when
+   *  the revision predates the H4 wiring. Shape mirrors `RecipeCostEstimate`. */
+  snapshot_finance: null | RecipeCostEstimate;
   edited_at: string;
   edited_by: string;
   note: string | null;
