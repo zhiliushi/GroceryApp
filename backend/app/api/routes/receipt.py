@@ -352,32 +352,37 @@ def _save_to_inventory(uid: str, body: ReceiptConfirmRequest, items: list[dict])
 
 
 def _save_to_shopping_list(uid: str, body: ReceiptConfirmRequest) -> None:
-    """Add confirmed items to a shopping list."""
-    from firebase_admin import firestore
-    db = firestore.client()
+    """Add confirmed items to a shopping list via the v2 service.
 
-    items_ref = (
-        db.collection("users").document(uid)
-        .collection("shopping_lists").document(body.list_id)
-        .collection("items")
-    )
+    Routing through `shopping_list_service.add_item` enforces the 50-item
+    cap, schema_version=2, and consistent metadata. Items that exceed the
+    cap raise QuotaExceededError; we catch and surface partial-success so
+    the receipt confirm still completes.
+    """
+    from app.services import shopping_list_service
+    from app.core.exceptions import QuotaExceededError
 
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
-
-    batch = db.batch()
+    added = 0
+    skipped: list[str] = []
     for item in body.items:
-        doc = items_ref.document()
-        batch.set(doc, {
+        payload = {
             "item_name": item.name,
             "quantity": item.quantity,
-            "is_purchased": False,
             "barcode": item.barcode,
-            "price": item.price,
-            "created_at": now,
-            "updated_at": now,
-        })
-    batch.commit()
+        }
+        try:
+            shopping_list_service.add_item(
+                uid, body.list_id, payload, source="receipt"
+            )
+            added += 1
+        except QuotaExceededError:
+            skipped.append(item.name)
+            continue
+    if skipped:
+        logger.warning(
+            "Receipt save_to_shopping_list: cap reached, skipped %d items: %s",
+            len(skipped), skipped,
+        )
 
 
 def _save_prices_only(uid: str, body: ReceiptConfirmRequest, items: list[dict]) -> None:

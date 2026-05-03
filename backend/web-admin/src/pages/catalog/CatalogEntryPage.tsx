@@ -10,6 +10,7 @@ import {
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Breadcrumbs from '@/components/shared/Breadcrumbs';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
+import AddToShoppingListButton from '@/components/shopping-lists/AddToShoppingListButton';
 import LifetimeUnitBreakdown from '@/components/items/LifetimeUnitBreakdown';
 import MovementTimeline from '@/components/items/MovementTimeline';
 import SplitLineageTree from '@/components/items/SplitLineageTree';
@@ -201,6 +202,12 @@ export default function CatalogEntryPage() {
             useTargetAvailable={!!overallMostUrgentEventId}
           />
         )}
+
+        {/* Cross-page integration — drop this catalog item into a shopping list */}
+        <div className="flex justify-end">
+          <AddToShoppingListButton entry={entry} />
+        </div>
+
 
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <Stat

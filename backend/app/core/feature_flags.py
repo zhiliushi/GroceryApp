@@ -47,6 +47,10 @@ DEFAULT_FLAGS: dict[str, Any] = {
     "catalog_cleanup": True,
     "reminder_scan": True,
     "milestone_analytics": True,
+    # Shopping list v2 — transit list with price comparison + buy flow.
+    # When OFF: TTL sweep skipped, but routes/UI still render (allows
+    # rollback to read-only mode without code revert).
+    "shopping_list_v2_enabled": True,
     # Legacy endpoint routing — True after migration runs; legacy mobile endpoints
     # then serve via new catalog+purchases model (shape-translated via compat shim).
     # ONE-WAY after D2 (mobile refactor) + 90-day deprecation window: once flipped on

@@ -144,6 +144,20 @@ export default function ContextualScannerModal({ open, onClose }: ContextualScan
         );
         onClose();
         break;
+      case 'add_to_shopping_list':
+        // The shopping-list detail page listens for this and calls
+        // useAddShoppingListItem with the scanned data.
+        window.dispatchEvent(
+          new CustomEvent('grocery:scan-add-to-shopping-list', {
+            detail: {
+              barcode: action.barcode,
+              nameNorm: action.nameNorm,
+              display: action.display,
+            },
+          }),
+        );
+        onClose();
+        break;
       case 'name_unknown':
         setNamingStep({
           barcode: action.barcode,

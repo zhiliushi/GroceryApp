@@ -146,7 +146,12 @@ export const router = createBrowserRouter([
       // for adding/renaming/reordering locations stays at /storage.
       { path: 'storage/:locationKey', element: <TierGated page="storage"><StorageDetailPage /></TierGated> },
       { path: 'shopping-lists', element: <TierGated page="shopping_lists"><ShoppingListsPage /></TierGated> },
-      { path: 'shopping-lists/:uid/:listId', element: <TierGated page="shopping_lists"><ShoppingListDetailPage /></TierGated> },
+      // v2 user-side detail — uid implicit from auth
+      { path: 'shopping-lists/:listId', element: <TierGated page="shopping_lists"><ShoppingListDetailPage /></TierGated> },
+      // Legacy admin deep-link — preserve so old bookmarks/links don't break.
+      // Drops the uid segment because the user-side detail only renders the
+      // current user's list. (Admin cross-user view lives in Users → user detail.)
+      { path: 'shopping-lists/:uid/:listId', element: <Navigate to="/shopping-lists" replace /> },
       { path: 'foodbanks', element: <TierGated page="foodbanks"><FoodbanksListPage /></TierGated> },
       { path: 'settings', element: <TierGated page="settings"><SettingsPage /></TierGated> },
       { path: 'meals', element: <SuspenseWrapper><MealsPage /></SuspenseWrapper> },

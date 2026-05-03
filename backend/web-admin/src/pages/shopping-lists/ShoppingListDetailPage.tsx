@@ -1,124 +1,428 @@
-import { useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useShoppingListDetail } from '@/api/queries/useShoppingLists';
-import DataTable, { type Column } from '@/components/shared/DataTable';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import {
+  useMyShoppingListDetail,
+} from '@/api/queries/useShoppingLists';
+import {
+  useAddShoppingListItem,
+  useDeleteShoppingList,
+  useDeleteShoppingListItem,
+  useDeleteShoppingListPrice,
+  useRenameShoppingList,
+} from '@/api/mutations/useShoppingListMutations';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
-import { formatDate, truncateUid } from '@/utils/format';
-import type { ShoppingListItem } from '@/types/api';
+import EmptyState from '@/components/shared/EmptyState';
+import QuickAddModal from '@/components/quickadd/QuickAddModal';
+import ContextualScannerModal from '@/components/barcode/ContextualScannerModal';
+import AddItemRow from './AddItemRow';
+import AddPriceInlineForm from './AddPriceInlineForm';
+import PricePickerDialog, { type BuyChoice } from './PricePickerDialog';
 import { cn } from '@/utils/cn';
+import type { ShoppingListItem, ShoppingListPrice } from '@/types/api';
+
+const MAX_ITEMS_PER_LIST = 50;
+
+function itemDimensionLabel(item: ShoppingListItem): string {
+  // v2 first, then v1 legacy fallback.
+  const parts: string[] = [];
+  if (item.quantity != null) {
+    parts.push(`${item.quantity}${item.unit ? ` ${item.unit}` : ''}`);
+  }
+  if (item.weight_value != null && item.weight_unit) {
+    parts.push(`${item.weight_value}${item.weight_unit}`);
+  }
+  if (item.volume_value != null && item.volume_unit) {
+    parts.push(`${item.volume_value}${item.volume_unit}`);
+  }
+  if (parts.length === 0 && item.unitId) {
+    parts.push(item.unitId);
+  }
+  return parts.join(' · ');
+}
+
+function lowestPrice(prices?: ShoppingListPrice[]): ShoppingListPrice | null {
+  if (!prices || prices.length === 0) return null;
+  return prices.reduce((acc, p) => (p.price < acc.price ? p : acc), prices[0]);
+}
 
 export default function ShoppingListDetailPage() {
-  const { uid, listId } = useParams<{ uid: string; listId: string }>();
-  const { data, isLoading } = useShoppingListDetail(uid!, listId!);
+  const { listId } = useParams<{ listId: string }>();
+  const navigate = useNavigate();
+  const { data, isLoading } = useMyShoppingListDetail(listId);
 
-  const columns: Column<ShoppingListItem>[] = useMemo(
-    () => [
-      {
-        key: 'checked',
-        header: '',
-        className: 'w-8 text-center',
-        render: (item) => (
-          <span className={item.isPurchased ? 'text-green-400' : 'text-gray-600'}>
-            {item.isPurchased ? '✓' : '○'}
-          </span>
-        ),
-      },
-      {
-        key: 'name',
-        header: 'Name',
-        render: (item) => (
-          <span
-            className={cn(
-              'font-medium',
-              item.isPurchased
-                ? 'line-through text-ga-text-secondary/50'
-                : 'text-ga-text-primary',
-            )}
-          >
-            {item.itemName}
-          </span>
-        ),
-      },
-      {
-        key: 'qty',
-        header: 'Qty',
-        render: (item) => (
-          <span className="text-ga-text-secondary">{item.quantity ?? '—'}</span>
-        ),
-      },
-      {
-        key: 'unit',
-        header: 'Unit',
-        render: (item) => (
-          <span className="text-ga-text-secondary">{item.unitId || '—'}</span>
-        ),
-      },
-      {
-        key: 'category',
-        header: 'Category',
-        render: (item) =>
-          item.categoryId ? (
-            <span className="inline-block bg-ga-accent/20 text-ga-accent text-xs font-medium rounded px-2 py-0.5">
-              {item.categoryId}
-            </span>
-          ) : (
-            <span className="text-ga-text-secondary">—</span>
-          ),
-      },
-    ],
-    [],
-  );
+  const renameMutation = useRenameShoppingList();
+  const deleteListMutation = useDeleteShoppingList();
+  const deleteItemMutation = useDeleteShoppingListItem();
+  const deletePriceMutation = useDeleteShoppingListPrice();
+  const addItemMutation = useAddShoppingListItem();
 
-  if (isLoading) return <LoadingSpinner text="Loading list..." />;
-  if (!data) return <div className="p-6 text-ga-text-secondary">Shopping list not found.</div>;
+  // Local UI state
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [addPriceForId, setAddPriceForId] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  // Buy flow state
+  const [buyTarget, setBuyTarget] = useState<ShoppingListItem | null>(null);
+  const [pricePickerForItem, setPricePickerForItem] = useState<ShoppingListItem | null>(null);
+  const [quickAddDefaults, setQuickAddDefaults] = useState<{
+    name?: string;
+    barcode?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (data?.list?.name && renameValue === '') {
+      setRenameValue(data.list.name);
+    }
+  }, [data?.list?.name, renameValue]);
+
+  // Listen for scanner-add events while this page is mounted. The scanner
+  // dispatches `grocery:scan-add-to-shopping-list` with the scanned barcode
+  // + matched display name; we POST it to the current list.
+  useEffect(() => {
+    if (!listId) return;
+    function onScanAdd(e: Event) {
+      const detail = (e as CustomEvent<{ barcode: string; nameNorm: string; display: string }>).detail;
+      if (!detail?.display) return;
+      addItemMutation.mutate({
+        listId: listId!,
+        payload: {
+          item_name: detail.display,
+          barcode: detail.barcode || undefined,
+          source_catalog_name_norm: detail.nameNorm || undefined,
+          source: 'scan',
+        },
+      });
+    }
+    window.addEventListener('grocery:scan-add-to-shopping-list', onScanAdd);
+    return () => window.removeEventListener('grocery:scan-add-to-shopping-list', onScanAdd);
+  }, [listId, addItemMutation]);
+
+  const items = useMemo(() => data?.items ?? [], [data]);
+
+  if (isLoading) return <LoadingSpinner text="Loading list…" />;
+  if (!data || !listId) {
+    return (
+      <div className="p-6 text-ga-text-secondary">
+        Shopping list not found.{' '}
+        <Link to="/shopping-lists" className="text-ga-accent hover:underline">
+          ← Back to lists
+        </Link>
+      </div>
+    );
+  }
 
   const list = data.list;
-  const items = data.items;
+  const itemCount = items.length;
+  const atCap = itemCount >= MAX_ITEMS_PER_LIST;
+
+  function startRename() {
+    setRenameValue(list.name);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    const name = renameValue.trim();
+    if (!name || name === list.name) {
+      setRenaming(false);
+      return;
+    }
+    renameMutation.mutate({ listId: listId!, name }, { onSuccess: () => setRenaming(false) });
+  }
+
+  function handleDeleteList() {
+    if (!confirm(`Delete the list "${list.name}"? Items will be removed.`)) return;
+    deleteListMutation.mutate(listId!, {
+      onSuccess: () => navigate('/shopping-lists'),
+    });
+  }
+
+  function handleDeleteItem(item: ShoppingListItem) {
+    if (!confirm(`Remove "${item.item_name || item.itemName}" from the list?`)) return;
+    deleteItemMutation.mutate({ listId: listId!, itemId: item.id });
+  }
+
+  function startBuy(item: ShoppingListItem) {
+    const prices = item.prices || [];
+    setBuyTarget(item);
+    if (prices.length > 1) {
+      setPricePickerForItem(item);
+    } else {
+      const single = prices[0];
+      setQuickAddDefaults({
+        name: item.item_name || item.itemName || '',
+        barcode: single?.barcode || item.barcode || undefined,
+      });
+    }
+  }
+
+  function handlePricePicked(choice: BuyChoice) {
+    setPricePickerForItem(null);
+    if (!buyTarget) return;
+    if (choice.kind === 'rescan') {
+      setQuickAddDefaults(null);
+      setScannerOpen(true);
+      return;
+    }
+    if (choice.kind === 'manual') {
+      setQuickAddDefaults({
+        name: buyTarget.item_name || buyTarget.itemName || '',
+      });
+      return;
+    }
+    // 'price' choice
+    setQuickAddDefaults({
+      name: buyTarget.item_name || buyTarget.itemName || '',
+      barcode: choice.price.barcode || buyTarget.barcode || undefined,
+    });
+  }
+
+  function handleQuickAddSaved() {
+    // Successful purchase — remove the item from the list.
+    if (buyTarget) {
+      deleteItemMutation.mutate({ listId: listId!, itemId: buyTarget.id });
+    }
+    setBuyTarget(null);
+    setQuickAddDefaults(null);
+  }
+
+  function handleQuickAddClose() {
+    setQuickAddDefaults(null);
+    setBuyTarget(null);
+  }
 
   return (
     <div className="p-6">
       {/* Breadcrumb */}
-      <div className="mb-4">
+      <div className="mb-3">
         <Link to="/shopping-lists" className="text-ga-accent hover:underline text-sm">
           ← Shopping Lists
         </Link>
-        <span className="text-ga-text-secondary text-sm mx-2">/</span>
-        <span className="text-ga-text-primary text-sm">{list.name}</span>
       </div>
 
-      {/* Info card */}
-      <div className="bg-ga-bg-card border border-ga-border rounded-lg p-4 mb-4">
-        <div className="flex items-center gap-6">
-          <div>
-            <span className="block text-xs font-medium text-ga-text-secondary mb-0.5">Name</span>
-            <span className="text-sm font-semibold text-ga-text-primary">{list.name}</span>
-          </div>
-          <div>
-            <span className="block text-xs font-medium text-ga-text-secondary mb-0.5">Owner</span>
-            <code className="text-xs font-mono text-ga-text-secondary">
-              {truncateUid(list.user_id)}
-            </code>
-          </div>
-          <div>
-            <span className="block text-xs font-medium text-ga-text-secondary mb-0.5">Created</span>
-            <span className="text-sm text-ga-text-secondary">
-              {formatDate(list.created_at ?? list.createdDate)}
-            </span>
-          </div>
-          <div>
-            <span className="block text-xs font-medium text-ga-text-secondary mb-0.5">Items</span>
-            <span className="text-sm text-ga-text-primary">{items.length}</span>
-          </div>
+      {/* Header — name, item count, delete */}
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          {renaming ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') {
+                  setRenameValue(list.name);
+                  setRenaming(false);
+                }
+              }}
+              maxLength={80}
+              className="text-xl font-semibold bg-ga-bg-card border border-ga-border rounded px-2 py-1 text-ga-text-primary focus:outline-none focus:border-ga-accent"
+            />
+          ) : (
+            <h1
+              onClick={startRename}
+              className="text-xl font-semibold text-ga-text-primary truncate cursor-pointer hover:underline"
+              title="Click to rename"
+            >
+              {list.name}
+            </h1>
+          )}
+          <span
+            className={cn(
+              'shrink-0 text-xs font-medium rounded-full px-2 py-0.5',
+              atCap
+                ? 'bg-amber-500/20 text-amber-300'
+                : 'bg-ga-accent/20 text-ga-accent',
+            )}
+          >
+            {itemCount}/{MAX_ITEMS_PER_LIST}
+          </span>
         </div>
+        <button
+          onClick={handleDeleteList}
+          className="px-3 py-1.5 text-xs border border-ga-border rounded-md text-red-400 hover:bg-red-500/10"
+        >
+          Delete list
+        </button>
       </div>
 
-      <DataTable
-        data={items}
-        columns={columns}
-        isLoading={false}
-        emptyMessage="No items in this list"
-        emptyIcon="📝"
-        getKey={(item) => item.id}
+      {/* Add row — three entry points */}
+      <AddItemRow
+        listId={listId}
+        atCap={atCap}
+        onScanClick={() => setScannerOpen(true)}
+      />
+
+      {/* Items */}
+      {items.length === 0 ? (
+        <EmptyState
+          icon="📝"
+          title="Nothing on the list yet"
+          subtitle="Add manually, browse catalog, or scan."
+        />
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => {
+            const expanded = expandedId === item.id;
+            const showAddPrice = addPriceForId === item.id;
+            const itemName = item.item_name || item.itemName || '(unnamed)';
+            const dim = itemDimensionLabel(item);
+            const lo = lowestPrice(item.prices);
+            const priceCount = (item.prices ?? []).length;
+            return (
+              <div
+                key={item.id}
+                className="rounded-lg border border-ga-border bg-ga-bg-card"
+              >
+                <div className="flex items-center gap-3 p-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-ga-text-primary truncate">
+                      {itemName}
+                    </div>
+                    <div className="text-xs text-ga-text-secondary mt-0.5">
+                      {dim && <span>{dim}</span>}
+                      {dim && lo && <span> · </span>}
+                      {lo && (
+                        <span>
+                          best: <span className="text-ga-accent">{lo.currency} {lo.price.toFixed(2)}</span>
+                          {lo.brand && ` (${lo.brand})`}
+                        </span>
+                      )}
+                      {priceCount > 0 && (
+                        <span className="ml-2 text-ga-text-secondary/70">
+                          · {priceCount} price{priceCount === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => startBuy(item)}
+                      title="Buy this item"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-ga-accent hover:bg-ga-accent-hover text-white"
+                    >
+                      Buy
+                    </button>
+                    <button
+                      onClick={() => handleDeleteItem(item)}
+                      title="Remove"
+                      className="px-2 py-1.5 text-xs border border-ga-border rounded-md text-ga-text-secondary hover:bg-red-500/10 hover:text-red-400"
+                    >
+                      ✕
+                    </button>
+                    <button
+                      onClick={() => setExpandedId(expanded ? null : item.id)}
+                      title="Toggle price comparison"
+                      className="px-2 py-1.5 text-xs border border-ga-border rounded-md text-ga-text-secondary hover:bg-ga-bg-hover"
+                    >
+                      {expanded ? '▴' : '▾'}
+                    </button>
+                  </div>
+                </div>
+
+                {expanded && (
+                  <div className="border-t border-ga-border px-3 py-2 space-y-2 bg-ga-bg-primary/30">
+                    {(item.prices ?? []).length === 0 && !showAddPrice && (
+                      <p className="text-xs text-ga-text-secondary">No price comparisons yet.</p>
+                    )}
+                    {(item.prices ?? []).length > 0 && (
+                      <table className="w-full text-xs">
+                        <thead className="text-ga-text-secondary">
+                          <tr>
+                            <th className="text-left font-normal py-1">Brand</th>
+                            <th className="text-left font-normal py-1">Store</th>
+                            <th className="text-right font-normal py-1">Price</th>
+                            <th className="text-left font-normal py-1 pl-2">Barcode</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...(item.prices ?? [])]
+                            .sort((a, b) => a.price - b.price)
+                            .map((p) => (
+                              <tr key={p.id} className="border-t border-ga-border/60">
+                                <td className="py-1.5 text-ga-text-primary">
+                                  {p.brand || '—'}
+                                </td>
+                                <td className="py-1.5 text-ga-text-secondary">
+                                  {p.store_name || '—'}
+                                </td>
+                                <td className="py-1.5 text-right text-ga-accent font-medium">
+                                  {p.currency} {p.price.toFixed(2)}
+                                </td>
+                                <td className="py-1.5 pl-2 font-mono text-ga-text-secondary">
+                                  {p.barcode || '—'}
+                                </td>
+                                <td className="py-1.5 text-right">
+                                  <button
+                                    onClick={() =>
+                                      deletePriceMutation.mutate({
+                                        listId: listId!,
+                                        itemId: item.id,
+                                        priceId: p.id,
+                                      })
+                                    }
+                                    title="Remove price"
+                                    className="text-ga-text-secondary hover:text-red-400 px-1"
+                                  >
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {showAddPrice ? (
+                      <AddPriceInlineForm
+                        listId={listId}
+                        itemId={item.id}
+                        onClose={() => setAddPriceForId(null)}
+                      />
+                    ) : (
+                      <button
+                        onClick={() => setAddPriceForId(item.id)}
+                        disabled={(item.prices ?? []).length >= 10}
+                        className="text-xs text-ga-accent hover:underline disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
+                      >
+                        + Add price comparison{(item.prices ?? []).length >= 10 && ' (max 10)'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Scanner — uses the existing 'shopping-lists' context branch */}
+      <ContextualScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+      />
+
+      {/* Buy flow — price picker (only when >1 prices) */}
+      {pricePickerForItem && (
+        <PricePickerDialog
+          itemName={pricePickerForItem.item_name || pricePickerForItem.itemName || ''}
+          prices={pricePickerForItem.prices || []}
+          onPick={handlePricePicked}
+          onCancel={() => {
+            setPricePickerForItem(null);
+            setBuyTarget(null);
+          }}
+        />
+      )}
+
+      {/* Buy flow — QuickAddModal with prefilled defaults */}
+      <QuickAddModal
+        open={quickAddDefaults !== null}
+        onClose={handleQuickAddClose}
+        defaults={quickAddDefaults || undefined}
+        onSaved={handleQuickAddSaved}
       />
     </div>
   );

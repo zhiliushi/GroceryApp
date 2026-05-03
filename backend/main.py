@@ -43,6 +43,7 @@ from app.api.routes import (
     reminders,
     scan,
     search,
+    shopping_lists,
     stores,
     waste,
 )
@@ -136,13 +137,33 @@ _spa_dir = os.path.join(os.path.dirname(__file__), "static", "spa")
 if os.path.isdir(os.path.join(_spa_dir, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(_spa_dir, "assets")), name="spa-assets")
 
-# CORS
+# CORS — locked to ALLOWED_ORIGINS env var. Wildcard '*' is an explicit security
+# downgrade: any site can call the API. Keep wildcard only for closed-beta / dev;
+# lock to brand domains before public launch via Render dashboard env var.
+_cors_origins = settings.ALLOWED_ORIGINS or ["*"]
+if settings.ENVIRONMENT == "production" and "*" in _cors_origins:
+    logger.warning(
+        "SECURITY: ALLOWED_ORIGINS contains wildcard '*' in production. "
+        "Set ALLOWED_ORIGINS in Render dashboard to a JSON list of brand "
+        "domains before public launch (e.g. '[\"https://app.brand.com\"]'). "
+        "Continuing because closed-beta tolerates this; do not ship to paying users."
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Global rate limit — coarse anonymous-vs-auth budget. Per-tier fairness happens
+# at the route level via the rate_limit() dependency. Without this, a single
+# buggy client can blow the daily Firestore read quota in minutes.
+from app.core.rate_limit import RateLimitMiddleware  # noqa: E402
+app.add_middleware(
+    RateLimitMiddleware,
+    anonymous_limit=20,
+    authenticated_limit=200,
 )
 
 # Error-rate alerting (5xx > 5% in 5min sliding window)
@@ -169,6 +190,7 @@ _ROUTERS: list[tuple] = [
     (waste.router, "/waste", ["waste"], None),
     (insights.router, "/insights", ["insights"], None),
     (search.router, "/search", ["search"], None),
+    (shopping_lists.router, "/shopping-lists", ["shopping-lists"], None),
     (stores.router, "/stores", ["stores"], None),
 ]
 for _router, _suffix, _tags, _deps in _ROUTERS:
@@ -285,7 +307,22 @@ async def on_shutdown():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Liveness + Firestore probe. Returns 503 on Firestore failure so uptime
+    monitors page on actual data-layer outages, not just web-process up."""
+    try:
+        from firebase_admin import firestore
+        # Cheap probe: app_config/features is seeded on startup and stays small.
+        firestore.client().collection("app_config").document("features").get()
+        return {"status": "healthy", "firestore": "ok"}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "firestore": "error",
+                "error": str(exc)[:200],
+            },
+        )
 
 
 @app.get("/api/me")

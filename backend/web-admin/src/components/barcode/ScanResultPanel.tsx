@@ -8,6 +8,7 @@ export type ScanResultAction =
   | { kind: 'mark_used'; nameNorm: string; display: string }
   | { kind: 'move_location'; nameNorm: string; display: string }
   | { kind: 'tick_list_item'; nameNorm: string; display: string; barcode: string }
+  | { kind: 'add_to_shopping_list'; nameNorm: string; display: string; barcode: string }
   | { kind: 'rescan' };
 
 interface ScanResultPanelProps {
@@ -115,16 +116,15 @@ export default function ScanResultPanel({
               <button
                 onClick={() =>
                   onAction({
-                    kind: 'tick_list_item',
+                    kind: 'add_to_shopping_list',
                     nameNorm: match.name_norm,
                     display: match.display_name,
                     barcode: info.barcode,
                   })
                 }
-                className="px-3 py-1.5 text-sm bg-ga-bg-hover text-ga-text-primary rounded hover:bg-ga-bg-card"
-                title="Dispatches a DOM event the list page can listen for. Toggle endpoint pending."
+                className="px-3 py-1.5 text-sm bg-ga-accent text-white rounded hover:opacity-90 font-medium"
               >
-                ✓ Tick on list
+                + Add to list
               </button>
             )}
             {context !== 'my-items' && history.active_stock > 0 && (

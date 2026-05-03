@@ -116,3 +116,9 @@ nul
 
 # Claude Code personal memory (not committed)
 .claude/memory/
+
+# Browser-test-agent credentials (per-developer; never committed)
+.test-password
+**/.test-password
+**/.test-session-cookie
+.test-session-cookie

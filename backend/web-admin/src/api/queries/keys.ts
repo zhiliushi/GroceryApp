@@ -22,7 +22,11 @@ export const qk = {
   needsReview: ['needs-review'] as const,
   shoppingLists: {
     all: ['shopping-lists'] as const,
+    // Admin cross-user view (legacy)
     detail: (uid: string, id: string) => ['shopping-lists', uid, id] as const,
+    // v2 user-side (uid implicit from auth)
+    mine: ['shopping-lists', 'mine'] as const,
+    mineDetail: (id: string) => ['shopping-lists', 'mine', id] as const,
   },
   priceRecords: {
     all: (params: { search?: string; page?: number }) =>

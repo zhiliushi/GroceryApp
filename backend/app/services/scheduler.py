@@ -29,6 +29,7 @@ from app.services import (
     inventory_service,
     nudge_service,
     purchase_event_service,
+    shopping_list_service,
     waste_service,
 )
 
@@ -172,6 +173,19 @@ def start():
         replace_existing=True,
     )
 
+    # Daily shopping-list TTL sweep — drop items >30 days old (transit semantics).
+    # Guarded by `shopping_list_v2_enabled` flag (defaults true; can disable
+    # if a Firestore index is missing post-deploy).
+    _scheduler.add_job(
+        _shopping_list_ttl_sweep_job,
+        "cron",
+        hour=4,
+        minute=15,
+        id="shopping_list_ttl_sweep",
+        name="Shopping list 30d TTL sweep",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     logger.info("Background scheduler started with %d jobs", len(_scheduler.get_jobs()))
 
@@ -202,6 +216,24 @@ def _catalog_cleanup_job():
         logger.info("scheduler.catalog_cleanup deleted=%d", count)
     except Exception as exc:
         logger.exception("scheduler.catalog_cleanup failed: %s", exc)
+
+
+def _shopping_list_ttl_sweep_job():
+    """Daily TTL sweep — guarded by `shopping_list_v2_enabled` flag."""
+    from app.core.feature_flags import is_enabled
+
+    if not is_enabled("shopping_list_v2_enabled"):
+        logger.info("scheduler.shopping_list_ttl_sweep: skipped (flag off)")
+        return
+    try:
+        result = shopping_list_service.sweep_expired_items()
+        logger.info(
+            "scheduler.shopping_list_ttl_sweep deleted=%d affected_lists=%d",
+            result.get("deleted_items", 0),
+            result.get("affected_lists", 0),
+        )
+    except Exception as exc:
+        logger.exception("scheduler.shopping_list_ttl_sweep failed: %s", exc)
 
 
 def _country_backfill_job():

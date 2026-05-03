@@ -37,6 +37,10 @@ interface QuickAddModalProps {
     catalogEntry?: CatalogEntry;
     location?: string;
   };
+  // Fires AFTER a successful save (purchase created) but BEFORE onClose.
+  // Used by the shopping-list buy flow to delete the list item only on
+  // actual save success (cancel/close should not trigger it).
+  onSaved?: () => void;
 }
 
 // Common currencies for the dropdown — user can also type a 3-letter code if missing.
@@ -48,7 +52,7 @@ const CURRENCIES = ['SGD', 'MYR', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'IDR', 'THB
 // the unit dropdown is filtered by the matched catalog's unit_type.
 // See `.claude/docs/unit-type-method.md` for the data model.
 
-export default function QuickAddModal({ open, onClose, defaults }: QuickAddModalProps) {
+export default function QuickAddModal({ open, onClose, defaults, onSaved }: QuickAddModalProps) {
   const [name, setName] = useState('');
   const [barcode, setBarcode] = useState<string>('');
   const [expiryRaw, setExpiryRaw] = useState('');
@@ -302,7 +306,7 @@ export default function QuickAddModal({ open, onClose, defaults }: QuickAddModal
           pack_label: packLabel || 'pack',
         },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => { onSaved?.(); onClose(); },
           onError: (err) => {
             const q = isQuotaExceededError(err);
             if (q) setQuotaDetails(q);
