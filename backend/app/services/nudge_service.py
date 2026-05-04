@@ -42,6 +42,11 @@ def _user_reminders_ref(user_id: str):
 def scan_reminders() -> int:
     """Scan all users' active purchases without expiry. Create reminders for 7/14/21-day buckets.
 
+    Catalog entries flagged `no_expiry=true` are skipped — the user has
+    explicitly told us this item doesn't expire (dish soap, soy sauce,
+    salt). Captured 2026-05-04 from the Mira walkthrough; closes the
+    cycle of weekly nudges on intrinsically non-perishable items.
+
     Returns count of reminders created.
     """
     now = datetime.now(timezone.utc)
@@ -59,6 +64,22 @@ def scan_reminders() -> int:
         .where(filter=FieldFilter("status", "==", "active"))
         .where(filter=FieldFilter("reminder_stage", "<", 3))
     )
+
+    # Per-scan cache for catalog entries — bounds reads to one per
+    # (user_id, name_norm) pair within a single scan run.
+    catalog_cache: dict[tuple[str, str], Optional[Dict[str, Any]]] = {}
+
+    def _is_no_expiry(uid: str, name_norm: str) -> bool:
+        if not name_norm:
+            return False
+        key = (uid, name_norm)
+        if key not in catalog_cache:
+            try:
+                catalog_cache[key] = catalog_service.get_catalog_entry(uid, name_norm)
+            except Exception:
+                catalog_cache[key] = None
+        entry = catalog_cache[key]
+        return bool(entry and entry.get("no_expiry"))
 
     for doc in query.stream():
         data = doc.to_dict() or {}
@@ -97,6 +118,12 @@ def scan_reminders() -> int:
 
         display_name = data.get("catalog_display") or data.get("catalog_name_norm", "(unknown)")
         catalog_name_norm = data.get("catalog_name_norm", "")
+
+        # MH-walkthrough fix (2026-05-04): skip when the user has flagged
+        # this catalog entry as never-expires. Honors their explicit
+        # signal that nudges aren't useful for this item (dish soap, etc).
+        if _is_no_expiry(user_id, catalog_name_norm):
+            continue
 
         # Create reminder doc
         reminder_data = {

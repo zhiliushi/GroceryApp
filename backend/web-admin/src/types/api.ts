@@ -1330,6 +1330,12 @@ export interface CatalogEntry {
    *  Legacy 'container' is read-compat only; the backend coerces to
    *  'count' on next write. See `.claude/docs/unit-type-method.md`. */
   unit_type?: 'count' | 'volume' | 'weight' | 'container' | null;
+  /** When true, `nudge_service.scan_reminders` skips this catalog entry
+   *  entirely. Use for non-perishables logged for spend tracking
+   *  (dish soap, soy sauce, salt, rice). Default false. Per-catalog flag
+   *  set from CatalogEntryPage's "Manage this item" section. Captured
+   *  2026-05-04 from the Mira walkthrough. */
+  no_expiry?: boolean;
   created_at?: string;
   updated_at?: string;
   history?: PurchaseEvent[];

@@ -406,7 +406,7 @@ def update_catalog_entry(
     """Partial update on a catalog entry.
 
     Allowed fields: display_name, barcode, default_location, default_category,
-                    image_url, country_code, needs_review, unit_type
+                    image_url, country_code, needs_review, unit_type, no_expiry
 
     `display_name` change cascades to all purchase events linked to this
     catalog entry — keeps `catalog_display` denormalisation in sync so
@@ -419,6 +419,13 @@ def update_catalog_entry(
     + pack_size. This setting governs FUTURE events + the Use modal's input
     shape on this catalog.
 
+    `no_expiry` (bool) — captured 2026-05-04 from the Mira walkthrough. When
+    True, `nudge_service.scan_reminders()` skips active purchases of this
+    catalog entry. Used for non-perishables logged for spend tracking
+    (dishwashing liquid, soy sauce, salt). False by default. Doesn't affect
+    expiry display or the Hero banner — expiry-bearing events of a no_expiry
+    catalog still show their dates if the user set one.
+
     Raises:
         NotFoundError if entry doesn't exist
         ConflictError if barcode change collides with another entry for this user
@@ -430,7 +437,7 @@ def update_catalog_entry(
 
     existing = snap.to_dict() or {}
     allowed = {"display_name", "barcode", "default_location", "default_category",
-               "image_url", "country_code", "needs_review", "unit_type"}
+               "image_url", "country_code", "needs_review", "unit_type", "no_expiry"}
     clean_updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
 
     # UNIT_TYPE_TOUCHPOINT — coerce on write. Legacy "container" → "count".

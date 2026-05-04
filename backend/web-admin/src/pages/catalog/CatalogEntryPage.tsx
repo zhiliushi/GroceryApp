@@ -436,6 +436,7 @@ export default function CatalogEntryPage() {
             hint="Edit name, merge into another item, or remove. Rare actions — daily ones live at the top."
           />
           <UnitTypeEditor entry={entry} />
+          <NoExpiryToggle entry={entry} />
           <div className="flex flex-wrap gap-2">
             {actions
               .filter((a) => a.id !== 'new_purchase') /* already in Hero bar as "Buy more" */
@@ -808,6 +809,58 @@ function UnitTypeEditor({ entry }: { entry: CatalogEntry }) {
           label" instead.
         </p>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * "This item doesn't expire" toggle.
+ *
+ * Captured 2026-05-04 from the Mira walkthrough: she logged dishwashing
+ * liquid for spend tracking, the nudge system fired at day 7 / 14 / 21
+ * because the event had no expiry_date. Three reminder taps for an item
+ * that fundamentally doesn't expire.
+ *
+ * Toggle ON → backend's `nudge_service.scan_reminders` skips this catalog
+ * entry on every scan. No effect on expiry display, the Hero banner, or
+ * the cook flow — the user can still set per-event expiry dates if they
+ * want; this just stops the scheduler from inventing reminders.
+ *
+ * Default OFF. Save-on-toggle (matches UnitTypeEditor's pattern).
+ */
+function NoExpiryToggle({ entry }: { entry: CatalogEntry }) {
+  const update = useUpdateCatalogEntry();
+  const current = !!entry.no_expiry;
+
+  return (
+    <div className="mb-3 space-y-1">
+      <label
+        className={cn(
+          'flex items-start gap-2 text-xs cursor-pointer',
+          update.isPending && 'opacity-50 cursor-wait',
+        )}
+        title="When checked, the app stops asking if you still have this item after 7 / 14 / 21 days. Use for non-perishables you log for spend tracking — dish soap, soy sauce, salt, rice."
+      >
+        <input
+          type="checkbox"
+          checked={current}
+          disabled={update.isPending}
+          onChange={(e) =>
+            update.mutate({
+              nameNorm: entry.name_norm,
+              data: { no_expiry: e.target.checked },
+            })
+          }
+          className="mt-0.5 accent-ga-accent"
+        />
+        <span className="text-ga-text-secondary leading-snug">
+          <span className="text-ga-text-primary">This item doesn&apos;t expire</span>{' '}
+          — stop the 7 / 14 / 21-day "still have this?" reminders. Use for
+          non-perishables logged for spend tracking (dish soap, soy sauce,
+          salt, rice).
+        </span>
+      </label>
     </div>
   );
 }
