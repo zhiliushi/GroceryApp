@@ -131,6 +131,33 @@ because it's a Phase G addition with its own modal flow; tooltip
 explains the use case (move a *portion* of history rather than
 merge two entries entirely).
 
+## "This item doesn't expire" toggle
+
+Lives next to the unit type editor in **Manage this item**. New
+checkbox on `<NoExpiryToggle />` (added 2026-05-04 from the Mira
+walkthrough). When ticked, the backend's `nudge_service.scan_reminders`
+skips this catalog entry on every scan — closes the cycle of weekly
+nudges on intrinsically non-perishable items (dish soap, soy sauce,
+salt, rice).
+
+| State    | Effect                                                                                        |
+| -------- | --------------------------------------------------------------------------------------------- |
+| `false`  | Default. Active purchases without `expiry_date` trigger 7 / 14 / 21-day reminders normally.   |
+| `true`   | All future scans skip this catalog. Existing pending reminders are NOT auto-dismissed (user dismisses manually if any are queued at toggle time). |
+
+Save-on-change. Backend whitelist: `update_catalog_entry` accepts
+`no_expiry` per `catalog_service.py:432`. Per-scan cache in
+`nudge_service.scan_reminders` keeps reads bounded to 1 per
+(uid, name_norm) per scan run.
+
+Doesn't affect:
+- Expiry display anywhere on the page (Hero banner, Currently stored,
+  individual event detail).
+- The cook flow's matching (recipe-match still pairs against this
+  catalog entry's purchases).
+- Per-event `expiry_date` — users can still set one on a specific
+  purchase if they want; the flag only governs the auto-nudge.
+
 ## Unit type editor
 
 The `UnitTypeEditor` is intentionally placed in **Manage this

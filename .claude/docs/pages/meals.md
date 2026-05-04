@@ -105,8 +105,21 @@ Used only on this page (grep-confirmed). Visual cues:
 Triggered by setting `cookingRecipe` state from a card's
 `onCook` handler.
 
-- Pre-checks every matched ingredient by default; user toggles to
-  skip any they're saving for later.
+- **Smart pre-checking** (added 2026-05-04). Rows are pre-checked
+  *unless* the recipe specifies a sub-portion unit (`tsp`, `tbsp`,
+  `ml`, `g`, `pinch`, `slice`, `clove`, etc.) AND the matching
+  inventory event has `quantity <= 1`. This is the "1 tsp soy sauce
+  vs 1 bottle inventory" trap from the Mira walkthrough — confirming
+  with the row checked would consume the whole bottle. Pre-unchecking
+  surfaces the issue before confirm.
+- Visible **recipe ↔ inventory linkage** per row: each row shows
+  *"Recipe: 1 tsp ↔ You have: 1 in pantry"*. Lets the user spot the
+  unit mismatch immediately rather than discovering it after
+  confirming.
+- Sub-portion mismatch rows carry an inline `text-[10px] text-amber-700`
+  caption ("Sub-portion mismatch — confirming would consume the
+  whole inventory event") and the modal shows an amber summary banner
+  at the top: *"⚠ N ingredient(s) pre-unchecked."*
 - Confirm runs one `POST /api/purchases/{id}/status` per checked
   ingredient with `status="used"`, `reason="used_up"`. If the
   recipe needs *less* than the inventory has on hand, the request
@@ -117,6 +130,24 @@ Triggered by setting `cookingRecipe` state from a card's
 - Modal close clears `cookingRecipe`. Successful cook also
   invalidates the recipes / suggestions / purchases query keys via
   the underlying mutation hook, so the suggestion list refreshes.
+
+### `SUB_PORTION_UNITS` set
+
+`tsp`, `teaspoon[s]`, `tbsp`, `tablespoon[s]`, `ml`,
+`milliliter[s]` / `millilitre[s]`, `g`, `gram[s]`, `pinch[es]`,
+`dash[es]`, `drop[s]`, `slice[s]`, `clove[s]`, `sprig[s]`,
+`leaf` / `leaves`. Sourced from `CookConfirmModal.tsx:18-26`.
+
+When the recipe carries one of these AND `inventory_quantity <= 1`,
+the row defaults to unchecked. Larger inventory events (`> 1`) stay
+default-checked because the existing `isPartial` split logic
+correctly produces a fractional consume.
+
+When the recipe omits a unit entirely or uses a "whole-portion" unit
+(no value, `bunch`, `pack`, etc.), the row is default-checked.
+
+To extend: add to `SUB_PORTION_UNITS` and the new unit will pre-uncheck
+on next render. No backend change needed — units are recipe-side metadata.
 
 ## Data sources
 

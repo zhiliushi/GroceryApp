@@ -55,6 +55,26 @@ next stage still fires) from `snooze` (time-based re-fire, currently
 unimplemented per `nudge_service.py:185`). Users are unlikely to
 notice; flag if a backend `snooze` action ships.
 
+## Per-catalog mute via `no_expiry`
+
+Captured 2026-05-04 from the real-user walkthrough: dish soap, soy
+sauce, salt and rice were getting 7 / 14 / 21-day nudges because
+they were logged for spend tracking with no expiry date. Three
+dismissal taps per item over three weeks for things that
+intrinsically don't expire.
+
+Fixed by adding a per-catalog **"This item doesn't expire"** flag,
+toggled from the catalog entry detail page's *Manage this item*
+section. When set, `scan_reminders` skips every active purchase
+matching that catalog entry. See [`catalog-entry.md`](catalog-entry.md)
+for the toggle UX; `catalog_service.py:432` for the schema
+whitelist; `nudge_service.py:scan_reminders` for the skip logic
+(per-scan cache, bounded reads).
+
+The flag is opt-in per catalog. New entries default to nudge-as-normal.
+Once toggled on, future scans skip; existing pending reminders are
+not auto-dismissed (user clears manually if any).
+
 ## Stage thresholds
 
 Single source: `nudge_service.scan_reminders()` in
