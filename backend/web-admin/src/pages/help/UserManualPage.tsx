@@ -304,7 +304,7 @@ function AddingItems() {
       </p>
 
       <H3>
-        D. Shopping list — plan what to buy next{' '}
+        D. Shopping list — three steps: list, compare, checkout{' '}
         <Link to="/shopping-lists" className="text-xs text-ga-accent hover:underline">
           (open)
         </Link>
@@ -314,41 +314,48 @@ function AddingItems() {
         <Link to="/shopping-lists" className="text-ga-accent hover:underline">
           Shopping Lists
         </Link>
-        . Items here are <em>intent</em>, not inventory — they don't count
-        against your catalog quota.
+        . The flow has <strong>three steps</strong>:
       </p>
-      <ul className="list-disc pl-5 space-y-1">
+      <ol className="list-decimal pl-5 space-y-1">
         <li>
-          <strong>Three ways to add</strong>: type the name (qty / weight /
-          volume optional), pick from your existing catalog, or scan a
-          barcode you saw at the store.
+          <strong>List the intent (primary)</strong> — type the name (qty /
+          weight / volume optional), pick from your existing catalog, or
+          scan a barcode. The primary represents <em>what you want</em> —
+          e.g. "Eggs."
         </li>
         <li>
-          <strong>Compare prices</strong> — expand any row (▾) to add price
-          entries with brand + store + barcode. Useful when you're deciding
-          which brand of eggs to buy on the next trip.
+          <strong>Compare alternatives</strong> — under each primary, add up
+          to 3 alternatives that satisfy that intent (Brand A 12-pack, Brand
+          B 6-pack organic, etc.). Each alternative carries brand, store,
+          price, barcode, and pack count × pack size. Use{' '}
+          <code>📷</code> on a primary row to scan a candidate. Use{' '}
+          <code>Use as alt</code> when you're not comparing — it copies the
+          primary as a single alternative so you can tick + buy.
         </li>
         <li>
-          <strong>Buy</strong> — when you're back from the shop, tap{' '}
-          <code>Buy</code> on the row. If you logged multiple prices, pick
-          which one you actually bought; the Quick Add modal opens
-          pre-filled, you confirm storage location and expiry, and the item
-          jumps from list to inventory in one step.
+          <strong>Tick to checkout</strong> — tick any alternatives you
+          actually bought (the checkbox at the start of each alternative
+          row). The sticky footer shows the running total, list estimate,
+          and delta. Pick a store + date, then{' '}
+          <code>Confirm checkout</code> — items land in your default storage
+          (set in Settings → Shopping list), the trip is recorded, and the
+          ticked alternatives' parent primaries are removed from the list.
+          Untouched primaries stay.
         </li>
-        <li>
-          <strong>30-day auto-cleanup</strong> — items not bought within 30
-          days drop off the list automatically. The list stays fresh
-          without you having to housekeep.
-        </li>
-        <li>
-          <strong>Cap: 50 items per list</strong>, separate from the
-          catalog quota. Free tier gets 3 lists; Plus / Pro unlimited.
-        </li>
-      </ul>
+      </ol>
       <p className="text-xs text-ga-text-secondary">
-        Cross-page: any catalog item detail page has a{' '}
-        <code>+ Add to shopping list</code> button — the fastest way to
-        say "next time I'm out of this, remind me to buy more."
+        <strong>Other entry points</strong>:{' '}
+        <code>📷 Scan to buy</code> on the list page is a one-tap shortcut
+        when you're at the store — it adds the scanned item AND auto-ticks
+        it for the active checkout. Catalog item detail pages have a{' '}
+        <code>+ Add to shopping list</code> button. Receipts (Plus tier) can
+        also feed items in via OCR.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        <strong>Beta caps</strong>: 15 primaries per list × 3 alternatives
+        each. Items auto-clear 30 days after add. Quota is shared with the
+        catalog (per the standard catalog rules). Subject to change before
+        v1 ships.
       </p>
 
       <H3>Single vs Bulk</H3>
@@ -770,8 +777,12 @@ function Tiers() {
             <Row label="Items in catalog" cells={['up to 50', 'unlimited', 'unlimited']} />
             <Row label="Shopping lists (count)" cells={['up to 3', 'unlimited', 'unlimited']} />
             <Row
-              label="Shopping list items per list"
-              cells={['up to 50', 'up to 50', 'up to 50']}
+              label="Shopping list primaries per list"
+              cells={['up to 15 (beta)', 'up to 15 (beta)', 'up to 15 (beta)']}
+            />
+            <Row
+              label="Alternatives per primary"
+              cells={['up to 3 (beta)', 'up to 3 (beta)', 'up to 3 (beta)']}
             />
             <Row
               label="Shopping list TTL"

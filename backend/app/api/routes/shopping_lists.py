@@ -64,11 +64,32 @@ class ItemPatchRequest(BaseModel):
 
 
 class AddPriceRequest(BaseModel):
-    price: float = Field(..., gt=0)
+    """v3 alternative shape — `price` is now optional (per F3-B). Adds
+    pack_count + pack_size + weight/volume + candidate_name fields that
+    let an alternative carry a different SKU than the parent primary."""
+    price: Optional[float] = Field(None, gt=0)
     currency: Optional[str] = "SGD"
     brand: Optional[str] = None
     store_name: Optional[str] = None
     barcode: Optional[str] = None
+    candidate_name: Optional[str] = None
+    pack_count: Optional[float] = Field(None, gt=0)
+    pack_size: Optional[float] = Field(None, gt=0)
+    weight_value: Optional[float] = Field(None, gt=0)
+    weight_unit: Optional[str] = None
+    volume_value: Optional[float] = Field(None, gt=0)
+    volume_unit: Optional[str] = None
+    source_catalog_name_norm: Optional[str] = None
+
+
+class TickAlternativeRequest(BaseModel):
+    ticked: bool
+
+
+class CheckoutRequest(BaseModel):
+    store_id: Optional[str] = None
+    date: Optional[str] = None  # ISO; defaults to now in service
+    default_location: Optional[str] = None  # if null, uses user pref or _unsorted
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +186,9 @@ async def add_price(
     body: AddPriceRequest,
     user: UserInfo = Depends(get_current_user),
 ):
-    """Append a price comparison entry. Cap = 10 per item."""
+    """Append an alternative (candidate purchase) under a primary. Cap = 3
+    per primary (beta). Price is optional — an alternative without a price
+    shows the 💲 no-price tag in UI."""
     return shopping_list_service.add_price(
         user.uid,
         list_id,
@@ -175,6 +198,14 @@ async def add_price(
         brand=body.brand,
         store_name=body.store_name,
         barcode=body.barcode,
+        candidate_name=body.candidate_name,
+        pack_count=body.pack_count,
+        pack_size=body.pack_size,
+        weight_value=body.weight_value,
+        weight_unit=body.weight_unit,
+        volume_value=body.volume_value,
+        volume_unit=body.volume_unit,
+        source_catalog_name_norm=body.source_catalog_name_norm,
     )
 
 
@@ -187,3 +218,56 @@ async def delete_price(
 ):
     shopping_list_service.delete_price(user.uid, list_id, item_id, price_id)
     return None
+
+
+# ---------------------------------------------------------------------------
+# v3 — Tick + Checkout
+# ---------------------------------------------------------------------------
+
+@router.patch("/{list_id}/items/{item_id}/prices/{price_id}/tick")
+async def tick_alternative(
+    list_id: str,
+    item_id: str,
+    price_id: str,
+    body: TickAlternativeRequest,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Set or clear the tick on an alternative. Idempotent. Tick state lives
+    on the alternative entry itself (per A3-A); other devices see on next
+    refresh (per F6 — no WebSocket)."""
+    return shopping_list_service.tick_alternative(
+        user.uid, list_id, item_id, price_id, ticked=body.ticked
+    )
+
+
+@router.post("/{list_id}/items/{item_id}/promote-to-alternative", status_code=201)
+async def promote_to_alternative(
+    list_id: str,
+    item_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Helper for the 'Use as alternative' flow (per I5). Creates one
+    alternative carrying the primary's name + qty so the user can tick + buy
+    without comparing brands. Counts against the 3-alternatives cap."""
+    return shopping_list_service.promote_primary_to_alternative(
+        user.uid, list_id, item_id
+    )
+
+
+@router.post("/{list_id}/checkout", status_code=201)
+async def checkout(
+    list_id: str,
+    body: CheckoutRequest,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Atomic confirm of all currently-ticked alternatives. Creates purchase
+    events at the configured default storage location, stamps a single
+    trip_id across the batch, then cascades-delete the parent primaries +
+    all their alternatives (per F8)."""
+    return shopping_list_service.confirm_checkout(
+        user.uid,
+        list_id,
+        store_id=body.store_id,
+        date=body.date,
+        default_location=body.default_location,
+    )

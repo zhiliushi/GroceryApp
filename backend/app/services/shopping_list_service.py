@@ -1,8 +1,15 @@
 """Shopping list service.
 
 v1 = read-only admin window into legacy mobile-app shopping lists.
-v2 = transit list owned by the user. Item TTL 30d, 50-item cap per list,
-quota separate from catalog. See `.claude/docs/pages/shopping-lists.md`.
+v2 = transit list owned by the user. Item TTL 30d, per-list 50-item cap,
+quota separate from catalog.
+v3 (beta) = primary + alternatives model.
+  - 15 primaries per list
+  - 3 alternatives per primary
+  - Only alternatives are tickable; checkout is the ticked subset.
+  - Quota tied to catalog quota (each primary/alternative add follows
+    the existing catalog flow; user_custom rows consume `catalog_quota`).
+See `.claude/docs/pages/shopping-lists.md`.
 """
 
 import logging
@@ -26,13 +33,22 @@ def _get_db():
 
 
 # ---------------------------------------------------------------------------
-# v2 constants
+# v3 constants (beta — see CLAUDE plan: customer-feedback hook will revisit)
 # ---------------------------------------------------------------------------
 
-MAX_ITEMS_PER_LIST = 50
-MAX_PRICES_PER_ITEM = 10
+# Per-list cap on PRIMARY items (intent rows). Shopping list quota was
+# previously 50 per list; v3 ties to catalog quota for total user count
+# but keeps a per-list cap for visual control during beta.
+MAX_PRIMARIES_PER_LIST = 15
+# Per-primary cap on ALTERNATIVE entries. Each alt is a candidate purchase
+# (brand/store/barcode/price). Total max alternatives per list = 15 * 3 = 45.
+MAX_ALTERNATIVES_PER_PRIMARY = 3
+# Legacy aliases — keep for any external readers; remove after frontend swap
+MAX_ITEMS_PER_LIST = MAX_PRIMARIES_PER_LIST
+MAX_PRICES_PER_ITEM = MAX_ALTERNATIVES_PER_PRIMARY
+
 ITEM_TTL_DAYS = 30
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _ALLOWED_WEIGHT_UNITS = {"g", "kg", "oz", "lb"}
 _ALLOWED_VOLUME_UNITS = {"ml", "l", "fl_oz", "cup"}
@@ -349,19 +365,31 @@ def _count_items(uid: str, list_id: str) -> int:
 
 
 def add_item(uid: str, list_id: str, payload: Dict[str, Any], *, source: str = "manual") -> Dict[str, Any]:
-    """Add an item to a list. Enforces 50-item cap.
+    """Add a PRIMARY (intent row) to a list. Enforces beta cap of 15 primaries.
 
     `source` distinguishes entry points for analytics: 'manual' | 'catalog' |
     'scan' | 'receipt' | 'cross_page'. Persisted as `source` on the item doc.
+
+    Catalog quota: per the v3 spec ("shopping list = sub-process of catalog
+    data population"), every primary add SHOULD route through the catalog
+    flow so user_custom rows consume catalog_quota. v3-beta defers the
+    actual catalog write — primaries carry `source_catalog_name_norm` when
+    the caller already matched/created a catalog entry. The frontend's
+    Add flow (CatalogAutocomplete + scan) ensures a catalog ref is set
+    before this is called.
     """
     get_list_or_404(uid, list_id)
     cleaned = _validate_item_payload(payload)
 
     used = _count_items(uid, list_id)
-    if used >= MAX_ITEMS_PER_LIST:
+    if used >= MAX_PRIMARIES_PER_LIST:
         raise QuotaExceededError(
-            f"Shopping list cap reached ({MAX_ITEMS_PER_LIST} items)",
-            details={"used": used, "limit": MAX_ITEMS_PER_LIST, "scope": "shopping_list_items"},
+            f"Shopping list cap reached ({MAX_PRIMARIES_PER_LIST} primaries — beta limit)",
+            details={
+                "used": used,
+                "limit": MAX_PRIMARIES_PER_LIST,
+                "scope": "shopping_list_primaries",
+            },
         )
 
     db = _get_db()
@@ -372,7 +400,8 @@ def add_item(uid: str, list_id: str, payload: Dict[str, Any], *, source: str = "
     doc = items_ref.document()
     item_payload = {
         **cleaned,
-        "prices": [],
+        "alternatives": [],          # v3 alias for prices[] — kept for clarity
+        "prices": [],                # legacy field name; mirrors alternatives[]
         "added_at": now,
         **_new_metadata(uid, source=source),
     }
@@ -428,27 +457,131 @@ def delete_item(uid: str, list_id: str, item_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# v2 — Price comparison entries
+# v3 — Alternatives (candidate purchases under each primary)
+#
+# An alternative is a concrete buyable variant: a specific brand/store/barcode
+# combination at a specific price + qty. Each primary can have ≤3 alternatives
+# (beta cap). Only alternatives are tickable; checkout is the ticked subset.
+# Stored as `prices[]` array on the parent item doc — name kept for backward
+# compatibility, but the schema is richer now.
 # ---------------------------------------------------------------------------
+
+def _validate_alternative_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize + validate an alternative entry. Price is optional (per F3 —
+    user can list a candidate without a price; the no-price tag in UI nudges
+    them to add one before ticking)."""
+    out: Dict[str, Any] = {}
+
+    if (p := payload.get("price")) is not None:
+        try:
+            pf = float(p)
+        except (TypeError, ValueError):
+            raise ValidationError("price must be a number")
+        if pf <= 0:
+            raise ValidationError("price must be > 0")
+        out["price"] = pf
+
+    out["currency"] = (payload.get("currency") or "SGD")[:8]
+    out["brand"] = (payload.get("brand") or None)
+    out["store_name"] = (payload.get("store_name") or None)
+    out["barcode"] = (payload.get("barcode") or None)
+    out["candidate_name"] = (payload.get("candidate_name") or None)
+
+    # pack_count × pack_size = total qty contribution at checkout
+    if (pc := payload.get("pack_count")) is not None:
+        try:
+            pcf = float(pc)
+        except (TypeError, ValueError):
+            raise ValidationError("pack_count must be a number")
+        if pcf <= 0:
+            raise ValidationError("pack_count must be > 0")
+        out["pack_count"] = pcf
+    if (ps := payload.get("pack_size")) is not None:
+        try:
+            psf = float(ps)
+        except (TypeError, ValueError):
+            raise ValidationError("pack_size must be a number")
+        if psf <= 0:
+            raise ValidationError("pack_size must be > 0")
+        out["pack_size"] = psf
+
+    # weight / volume pair (optional, must come together if present)
+    wv, wu = payload.get("weight_value"), payload.get("weight_unit")
+    if wv is not None or wu is not None:
+        if wv is None or wu is None:
+            raise ValidationError("weight_value and weight_unit must both be set")
+        if wu not in _ALLOWED_WEIGHT_UNITS:
+            raise ValidationError(f"weight_unit must be one of {sorted(_ALLOWED_WEIGHT_UNITS)}")
+        try:
+            wvf = float(wv)
+        except (TypeError, ValueError):
+            raise ValidationError("weight_value must be a number")
+        if wvf <= 0:
+            raise ValidationError("weight_value must be > 0")
+        out["weight_value"] = wvf
+        out["weight_unit"] = wu
+
+    vv, vu = payload.get("volume_value"), payload.get("volume_unit")
+    if vv is not None or vu is not None:
+        if vv is None or vu is None:
+            raise ValidationError("volume_value and volume_unit must both be set")
+        if vu not in _ALLOWED_VOLUME_UNITS:
+            raise ValidationError(f"volume_unit must be one of {sorted(_ALLOWED_VOLUME_UNITS)}")
+        try:
+            vvf = float(vv)
+        except (TypeError, ValueError):
+            raise ValidationError("volume_value must be a number")
+        if vvf <= 0:
+            raise ValidationError("volume_value must be > 0")
+        out["volume_value"] = vvf
+        out["volume_unit"] = vu
+
+    if (src := payload.get("source_catalog_name_norm")):
+        out["source_catalog_name_norm"] = str(src).strip()
+
+    return out
+
 
 def add_price(
     uid: str,
     list_id: str,
     item_id: str,
     *,
-    price: float,
+    price: Optional[float] = None,
     brand: Optional[str] = None,
     currency: str = "SGD",
     store_name: Optional[str] = None,
     barcode: Optional[str] = None,
+    candidate_name: Optional[str] = None,
+    pack_count: Optional[float] = None,
+    pack_size: Optional[float] = None,
+    weight_value: Optional[float] = None,
+    weight_unit: Optional[str] = None,
+    volume_value: Optional[float] = None,
+    volume_unit: Optional[str] = None,
+    source_catalog_name_norm: Optional[str] = None,
+    auto_promoted: bool = False,
 ) -> Dict[str, Any]:
-    """Append a price comparison entry to an item. Cap = 10 entries."""
-    try:
-        pf = float(price)
-    except (TypeError, ValueError):
-        raise ValidationError("price must be a number")
-    if pf <= 0:
-        raise ValidationError("price must be > 0")
+    """Append an alternative (candidate purchase) to a primary. Cap = 3 (beta).
+
+    Price is optional — F3-B carries through: user can list candidates without
+    prices; the no-price tag in UI flags missing data.
+    """
+    cleaned = _validate_alternative_payload({
+        "price": price,
+        "brand": brand,
+        "currency": currency,
+        "store_name": store_name,
+        "barcode": barcode,
+        "candidate_name": candidate_name,
+        "pack_count": pack_count,
+        "pack_size": pack_size,
+        "weight_value": weight_value,
+        "weight_unit": weight_unit,
+        "volume_value": volume_value,
+        "volume_unit": volume_unit,
+        "source_catalog_name_norm": source_catalog_name_norm,
+    })
 
     db = _get_db()
     item_ref = (
@@ -462,24 +595,252 @@ def add_price(
 
     data = snap.to_dict() or {}
     prices: List[Dict[str, Any]] = list(data.get("prices") or [])
-    if len(prices) >= MAX_PRICES_PER_ITEM:
+    if len(prices) >= MAX_ALTERNATIVES_PER_PRIMARY:
         raise QuotaExceededError(
-            f"Price comparison cap reached ({MAX_PRICES_PER_ITEM} entries)",
-            details={"used": len(prices), "limit": MAX_PRICES_PER_ITEM, "scope": "shopping_list_prices"},
+            f"Alternative cap reached ({MAX_ALTERNATIVES_PER_PRIMARY} per primary — beta limit)",
+            details={
+                "used": len(prices),
+                "limit": MAX_ALTERNATIVES_PER_PRIMARY,
+                "scope": "shopping_list_alternatives",
+            },
         )
 
     entry = {
         "id": str(uuid.uuid4()),
-        "price": pf,
-        "currency": (currency or "SGD")[:8],
-        "brand": (brand or None),
-        "store_name": (store_name or None),
-        "barcode": (barcode or None),
         "added_at": _now_iso(),
+        "ticked": False,        # v3 tick state lives on the alternative
+        "ticked_at": None,
+        "auto_promoted": auto_promoted,
+        **cleaned,
     }
     prices.append(entry)
     item_ref.update({"prices": prices, "updated_at": _now_iso()})
     return entry
+
+
+def tick_alternative(
+    uid: str,
+    list_id: str,
+    item_id: str,
+    alt_id: str,
+    *,
+    ticked: bool,
+) -> Dict[str, Any]:
+    """Set or clear the tick on a single alternative. Idempotent.
+
+    Multi-device + concurrent-edit safe: last-write-wins semantics
+    (per g7 — concurrent ticks both succeed; concurrent tick+untick =
+    last writer wins, no errors).
+    """
+    db = _get_db()
+    item_ref = (
+        db.collection("users").document(uid)
+        .collection("shopping_lists").document(list_id)
+        .collection("items").document(item_id)
+    )
+    snap = item_ref.get()
+    if not snap.exists:
+        raise NotFoundError(f"Item {item_id} not found")
+
+    data = snap.to_dict() or {}
+    prices: List[Dict[str, Any]] = list(data.get("prices") or [])
+    found = False
+    for entry in prices:
+        if entry.get("id") == alt_id:
+            entry["ticked"] = bool(ticked)
+            entry["ticked_at"] = _now_iso() if ticked else None
+            found = True
+            break
+    if not found:
+        raise NotFoundError(f"Alternative {alt_id} not found")
+
+    item_ref.update({"prices": prices, "updated_at": _now_iso()})
+    return next((e for e in prices if e.get("id") == alt_id), {})
+
+
+def promote_primary_to_alternative(
+    uid: str,
+    list_id: str,
+    item_id: str,
+) -> Dict[str, Any]:
+    """Helper for the I5 'Use as alternative' flow — creates a single
+    alternative carrying the primary's name + qty so the user can tick + buy
+    without comparing brands. Subject to the 3-alternative cap.
+
+    Defaults per F2:
+      candidate_name = primary.item_name
+      pack_count = 1
+      pack_size = primary.quantity if set, else 1
+      weight_*  = primary.weight_*  if set
+      volume_*  = primary.volume_*  if set
+      barcode = primary.barcode if set
+      source_catalog_name_norm = primary.source_catalog_name_norm
+      auto_promoted = True
+    """
+    db = _get_db()
+    item_ref = (
+        db.collection("users").document(uid)
+        .collection("shopping_lists").document(list_id)
+        .collection("items").document(item_id)
+    )
+    snap = item_ref.get()
+    if not snap.exists:
+        raise NotFoundError(f"Item {item_id} not found")
+    primary = snap.to_dict() or {}
+
+    return add_price(
+        uid,
+        list_id,
+        item_id,
+        candidate_name=primary.get("item_name"),
+        pack_count=1,
+        pack_size=primary.get("quantity") or 1,
+        weight_value=primary.get("weight_value"),
+        weight_unit=primary.get("weight_unit"),
+        volume_value=primary.get("volume_value"),
+        volume_unit=primary.get("volume_unit"),
+        barcode=primary.get("barcode"),
+        source_catalog_name_norm=primary.get("source_catalog_name_norm"),
+        auto_promoted=True,
+    )
+
+
+def confirm_checkout(
+    uid: str,
+    list_id: str,
+    *,
+    store_id: Optional[str] = None,
+    date: Optional[str] = None,
+    default_location: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Atomic confirm of all currently-ticked alternatives.
+
+    For each ticked alternative:
+      - Creates a purchase event (via purchase_event_service.create_purchase)
+        at `default_location` (falls back to user.default_grocery_storage,
+        then to '_unsorted' / null = unsorted bucket).
+      - Stamps `trip_id` (one uuid per confirm batch) on the event doc
+        via a follow-up Firestore update.
+      - When `record_purchase_patterns=true` (per user setting), also
+        stamps selected_candidate_id + selected_brand + selected_store_name.
+    Cascade per F8: primary + ALL its alternatives are removed. Untouched
+    primaries (zero ticks across alternatives) stay.
+    """
+    from app.services import purchase_event_service
+
+    get_list_or_404(uid, list_id)
+    items = get_list_items(uid, list_id)
+
+    db = _get_db()
+    user_snap = db.collection("users").document(uid).get()
+    user = (user_snap.to_dict() if user_snap.exists else {}) or {}
+    record_patterns = bool(user.get("record_purchase_patterns", False))
+    fallback_storage = user.get("default_grocery_storage") or "_unsorted"
+    # '_unsorted' is GroceryApp's convention for "no location"; pass null in
+    # that case so the bucket math in storage views works as expected.
+    location: Optional[str] = (
+        None if (default_location or fallback_storage) == "_unsorted"
+        else (default_location or fallback_storage)
+    )
+
+    trip_id = str(uuid.uuid4())
+    purchases_created: List[Dict[str, Any]] = []
+    items_to_remove: List[str] = []
+
+    for item in items:
+        prices = item.get("prices") or []
+        ticked_alts = [a for a in prices if a.get("ticked")]
+        if not ticked_alts:
+            continue
+
+        for alt in ticked_alts:
+            pack_count = float(alt.get("pack_count") or 1)
+            pack_size = float(alt.get("pack_size") or 1)
+            qty_total = pack_count * pack_size
+            display_name = (
+                alt.get("candidate_name")
+                or item.get("item_name")
+                or "(unnamed)"
+            )
+            base_unit = _resolve_base_unit(alt, item)
+
+            try:
+                pe = purchase_event_service.create_purchase(
+                    user_id=uid,
+                    name=display_name,
+                    barcode=alt.get("barcode") or item.get("barcode"),
+                    quantity=qty_total,
+                    base_unit=base_unit,
+                    base_unit_label=base_unit,
+                    pack_size=int(pack_size) if pack_size.is_integer() else 1,
+                    pack_label="loose",
+                    price=alt.get("price"),
+                    currency=alt.get("currency") if alt.get("price") else None,
+                    store_id=store_id,
+                    location=location,
+                    source="shopping_list_checkout",
+                )
+                # Stamp trip + (optional) analytics fields
+                try:
+                    event_id = pe.get("id")
+                    if event_id:
+                        annotations: Dict[str, Any] = {
+                            "trip_id": trip_id,
+                            "shopping_list_id": list_id,
+                        }
+                        if record_patterns:
+                            annotations.update({
+                                "selected_candidate_id": alt.get("id"),
+                                "selected_brand": alt.get("brand"),
+                                "selected_store_name": alt.get("store_name"),
+                                "auto_promoted_candidate": bool(alt.get("auto_promoted")),
+                            })
+                        db.collection("users").document(uid).collection(
+                            "purchase_events"
+                        ).document(event_id).update(annotations)
+                except Exception as ann_err:
+                    logger.warning(
+                        "checkout: trip_id annotation failed for %s: %s",
+                        display_name, ann_err,
+                    )
+                purchases_created.append({"id": pe.get("id"), "name": display_name})
+            except Exception as exc:
+                logger.exception(
+                    "checkout: failed to create purchase for %s: %s", display_name, exc
+                )
+
+        items_to_remove.append(item["id"])
+
+    # Cascade-delete primaries + all their alternatives (F8)
+    for item_id in items_to_remove:
+        try:
+            delete_item(uid, list_id, item_id)
+        except NotFoundError:
+            pass
+
+    return {
+        "trip_id": trip_id,
+        "date": date or _now_iso(),
+        "default_location": location,
+        "purchases_created": purchases_created,
+        "items_removed": items_to_remove,
+        "total_purchases": len(purchases_created),
+    }
+
+
+def _resolve_base_unit(alt: Dict[str, Any], item: Dict[str, Any]) -> str:
+    """Pick the base unit for the resulting purchase.
+    weight > volume > primary.unit > 'count'.
+    """
+    if alt.get("weight_unit"):
+        return alt["weight_unit"]
+    if alt.get("volume_unit"):
+        return alt["volume_unit"]
+    if item.get("weight_unit"):
+        return item["weight_unit"]
+    if item.get("volume_unit"):
+        return item["volume_unit"]
+    return item.get("unit") or "count"
 
 
 def delete_price(uid: str, list_id: str, item_id: str, price_id: str) -> None:

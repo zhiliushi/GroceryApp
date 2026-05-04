@@ -240,3 +240,129 @@ def test_payload_drops_falsy_optional_fields():
         }
     )
     assert out == {"item_name": "Eggs", "name_norm": "eggs"}
+
+
+# ---------------------------------------------------------------------------
+# v3 — alternative validation
+# ---------------------------------------------------------------------------
+
+from app.services.shopping_list_service import (
+    _validate_alternative_payload,
+    MAX_PRIMARIES_PER_LIST,
+    MAX_ALTERNATIVES_PER_PRIMARY,
+)
+
+
+def test_v3_caps_match_beta_spec():
+    assert MAX_PRIMARIES_PER_LIST == 15
+    assert MAX_ALTERNATIVES_PER_PRIMARY == 3
+
+
+def test_alternative_minimal_no_price():
+    out = _validate_alternative_payload({})
+    assert "price" not in out
+    assert out["currency"] == "SGD"
+
+
+def test_alternative_with_price():
+    out = _validate_alternative_payload({"price": 5.99, "currency": "myr"})
+    assert out["price"] == 5.99
+    assert out["currency"] == "myr"
+
+
+def test_alternative_zero_price_rejected():
+    with pytest.raises(ValidationError, match="price must be > 0"):
+        _validate_alternative_payload({"price": 0})
+
+
+def test_alternative_negative_price_rejected():
+    with pytest.raises(ValidationError, match="price must be > 0"):
+        _validate_alternative_payload({"price": -5})
+
+
+def test_alternative_pack_count_pack_size():
+    out = _validate_alternative_payload({"pack_count": 2, "pack_size": 12})
+    assert out["pack_count"] == 2.0
+    assert out["pack_size"] == 12.0
+
+
+def test_alternative_pack_count_zero_rejected():
+    with pytest.raises(ValidationError, match="pack_count must be > 0"):
+        _validate_alternative_payload({"pack_count": 0})
+
+
+def test_alternative_weight_pair():
+    out = _validate_alternative_payload({"weight_value": 500, "weight_unit": "g"})
+    assert out["weight_value"] == 500.0
+    assert out["weight_unit"] == "g"
+
+
+def test_alternative_weight_value_only_rejected():
+    with pytest.raises(ValidationError, match="must both be set"):
+        _validate_alternative_payload({"weight_value": 500})
+
+
+def test_alternative_weight_unit_only_rejected():
+    with pytest.raises(ValidationError, match="must both be set"):
+        _validate_alternative_payload({"weight_unit": "g"})
+
+
+def test_alternative_invalid_weight_unit():
+    with pytest.raises(ValidationError, match="weight_unit must be one of"):
+        _validate_alternative_payload({"weight_value": 1, "weight_unit": "stone"})
+
+
+def test_alternative_volume_pair():
+    out = _validate_alternative_payload({"volume_value": 1, "volume_unit": "l"})
+    assert out["volume_value"] == 1.0
+    assert out["volume_unit"] == "l"
+
+
+def test_alternative_invalid_volume_unit():
+    with pytest.raises(ValidationError, match="volume_unit must be one of"):
+        _validate_alternative_payload({"volume_value": 1, "volume_unit": "gallon"})
+
+
+def test_alternative_candidate_name_passthrough():
+    out = _validate_alternative_payload({"candidate_name": "TestBrand 12-pack"})
+    assert out["candidate_name"] == "TestBrand 12-pack"
+
+
+def test_alternative_full_payload():
+    out = _validate_alternative_payload({
+        "candidate_name": "Brand A 12-pack eggs",
+        "price": 12.50,
+        "currency": "SGD",
+        "brand": "Brand A",
+        "store_name": "NSK",
+        "barcode": "9555012345678",
+        "pack_count": 2,
+        "pack_size": 12,
+        "weight_value": 600,
+        "weight_unit": "g",
+        "source_catalog_name_norm": "eggs",
+    })
+    assert out["candidate_name"] == "Brand A 12-pack eggs"
+    assert out["price"] == 12.50
+    assert out["pack_count"] == 2.0
+    assert out["pack_size"] == 12.0
+    assert out["weight_value"] == 600.0
+    assert out["barcode"] == "9555012345678"
+
+
+def test_alternative_drops_falsy_optionals():
+    out = _validate_alternative_payload({
+        "price": None,
+        "brand": "",
+        "store_name": "",
+        "barcode": "",
+        "candidate_name": "",
+    })
+    # currency always defaults; everything else dropped
+    assert out == {
+        "currency": "SGD",
+        "brand": None,
+        "store_name": None,
+        "barcode": None,
+        "candidate_name": None,
+    }

@@ -23,6 +23,15 @@ export const API = {
     `/api/shopping-lists/${listId}/items/${itemId}/prices`,
   MY_SHOPPING_LIST_ITEM_PRICE: (listId: string, itemId: string, priceId: string) =>
     `/api/shopping-lists/${listId}/items/${itemId}/prices/${priceId}`,
+  // v3 tick + checkout + promote
+  MY_SHOPPING_LIST_ITEM_PRICE_TICK: (listId: string, itemId: string, priceId: string) =>
+    `/api/shopping-lists/${listId}/items/${itemId}/prices/${priceId}/tick`,
+  MY_SHOPPING_LIST_ITEM_PROMOTE: (listId: string, itemId: string) =>
+    `/api/shopping-lists/${listId}/items/${itemId}/promote-to-alternative`,
+  MY_SHOPPING_LIST_CHECKOUT: (listId: string) =>
+    `/api/shopping-lists/${listId}/checkout`,
+  // v3 user grocery preferences (default storage + analytics opt-in)
+  MY_GROCERY_PREFERENCES: '/api/me/grocery-preferences',
 
   PRODUCTS: '/api/admin/products',
   PRODUCT: (barcode: string) => `/api/admin/products/${barcode}`,

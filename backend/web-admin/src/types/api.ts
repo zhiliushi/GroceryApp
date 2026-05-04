@@ -1,6 +1,23 @@
 // === Auth ===
+
+/** Onboarding v2 state machine (PLAN_ONBOARDING_V2.md). Source of truth for
+ *  AuthGate routing decisions. Legacy fields (tier, status, etc.) preserved
+ *  on the same response for backward compatibility — old code that reads
+ *  status="active"/"pending" still works. */
+export type AuthState =
+  | 'unauthenticated'
+  | 'verify_email_required'
+  | 'pending_approval'
+  | 'registration_required'
+  | 'disabled'
+  | 'registration_closed'
+  | 'active';
+
 export interface AuthUser {
   authenticated: boolean;
+  /** Onboarding v2 routing field. Defaults to 'active' for older backends that
+   *  don't return it (post-Phase-2 it's always present). */
+  state?: AuthState;
   uid: string;
   email: string;
   role: 'admin' | 'user';
@@ -18,6 +35,28 @@ export interface AuthUser {
    *  `homemaker_versioning` / `homemaker_social` feature flags via the
    *  `useHomemaker()` hook to resolve sub-feature access. */
   homemaker_enabled?: boolean;
+
+  // ── Onboarding v2 additions ───────────────────────────────────────
+  /** True once user has filled the registration form (name+country+currency). */
+  registration_complete?: boolean;
+  /** When registration_required: the household name they're about to join, if invited. */
+  invitation_household_name?: string;
+  /** When registration_required: the invitation code to be auto-accepted on submit. */
+  invitation_code_used?: string | null;
+  /** When pending_approval: epoch-ms timestamp of when they hit the queue. */
+  pending_since?: number;
+  /** When disabled: the admin-set reason. */
+  disabled_reason?: string;
+  /** When registration_closed: the human-readable cap/closure reason. */
+  reason?: string;
+
+  // ── System-wide config exposed via /api/me (always present post-Phase-2) ──
+  /** Public web URL for invitation links. Empty string until admin configures it. */
+  web_public_url?: string;
+  /** When true, write endpoints return 503 for non-admin users; banner shows site-wide. */
+  maintenance_mode?: boolean;
+  /** Banner copy when maintenance_mode is true. */
+  maintenance_message?: string;
 }
 
 // === Dashboard ===
@@ -178,12 +217,27 @@ export interface ShoppingList {
 
 export interface ShoppingListPrice {
   id: string;
-  price: number;
+  /** v3: optional. Alternative may be a candidate sketch with no price yet. */
+  price?: number | null;
   currency: string;
-  brand: string | null;
-  store_name: string | null;
-  barcode: string | null;
+  brand?: string | null;
+  store_name?: string | null;
+  barcode?: string | null;
   added_at: string;
+  /** v3: alternative product fields. */
+  candidate_name?: string | null;
+  pack_count?: number | null;
+  pack_size?: number | null;
+  weight_value?: number | null;
+  weight_unit?: string | null;
+  volume_value?: number | null;
+  volume_unit?: string | null;
+  source_catalog_name_norm?: string | null;
+  /** v3 tick state — checkout = the subset where ticked=true. */
+  ticked?: boolean;
+  ticked_at?: string | null;
+  /** True when this alt was created via the "Use as alternative" helper. */
+  auto_promoted?: boolean;
 }
 
 export interface ShoppingListItem {
@@ -239,11 +293,38 @@ export interface AddShoppingListItemPayload {
 }
 
 export interface AddShoppingListPricePayload {
-  price: number;
+  /** v3: optional — user can list a candidate without a price; the no-price
+   *  tag in UI flags missing data. */
+  price?: number;
   currency?: string;
   brand?: string;
   store_name?: string;
   barcode?: string;
+  candidate_name?: string;
+  pack_count?: number;
+  pack_size?: number;
+  weight_value?: number;
+  weight_unit?: string;
+  volume_value?: number;
+  volume_unit?: string;
+  source_catalog_name_norm?: string;
+}
+
+/** v3 checkout commit payload. */
+export interface CheckoutPayload {
+  store_id?: string;
+  date?: string;
+  default_location?: string;
+}
+
+/** v3 checkout response. */
+export interface CheckoutResult {
+  trip_id: string;
+  date: string;
+  default_location: string | null;
+  purchases_created: { id: string; name: string }[];
+  items_removed: string[];
+  total_purchases: number;
 }
 
 // === Price Records ===

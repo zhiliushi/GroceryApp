@@ -6,6 +6,8 @@ import { qk } from '@/api/queries/keys';
 import type {
   AddShoppingListItemPayload,
   AddShoppingListPricePayload,
+  CheckoutPayload,
+  CheckoutResult,
   ShoppingList,
   ShoppingListItem,
   ShoppingListPrice,
@@ -185,5 +187,102 @@ export function useDeleteShoppingListPrice() {
       qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
     },
     onError: () => toast.error('Failed to remove price'),
+  });
+}
+
+// ─── v3: Tick + Checkout + Promote ────────────────────────────────────────
+
+/** Tick / untick an alternative. Idempotent. */
+export function useTickAlternative() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      listId,
+      itemId,
+      priceId,
+      ticked,
+    }: {
+      listId: string;
+      itemId: string;
+      priceId: string;
+      ticked: boolean;
+    }) =>
+      apiClient
+        .patch<ShoppingListPrice>(
+          API.MY_SHOPPING_LIST_ITEM_PRICE_TICK(listId, itemId, priceId),
+          { ticked },
+        )
+        .then((r) => r.data),
+    onSuccess: (_, { listId }) => {
+      qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
+    },
+    onError: () => toast.error('Failed to update tick'),
+  });
+}
+
+/** "Use as alternative" helper — creates one alternative copying the
+ *  primary's name + qty so the user can tick + buy without comparing. */
+export function usePromoteToAlternative() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listId, itemId }: { listId: string; itemId: string }) =>
+      apiClient
+        .post<ShoppingListPrice>(API.MY_SHOPPING_LIST_ITEM_PROMOTE(listId, itemId))
+        .then((r) => r.data),
+    onSuccess: (_, { listId }) => {
+      qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Failed to promote primary');
+    },
+  });
+}
+
+/** Confirm checkout — atomic batch commit of all ticked alternatives. */
+export function useConfirmCheckout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      listId,
+      payload,
+    }: {
+      listId: string;
+      payload: CheckoutPayload;
+    }) =>
+      apiClient
+        .post<CheckoutResult>(API.MY_SHOPPING_LIST_CHECKOUT(listId), payload)
+        .then((r) => r.data),
+    onSuccess: (data, { listId }) => {
+      qc.invalidateQueries({ queryKey: qk.shoppingLists.mine });
+      qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
+      // Inventory + catalog change too — purchase events created
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['catalog'] });
+      toast.success(
+        `Checkout done — ${data.total_purchases} item${data.total_purchases === 1 ? '' : 's'} added.`,
+      );
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Checkout failed');
+    },
+  });
+}
+
+/** Update user grocery preferences (default storage + analytics opt-in). */
+export function useUpdateGroceryPreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      default_grocery_storage?: string;
+      record_purchase_patterns?: boolean;
+    }) =>
+      apiClient.put(API.MY_GROCERY_PREFERENCES, payload).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.me });
+      toast.success('Preferences saved');
+    },
+    onError: () => toast.error('Failed to save preferences'),
   });
 }

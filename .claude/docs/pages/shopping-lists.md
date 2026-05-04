@@ -1,10 +1,14 @@
 # Shopping Lists Page
 
-> **Status: v2 IMPLEMENTED 2026-05-03.** Backend (service + routes +
-> scheduler + receipt-shim refactor + flag) and frontend (types, hooks,
-> list/detail pages, AddItemRow, AddPriceInlineForm, PricePickerDialog,
-> scanner wiring, catalog "Add to shopping list" button) all shipped.
-> Open follow-ups noted at the bottom.
+> **Status: v3 BETA SHIPPED 2026-05-04.** Three-step model:
+> list → compare → checkout. Primary + alternatives data model;
+> only alternatives are tickable; checkout = ticked subset.
+> Caps: 15 primaries / 3 alternatives per primary (beta). Customer-feedback
+> hook for cap revisits is parked (raspberry-pi + AI capture, future).
+>
+> v2 (read-only admin → user-side transit list with prices + per-item Buy)
+> shipped 2026-05-03. v3 builds on v2's frontend; per-item Buy button
+> removed in favor of the tick-then-confirm checkout flow.
 
 Routes:
 - `/shopping-lists` — list of shopping lists for the current user

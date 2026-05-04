@@ -7,6 +7,7 @@ import HouseholdSection from '@/components/settings/HouseholdSection';
 import SecuritySection from '@/components/settings/SecuritySection';
 import DisplayCurrencySection from '@/components/settings/DisplayCurrencySection';
 import MergeNudgeWidget from '@/components/settings/MergeNudgeWidget';
+import GrocerySection from '@/components/settings/GrocerySection';
 
 const FSM_DATA = [
   {
@@ -60,6 +61,9 @@ export default function SettingsPage() {
 
         {/* Display currency (Phase B of catalog_evolution.md) */}
         <DisplayCurrencySection />
+
+        {/* Shopping-list preferences (v3 beta) */}
+        <GrocerySection />
 
         {/* Catalog cleanup — likely duplicates + transfer audit log (Phase G) */}
         <MergeNudgeWidget />

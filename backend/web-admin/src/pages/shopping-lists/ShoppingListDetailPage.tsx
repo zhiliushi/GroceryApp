@@ -1,32 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import {
-  useMyShoppingListDetail,
-} from '@/api/queries/useShoppingLists';
+import { useMyShoppingListDetail } from '@/api/queries/useShoppingLists';
 import {
   useAddShoppingListItem,
+  useAddShoppingListPrice,
   useDeleteShoppingList,
   useDeleteShoppingListItem,
   useDeleteShoppingListPrice,
+  usePromoteToAlternative,
   useRenameShoppingList,
+  useTickAlternative,
   useUpdateShoppingList,
 } from '@/api/mutations/useShoppingListMutations';
 import { useVisibility } from '@/hooks/useVisibility';
 import ScanReceiptButton from '@/components/receipt/ScanReceiptButton';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import EmptyState from '@/components/shared/EmptyState';
-import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import ContextualScannerModal from '@/components/barcode/ContextualScannerModal';
 import AddItemRow from './AddItemRow';
 import AddPriceInlineForm from './AddPriceInlineForm';
-import PricePickerDialog, { type BuyChoice } from './PricePickerDialog';
+import CheckoutFooter from './CheckoutFooter';
 import { cn } from '@/utils/cn';
 import type { ShoppingListItem, ShoppingListPrice } from '@/types/api';
 
-const MAX_ITEMS_PER_LIST = 50;
+const MAX_PRIMARIES_PER_LIST = 15;
+const MAX_ALTERNATIVES_PER_PRIMARY = 3;
 
 function itemDimensionLabel(item: ShoppingListItem): string {
-  // v2 first, then v1 legacy fallback.
   const parts: string[] = [];
   if (item.quantity != null) {
     parts.push(`${item.quantity}${item.unit ? ` ${item.unit}` : ''}`);
@@ -43,15 +43,45 @@ function itemDimensionLabel(item: ShoppingListItem): string {
   return parts.join(' · ');
 }
 
-function lowestPrice(prices?: ShoppingListPrice[]): ShoppingListPrice | null {
-  if (!prices || prices.length === 0) return null;
-  return prices.reduce((acc, p) => (p.price < acc.price ? p : acc), prices[0]);
+function altDisplayLabel(alt: ShoppingListPrice): string {
+  return alt.candidate_name || alt.brand || '(unnamed)';
+}
+
+function altQtyLabel(alt: ShoppingListPrice): string {
+  const parts: string[] = [];
+  if (alt.pack_count != null && alt.pack_size != null) {
+    parts.push(`${alt.pack_count} × ${alt.pack_size}`);
+  } else if (alt.pack_size != null) {
+    parts.push(String(alt.pack_size));
+  }
+  if (alt.weight_value != null && alt.weight_unit) {
+    parts.push(`${alt.weight_value}${alt.weight_unit}`);
+  }
+  if (alt.volume_value != null && alt.volume_unit) {
+    parts.push(`${alt.volume_value}${alt.volume_unit}`);
+  }
+  return parts.join(' · ');
+}
+
+function unitMismatch(item: ShoppingListItem, alt: ShoppingListPrice): boolean {
+  // F5: highlight unit mismatch first. Compare unit class.
+  const primaryClass =
+    item.weight_unit ? 'weight' :
+    item.volume_unit ? 'volume' :
+    item.quantity != null || item.unit ? 'count' :
+    null;
+  if (!primaryClass) return false;
+  const altClass =
+    alt.weight_unit ? 'weight' :
+    alt.volume_unit ? 'volume' :
+    'count';
+  return primaryClass !== altClass;
 }
 
 export default function ShoppingListDetailPage() {
   const { listId } = useParams<{ listId: string }>();
   const navigate = useNavigate();
-  const { data, isLoading } = useMyShoppingListDetail(listId);
+  const { data, isLoading, refetch } = useMyShoppingListDetail(listId);
 
   const renameMutation = useRenameShoppingList();
   const updateMutation = useUpdateShoppingList();
@@ -61,23 +91,25 @@ export default function ShoppingListDetailPage() {
   const deleteItemMutation = useDeleteShoppingListItem();
   const deletePriceMutation = useDeleteShoppingListPrice();
   const addItemMutation = useAddShoppingListItem();
+  const tickMutation = useTickAlternative();
+  const promoteMutation = usePromoteToAlternative();
+  const addAltMutation = useAddShoppingListPrice();
 
-  // Local UI state
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [addPriceForId, setAddPriceForId] = useState<string | null>(null);
+  /** Per-primary collapse state. Primaries with ≥1 alt expand by default. */
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [addAltForId, setAddAltForId] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
-
-  // Buy flow state
-  const [buyTarget, setBuyTarget] = useState<ShoppingListItem | null>(null);
-  const [pricePickerForItem, setPricePickerForItem] = useState<ShoppingListItem | null>(null);
-  const [quickAddDefaults, setQuickAddDefaults] = useState<{
-    name?: string;
-    barcode?: string;
-  } | null>(null);
+  /** Scanner mode controls how the result is consumed:
+   *   'add'     — top scan, adds new primary
+   *   'buy'     — top "scan to buy", adds primary + promote + tick
+   *   'compare' — per-primary scan, adds new alternative under scanCompareTargetId
+   */
+  const [scanMode, setScanMode] = useState<'add' | 'buy' | 'compare'>('add');
+  const [scanCompareTargetId, setScanCompareTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (data?.list?.name && renameValue === '') {
@@ -85,27 +117,82 @@ export default function ShoppingListDetailPage() {
     }
   }, [data?.list?.name, renameValue]);
 
-  // Listen for scanner-add events while this page is mounted. The scanner
-  // dispatches `grocery:scan-add-to-shopping-list` with the scanned barcode
-  // + matched display name; we POST it to the current list.
+  // Listen for scanner-add events. The scanner fires
+  // 'grocery:scan-add-to-shopping-list' regardless of mode; the page reads
+  // its own scanMode state to route the result. Three flows:
+  //   'add'     → add new primary
+  //   'buy'     → add new primary + promote-to-alt + auto-tick
+  //   'compare' → add as alternative under scanCompareTargetId
   useEffect(() => {
     if (!listId) return;
-    function onScanAdd(e: Event) {
-      const detail = (e as CustomEvent<{ barcode: string; nameNorm: string; display: string }>).detail;
+    type ScanDetail = { barcode: string; nameNorm: string; display: string };
+    async function onScanAdd(e: Event) {
+      const detail = (e as CustomEvent<ScanDetail>).detail;
       if (!detail?.display) return;
-      addItemMutation.mutate({
-        listId: listId!,
-        payload: {
-          item_name: detail.display,
-          barcode: detail.barcode || undefined,
-          source_catalog_name_norm: detail.nameNorm || undefined,
-          source: 'scan',
-        },
-      });
+      try {
+        if (scanMode === 'compare' && scanCompareTargetId) {
+          await addAltMutation.mutateAsync({
+            listId: listId!,
+            itemId: scanCompareTargetId,
+            payload: {
+              candidate_name: detail.display,
+              barcode: detail.barcode || undefined,
+              source_catalog_name_norm: detail.nameNorm || undefined,
+            },
+          });
+        } else if (scanMode === 'buy') {
+          const created = await addItemMutation.mutateAsync({
+            listId: listId!,
+            payload: {
+              item_name: detail.display,
+              barcode: detail.barcode || undefined,
+              source_catalog_name_norm: detail.nameNorm || undefined,
+              source: 'scan',
+            },
+          });
+          const itemId = (created as { id?: string })?.id;
+          if (!itemId) return;
+          const alt = await promoteMutation.mutateAsync({ listId: listId!, itemId });
+          const altId = (alt as { id?: string })?.id;
+          if (!altId) return;
+          await tickMutation.mutateAsync({
+            listId: listId!,
+            itemId,
+            priceId: altId,
+            ticked: true,
+          });
+        } else {
+          await addItemMutation.mutateAsync({
+            listId: listId!,
+            payload: {
+              item_name: detail.display,
+              barcode: detail.barcode || undefined,
+              source_catalog_name_norm: detail.nameNorm || undefined,
+              source: 'scan',
+            },
+          });
+        }
+      } catch {
+        // Errors surface via toast in the underlying mutations.
+      } finally {
+        // Reset to default after each scan
+        setScanMode('add');
+        setScanCompareTargetId(null);
+      }
     }
     window.addEventListener('grocery:scan-add-to-shopping-list', onScanAdd);
-    return () => window.removeEventListener('grocery:scan-add-to-shopping-list', onScanAdd);
-  }, [listId, addItemMutation]);
+    return () => {
+      window.removeEventListener('grocery:scan-add-to-shopping-list', onScanAdd);
+    };
+  }, [
+    listId,
+    scanMode,
+    scanCompareTargetId,
+    addItemMutation,
+    addAltMutation,
+    promoteMutation,
+    tickMutation,
+  ]);
 
   const items = useMemo(() => data?.items ?? [], [data]);
 
@@ -123,7 +210,7 @@ export default function ShoppingListDetailPage() {
 
   const list = data.list;
   const itemCount = items.length;
-  const atCap = itemCount >= MAX_ITEMS_PER_LIST;
+  const atCap = itemCount >= MAX_PRIMARIES_PER_LIST;
 
   function startRename() {
     setRenameValue(list.name);
@@ -147,61 +234,68 @@ export default function ShoppingListDetailPage() {
   }
 
   function handleDeleteItem(item: ShoppingListItem) {
-    if (!confirm(`Remove "${item.item_name || item.itemName}" from the list?`)) return;
+    const name = item.item_name || item.itemName;
+    if (!confirm(`Remove "${name}" from the list?`)) return;
     deleteItemMutation.mutate({ listId: listId!, itemId: item.id });
   }
 
-  function startBuy(item: ShoppingListItem) {
-    const prices = item.prices || [];
-    setBuyTarget(item);
-    if (prices.length > 1) {
-      setPricePickerForItem(item);
-    } else {
-      const single = prices[0];
-      setQuickAddDefaults({
-        name: item.item_name || item.itemName || '',
-        barcode: single?.barcode || item.barcode || undefined,
-      });
-    }
-  }
-
-  function handlePricePicked(choice: BuyChoice) {
-    setPricePickerForItem(null);
-    if (!buyTarget) return;
-    if (choice.kind === 'rescan') {
-      setQuickAddDefaults(null);
-      setScannerOpen(true);
-      return;
-    }
-    if (choice.kind === 'manual') {
-      setQuickAddDefaults({
-        name: buyTarget.item_name || buyTarget.itemName || '',
-      });
-      return;
-    }
-    // 'price' choice
-    setQuickAddDefaults({
-      name: buyTarget.item_name || buyTarget.itemName || '',
-      barcode: choice.price.barcode || buyTarget.barcode || undefined,
+  function toggleCollapsed(itemId: string) {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
     });
   }
 
-  function handleQuickAddSaved() {
-    // Successful purchase — remove the item from the list.
-    if (buyTarget) {
-      deleteItemMutation.mutate({ listId: listId!, itemId: buyTarget.id });
+  /** Untick all currently-ticked alternatives (Cancel checkout). */
+  async function handleCancelCheckout() {
+    const tasks: Promise<unknown>[] = [];
+    for (const item of items) {
+      for (const alt of item.prices ?? []) {
+        if (alt.ticked) {
+          tasks.push(
+            tickMutation.mutateAsync({
+              listId: listId!,
+              itemId: item.id,
+              priceId: alt.id,
+              ticked: false,
+            }),
+          );
+        }
+      }
     }
-    setBuyTarget(null);
-    setQuickAddDefaults(null);
+    await Promise.allSettled(tasks);
+    refetch();
   }
 
-  function handleQuickAddClose() {
-    setQuickAddDefaults(null);
-    setBuyTarget(null);
+  function handleConfirmedCheckout() {
+    refetch();
+  }
+
+  function handleTopScanAdd() {
+    // Top "Scan" button — adds a new primary
+    setScanMode('add');
+    setScanCompareTargetId(null);
+    setScannerOpen(true);
+  }
+
+  function handleTopScanBuy() {
+    // Top "Scan to buy" button (per A2 / G1) — adds primary + alt + tick
+    setScanMode('buy');
+    setScanCompareTargetId(null);
+    setScannerOpen(true);
+  }
+
+  function handlePerPrimaryScanCompare(itemId: string) {
+    // Per-primary 📷 — adds an alternative under that primary (per A2 / G1)
+    setScanMode('compare');
+    setScanCompareTargetId(itemId);
+    setScannerOpen(true);
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 pb-32">  {/* extra bottom padding for sticky footer */}
       {/* Breadcrumb */}
       <div className="mb-3">
         <Link to="/shopping-lists" className="text-ga-accent hover:underline text-sm">
@@ -244,8 +338,9 @@ export default function ShoppingListDetailPage() {
                 ? 'bg-amber-500/20 text-amber-300'
                 : 'bg-ga-accent/20 text-ga-accent',
             )}
+            title={`Beta cap: ${MAX_PRIMARIES_PER_LIST} primaries per list`}
           >
-            {itemCount}/{MAX_ITEMS_PER_LIST}
+            {itemCount}/{MAX_PRIMARIES_PER_LIST}
           </span>
         </div>
         <button
@@ -256,7 +351,7 @@ export default function ShoppingListDetailPage() {
         </button>
       </div>
 
-      {/* Trip notes — plus-tier (gated by `trip_notes` tool) */}
+      {/* Trip notes — plus-tier */}
       {tripNotesEnabled && (
         <div className="mb-4 rounded-lg border border-ga-border bg-ga-bg-card p-3">
           {editingNotes ? (
@@ -265,15 +360,13 @@ export default function ShoppingListDetailPage() {
                 autoFocus
                 value={notesDraft}
                 onChange={(e) => setNotesDraft(e.target.value)}
-                placeholder="Trip notes (e.g. 'Remember to check coupons; Mum wants the small carton')"
+                placeholder="Trip notes (e.g. 'Remember to check coupons')"
                 maxLength={1000}
                 rows={3}
                 className="w-full px-3 py-2 bg-ga-bg-primary border border-ga-border rounded-md text-sm text-ga-text-primary placeholder:text-ga-text-secondary focus:outline-none focus:border-ga-accent resize-y"
               />
               <div className="flex items-center justify-between">
-                <span className="text-xs text-ga-text-secondary">
-                  {notesDraft.length}/1000
-                </span>
+                <span className="text-xs text-ga-text-secondary">{notesDraft.length}/1000</span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -324,8 +417,7 @@ export default function ShoppingListDetailPage() {
         </div>
       )}
 
-      {/* Bulk add from receipt — plus-tier; ScanReceiptButton handles its
-          own tier check + upgrade banner so we don't need to gate here. */}
+      {/* Bulk add from receipt — plus-tier */}
       <div className="mb-4">
         <ScanReceiptButton
           destination="shopping_list"
@@ -334,12 +426,25 @@ export default function ShoppingListDetailPage() {
         />
       </div>
 
-      {/* Add row — three entry points */}
+      {/* Add row — three entry points (manual / catalog / scan-to-list) */}
       <AddItemRow
         listId={listId}
         atCap={atCap}
-        onScanClick={() => setScannerOpen(true)}
+        onScanClick={handleTopScanAdd}
       />
+
+      {/* Scan to buy — sibling to the top scan; bypasses planning and goes
+          straight to checkout (G1: scan-to-buy mode). */}
+      <div className="mb-4">
+        <button
+          onClick={handleTopScanBuy}
+          disabled={atCap}
+          title="Scan barcode → add primary + auto-tick into checkout"
+          className="px-3 py-1.5 text-sm font-medium rounded-md border border-ga-accent text-ga-accent hover:bg-ga-accent/10 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          📷 Scan to buy
+        </button>
+      </div>
 
       {/* Items */}
       {items.length === 0 ? (
@@ -351,46 +456,80 @@ export default function ShoppingListDetailPage() {
       ) : (
         <div className="space-y-2">
           {items.map((item) => {
-            const expanded = expandedId === item.id;
-            const showAddPrice = addPriceForId === item.id;
             const itemName = item.item_name || item.itemName || '(unnamed)';
             const dim = itemDimensionLabel(item);
-            const lo = lowestPrice(item.prices);
-            const priceCount = (item.prices ?? []).length;
+            const alts = item.prices ?? [];
+            const altCount = alts.length;
+            const tickedCount = alts.filter((a) => a.ticked).length;
+            // Auto-expand if there are alts; user can collapse manually
+            const collapsed = collapsedIds.has(item.id);
+            const expanded = altCount > 0 ? !collapsed : collapsed;
+            // Adapt the chevron sense: "expanded" = show alts row.
+            const showRows = altCount === 0 ? !collapsed : !collapsed;
+            void expanded;
+            const showAddAlt = addAltForId === item.id;
+            const altCap = altCount >= MAX_ALTERNATIVES_PER_PRIMARY;
             return (
               <div
                 key={item.id}
                 className="rounded-lg border border-ga-border bg-ga-bg-card"
               >
+                {/* Primary row — NOT tickable per G12 */}
                 <div className="flex items-center gap-3 p-3">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-ga-text-primary truncate">
-                      {itemName}
+                    <div className="font-medium text-ga-text-primary truncate flex items-center gap-2">
+                      <span>{itemName}</span>
+                      {altCount === 0 && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300"
+                          title="Add an alternative (or use 'Use as alternative') to checkout this item"
+                        >
+                          no alt
+                        </span>
+                      )}
+                      {tickedCount > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
+                          {tickedCount} ticked
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-ga-text-secondary mt-0.5">
                       {dim && <span>{dim}</span>}
-                      {dim && lo && <span> · </span>}
-                      {lo && (
+                      {dim && altCount > 0 && <span> · </span>}
+                      {altCount > 0 && (
                         <span>
-                          best: <span className="text-ga-accent">{lo.currency} {lo.price.toFixed(2)}</span>
-                          {lo.brand && ` (${lo.brand})`}
-                        </span>
-                      )}
-                      {priceCount > 0 && (
-                        <span className="ml-2 text-ga-text-secondary/70">
-                          · {priceCount} price{priceCount === 1 ? '' : 's'}
+                          {altCount}/{MAX_ALTERNATIVES_PER_PRIMARY} alternative{altCount === 1 ? '' : 's'}
                         </span>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => startBuy(item)}
-                      title="Buy this item"
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-ga-accent hover:bg-ga-accent-hover text-white"
+                      onClick={() => handlePerPrimaryScanCompare(item.id)}
+                      title="Scan barcode → add as alternative under this primary"
+                      className="px-2 py-1.5 text-xs border border-ga-border rounded-md text-ga-text-secondary hover:bg-ga-bg-hover"
                     >
-                      Buy
+                      📷
                     </button>
+                    <button
+                      onClick={() => setAddAltForId(item.id)}
+                      disabled={altCap}
+                      title={altCap ? 'Beta cap: 3 alternatives per primary' : 'Add alternative'}
+                      className="px-2 py-1.5 text-xs border border-ga-border rounded-md text-ga-text-secondary hover:bg-ga-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      + Alt
+                    </button>
+                    {altCount === 0 && !altCap && (
+                      <button
+                        onClick={() =>
+                          promoteMutation.mutate({ listId: listId!, itemId: item.id })
+                        }
+                        title="Use as alternative — quick way to buy this without comparing brands"
+                        className="px-2 py-1.5 text-xs border border-ga-border rounded-md text-ga-text-primary hover:bg-ga-bg-hover"
+                      >
+                        Use as alt
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDeleteItem(item)}
                       title="Remove"
@@ -399,81 +538,123 @@ export default function ShoppingListDetailPage() {
                       ✕
                     </button>
                     <button
-                      onClick={() => setExpandedId(expanded ? null : item.id)}
-                      title="Toggle price comparison"
+                      onClick={() => toggleCollapsed(item.id)}
+                      title="Toggle"
                       className="px-2 py-1.5 text-xs border border-ga-border rounded-md text-ga-text-secondary hover:bg-ga-bg-hover"
                     >
-                      {expanded ? '▴' : '▾'}
+                      {showRows ? '▴' : '▾'}
                     </button>
                   </div>
                 </div>
 
-                {expanded && (
+                {showRows && (
                   <div className="border-t border-ga-border px-3 py-2 space-y-2 bg-ga-bg-primary/30">
-                    {(item.prices ?? []).length === 0 && !showAddPrice && (
-                      <p className="text-xs text-ga-text-secondary">No price comparisons yet.</p>
+                    {alts.length === 0 && !showAddAlt && (
+                      <p className="text-xs text-ga-text-secondary">
+                        No alternatives yet. Click <strong>+ Alt</strong> to add one,
+                        or <strong>Use as alt</strong> to buy this primary as-is.
+                      </p>
                     )}
-                    {(item.prices ?? []).length > 0 && (
-                      <table className="w-full text-xs">
-                        <thead className="text-ga-text-secondary">
-                          <tr>
-                            <th className="text-left font-normal py-1">Brand</th>
-                            <th className="text-left font-normal py-1">Store</th>
-                            <th className="text-right font-normal py-1">Price</th>
-                            <th className="text-left font-normal py-1 pl-2">Barcode</th>
-                            <th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...(item.prices ?? [])]
-                            .sort((a, b) => a.price - b.price)
-                            .map((p) => (
-                              <tr key={p.id} className="border-t border-ga-border/60">
-                                <td className="py-1.5 text-ga-text-primary">
-                                  {p.brand || '—'}
-                                </td>
-                                <td className="py-1.5 text-ga-text-secondary">
-                                  {p.store_name || '—'}
-                                </td>
-                                <td className="py-1.5 text-right text-ga-accent font-medium">
-                                  {p.currency} {p.price.toFixed(2)}
-                                </td>
-                                <td className="py-1.5 pl-2 font-mono text-ga-text-secondary">
-                                  {p.barcode || '—'}
-                                </td>
-                                <td className="py-1.5 text-right">
-                                  <button
-                                    onClick={() =>
-                                      deletePriceMutation.mutate({
-                                        listId: listId!,
-                                        itemId: item.id,
-                                        priceId: p.id,
-                                      })
-                                    }
-                                    title="Remove price"
-                                    className="text-ga-text-secondary hover:text-red-400 px-1"
+                    {alts.length > 0 && (
+                      <ul className="space-y-1">
+                        {alts.map((alt) => {
+                          const mismatch = unitMismatch(item, alt);
+                          const noPrice = alt.price == null;
+                          return (
+                            <li
+                              key={alt.id}
+                              className={cn(
+                                'flex items-center gap-2 px-2 py-1.5 rounded',
+                                alt.ticked && 'bg-green-500/10',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!alt.ticked}
+                                onChange={(e) =>
+                                  tickMutation.mutate({
+                                    listId: listId!,
+                                    itemId: item.id,
+                                    priceId: alt.id,
+                                    ticked: e.target.checked,
+                                  })
+                                }
+                                className="accent-ga-accent shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm text-ga-text-primary truncate">
+                                  {altDisplayLabel(alt)}
+                                  {alt.auto_promoted && (
+                                    <span className="ml-2 text-[10px] text-ga-text-secondary italic">
+                                      (auto)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-ga-text-secondary">
+                                  {altQtyLabel(alt) && <span>{altQtyLabel(alt)}</span>}
+                                  {altQtyLabel(alt) && alt.store_name && <span> · </span>}
+                                  {alt.store_name && <span>{alt.store_name}</span>}
+                                  {alt.barcode && (
+                                    <span className="ml-2 font-mono text-ga-text-secondary/70">
+                                      {alt.barcode}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {noPrice && (
+                                  <span
+                                    title="No price recorded — total estimate excludes this row"
+                                    className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300"
                                   >
-                                    ✕
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
+                                    💲 no price
+                                  </span>
+                                )}
+                                {mismatch && (
+                                  <span
+                                    title="This alternative's unit doesn't match the primary's"
+                                    className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400"
+                                  >
+                                    ⚠ unit
+                                  </span>
+                                )}
+                                {alt.price != null && (
+                                  <span className="text-sm text-ga-accent font-medium tabular-nums">
+                                    {alt.currency} {Number(alt.price).toFixed(2)}
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() =>
+                                    deletePriceMutation.mutate({
+                                      listId: listId!,
+                                      itemId: item.id,
+                                      priceId: alt.id,
+                                    })
+                                  }
+                                  title="Remove alternative"
+                                  className="text-ga-text-secondary hover:text-red-400 px-1"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     )}
-                    {showAddPrice ? (
+                    {showAddAlt ? (
                       <AddPriceInlineForm
                         listId={listId}
                         itemId={item.id}
-                        onClose={() => setAddPriceForId(null)}
+                        onClose={() => setAddAltForId(null)}
                       />
                     ) : (
                       <button
-                        onClick={() => setAddPriceForId(item.id)}
-                        disabled={(item.prices ?? []).length >= 10}
+                        onClick={() => setAddAltForId(item.id)}
+                        disabled={altCap}
                         className="text-xs text-ga-accent hover:underline disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
                       >
-                        + Add price comparison{(item.prices ?? []).length >= 10 && ' (max 10)'}
+                        + Add alternative{altCap && ` (max ${MAX_ALTERNATIVES_PER_PRIMARY} — beta)`}
                       </button>
                     )}
                   </div>
@@ -484,31 +665,22 @@ export default function ShoppingListDetailPage() {
         </div>
       )}
 
-      {/* Scanner — uses the existing 'shopping-lists' context branch */}
-      <ContextualScannerModal
-        open={scannerOpen}
-        onClose={() => setScannerOpen(false)}
+      {/* Sticky checkout footer */}
+      <CheckoutFooter
+        listId={listId}
+        items={items}
+        onCancel={handleCancelCheckout}
+        onConfirmed={handleConfirmedCheckout}
       />
 
-      {/* Buy flow — price picker (only when >1 prices) */}
-      {pricePickerForItem && (
-        <PricePickerDialog
-          itemName={pricePickerForItem.item_name || pricePickerForItem.itemName || ''}
-          prices={pricePickerForItem.prices || []}
-          onPick={handlePricePicked}
-          onCancel={() => {
-            setPricePickerForItem(null);
-            setBuyTarget(null);
-          }}
-        />
-      )}
-
-      {/* Buy flow — QuickAddModal with prefilled defaults */}
-      <QuickAddModal
-        open={quickAddDefaults !== null}
-        onClose={handleQuickAddClose}
-        defaults={quickAddDefaults || undefined}
-        onSaved={handleQuickAddSaved}
+      {/* Scanner — context = shopping-lists. Routing of the scan result is
+          done in this page's onScanAdd handler based on scanMode (X6). */}
+      <ContextualScannerModal
+        open={scannerOpen}
+        onClose={() => {
+          setScannerOpen(false);
+          // Defer mode reset until the scan handler completes (in finally{})
+        }}
       />
     </div>
   );

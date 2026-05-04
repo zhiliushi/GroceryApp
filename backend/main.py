@@ -166,6 +166,59 @@ app.add_middleware(
     authenticated_limit=200,
 )
 
+# Maintenance-mode middleware (Onboarding v2 Phase 5 / Decision #3) — when
+# `app_config/system.maintenance_mode=true`, all non-GET requests from non-admin
+# users return 503 with the maintenance message. Admin bypasses entirely. Reads
+# always work. Backed by a 5-second TTL cache to avoid Firestore-quota burn.
+from starlette.middleware.base import BaseHTTPMiddleware as _BaseHTTPMiddleware  # noqa: E402
+from starlette.responses import Response as _StarletteResponse  # noqa: E402
+
+
+class MaintenanceModeMiddleware(_BaseHTTPMiddleware):
+    """Block non-GET requests for non-admin users when maintenance_mode=true."""
+
+    _EXEMPT_PATHS: tuple[str, ...] = (
+        "/health",
+        "/static",
+        "/assets",
+        "/sw.js",
+        "/manifest.webmanifest",
+    )
+
+    async def dispatch(self, request: Request, call_next) -> _StarletteResponse:
+        if request.method == "GET":
+            return await call_next(request)
+        path = request.url.path
+        for exempt in self._EXEMPT_PATHS:
+            if path.startswith(exempt):
+                return await call_next(request)
+
+        from app.services import config_service
+        if not config_service.is_maintenance_mode_cached():
+            return await call_next(request)
+
+        # Maintenance is on — admin bypasses, everyone else gets 503.
+        from app.core.auth import get_optional_user
+        user = await get_optional_user(request)
+        if user and user.is_admin:
+            return await call_next(request)
+
+        sysconfig = config_service.get_system_config()
+        message = sysconfig.get("maintenance_message", "") or (
+            "Service is in maintenance mode. Writes are temporarily disabled. "
+            "Please try again shortly."
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": message,
+                "maintenance_mode": True,
+            },
+        )
+
+
+app.add_middleware(MaintenanceModeMiddleware)
+
 # Error-rate alerting (5xx > 5% in 5min sliding window)
 from app.core.error_rate import ErrorRateMiddleware  # noqa: E402
 app.add_middleware(ErrorRateMiddleware)
@@ -326,41 +379,262 @@ async def health_check():
 
 
 @app.get("/api/me")
-async def get_current_user_info(request: Request):
-    """Return current authenticated user info (uid, email, role).
-    Useful for initial setup to find your Firebase UID."""
+async def get_current_user_info(request: Request, invitation_code: str | None = None):
+    """State-machine /api/me — returns current user state for routing.
+
+    Onboarding v2 (PLAN_ONBOARDING_V2.md Phase 2). The `state` field is the
+    source of truth for the new SPA's AuthGate routing. Legacy fields (`tier`,
+    `status`, `country`, etc.) are preserved for the old SPA — current frontend
+    code reads only `authenticated`, `role`, and the legacy fields.
+
+    States:
+      - `unauthenticated`        — no token / token rejected (incl. unverified email)
+      - `pending_approval`       — self-signup, awaiting admin
+      - `registration_required`  — invited or approved, needs to fill the form
+      - `disabled`               — admin disabled the account
+      - `registration_closed`    — registration_open=False or user-cap reached
+      - `active`                 — fully onboarded; render dashboard
+
+    Query params:
+      invitation_code: optional 6-char code from `/join/<code>` flow. If valid
+                       AND email matches `invited_email`, profile is auto-
+                       created with status="active" (skips admin queue).
+    """
     from app.core.auth import get_optional_user
+    from app.services import user_service, config_service
+
+    sysconfig = config_service.get_system_config()
+    public_fields = {
+        "web_public_url": sysconfig.get("web_public_url", ""),
+        "maintenance_mode": sysconfig.get("maintenance_mode", False),
+        "maintenance_message": sysconfig.get("maintenance_message", ""),
+    }
+
     user = await get_optional_user(request)
     if not user:
-        return {"authenticated": False}
-    # Enrich with Firestore profile data (tier, status, tools, country)
-    from app.services import user_service, config_service
-    profile = user_service.get_user(user.uid)
+        return {
+            "authenticated": False,
+            "state": "unauthenticated",
+            **public_fields,
+        }
 
-    # New user check: if no profile exists and registration is closed, block
-    if not profile:
-        allowed, reason = config_service.check_registration_allowed()
-        if not allowed:
-            return {"authenticated": True, "uid": user.uid, "registration_blocked": True, "reason": reason}
+    # Email-verification gate already enforced in _verify_token (Phase 1):
+    # password-provider users without verified email returned None there, so
+    # we never reach this branch with an unverified password account.
 
-    profile = profile or {}
-    return {
+    base = {
         "authenticated": True,
         "uid": user.uid,
         "email": user.email,
         "role": user.role,
         "display_name": user.display_name,
+        **public_fields,
+    }
+
+    profile = user_service.get_user(user.uid)
+
+    if profile is None:
+        # First-time hit. Decide between invited-auto-approve and self-signup-pending.
+        from app.services import invitation_service
+
+        invitation = None
+        if invitation_code:
+            try:
+                invitation = invitation_service.validate_code(invitation_code)
+                # Email-bound enforcement: if invitation specifies an email, it must match.
+                invited_email = (invitation.get("invited_email") or "").strip().lower()
+                user_email = (user.email or "").strip().lower()
+                if invited_email and invited_email != user_email:
+                    invitation = None  # treat as if not invited; fall through to self-signup
+            except ValueError:
+                invitation = None
+
+        if invitation:
+            # Invited path — auto-approve, skip admin queue
+            user_service.create_user_profile(
+                uid=user.uid,
+                email=user.email,
+                display_name=user.display_name,
+                status="active",
+                invitation_code=invitation_code.upper() if invitation_code else None,
+            )
+            return {
+                **base,
+                "state": "registration_required",
+                # Legacy fields for old SPA compatibility
+                "tier": "free",
+                "status": "active",
+                "registration_complete": False,
+                "selected_tools": [],
+                "homemaker_enabled": False,
+                # New SPA: details to render the registration form context
+                "invitation_household_name": invitation.get("household_name"),
+            }
+
+        # Self-signup path — check caps, create as pending
+        allowed, reason = config_service.check_registration_allowed()
+        if not allowed:
+            return {
+                **base,
+                "state": "registration_closed",
+                "reason": reason,
+                "tier": "free",
+                "status": "blocked",
+                "registration_blocked": True,  # legacy field, kept for old SPA
+            }
+
+        user_service.create_user_profile(
+            uid=user.uid,
+            email=user.email,
+            display_name=user.display_name,
+            status="pending",
+        )
+        # Decision #2: notify admin per pending signup. Best-effort — never blocks.
+        try:
+            from app.services import email_service
+            email_service.send_admin_pending_signup_notification(
+                pending_uid=user.uid, pending_email=user.email,
+            )
+        except Exception:
+            logger.exception("admin pending-signup notification failed (non-fatal)")
+
+        return {
+            **base,
+            "state": "pending_approval",
+            "tier": "free",
+            "status": "pending",
+            "registration_complete": False,
+            "selected_tools": [],
+            "homemaker_enabled": False,
+        }
+
+    # Existing profile — branch on status + completion
+    status = profile.get("status", "active")
+
+    if status == "disabled":
+        return {
+            **base,
+            "state": "disabled",
+            "tier": profile.get("tier", "free"),
+            "status": "disabled",
+            "disabled_reason": profile.get("disabled_reason", ""),
+            "registration_complete": profile.get("registration_complete", False),
+            "selected_tools": profile.get("selected_tools", []),
+            "homemaker_enabled": profile.get("homemaker_enabled", False),
+        }
+
+    if status == "pending":
+        return {
+            **base,
+            "state": "pending_approval",
+            "tier": profile.get("tier", "free"),
+            "status": "pending",
+            "pending_since": profile.get("pending_approval_at"),
+            "registration_complete": False,
+            "selected_tools": profile.get("selected_tools", []),
+            "homemaker_enabled": profile.get("homemaker_enabled", False),
+        }
+
+    if not profile.get("registration_complete", False):
+        return {
+            **base,
+            "state": "registration_required",
+            "tier": profile.get("tier", "free"),
+            "status": status,
+            "registration_complete": False,
+            "country": profile.get("country"),
+            "currency": profile.get("currency"),
+            "currency_preference": profile.get("currency_preference"),
+            "selected_tools": profile.get("selected_tools", []),
+            "homemaker_enabled": profile.get("homemaker_enabled", False),
+            "invitation_code_used": profile.get("invitation_code_used"),
+        }
+
+    # Active + complete — full profile. Mirrors the legacy /api/me response so
+    # the old SPA renders identically.
+    return {
+        **base,
+        "state": "active",
         "tier": profile.get("tier", "free"),
-        "status": profile.get("status", "active"),
-        "selected_tools": profile.get("selected_tools", []),
+        "status": status,
+        "registration_complete": True,
         "country": profile.get("country"),
         "currency": profile.get("currency"),
         "currency_preference": profile.get("currency_preference"),
-        "schema_version": profile.get("schema_version", 1),
-        # Homemaker subscription gate (per-user). Frontend `useHomemaker()`
-        # combines this with the global `homemaker_versioning` /
-        # `homemaker_social` feature flags to decide which sub-features show.
+        "selected_tools": profile.get("selected_tools", []),
         "homemaker_enabled": profile.get("homemaker_enabled", False),
+        # Shopping-list v3 preferences (per F4 / F7 / I3 / I6)
+        "default_grocery_storage": profile.get("default_grocery_storage", "_unsorted"),
+        "record_purchase_patterns": profile.get("record_purchase_patterns", False),
+        "schema_version": profile.get("schema_version", 1),
+    }
+
+
+@app.post("/api/me/complete-registration")
+async def complete_registration_endpoint(request: Request):
+    """Finalise the user's profile after they fill the registration form.
+
+    Onboarding v2 (PLAN_ONBOARDING_V2.md Phase 2 / Appendix B). Validates
+    name + country + currency, sets `registration_complete=True`, then
+    auto-accepts a pending household invitation if the user came in via one.
+
+    Auth: requires a valid token. Caller must have an existing profile in
+    `registration_required` state (status active, registration_complete=false).
+    """
+    from app.core.auth import get_current_user
+    from app.services import user_service
+
+    user = await get_current_user(request)
+    body = await request.json()
+
+    name = body.get("display_name", "")
+    country = body.get("country", "")
+    currency = body.get("currency", "")
+
+    try:
+        profile = user_service.complete_registration(
+            uid=user.uid, display_name=name, country=country, currency=currency,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if profile is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Profile not found. Sign in once before completing registration.",
+        )
+
+    # Auto-accept pending invitation if the user came in via /join/<code>
+    code = profile.get("invitation_code_used")
+    auto_accept_result: dict | None = None
+    if code:
+        from app.services import invitation_service
+        try:
+            household = invitation_service.accept_invite(
+                code=code,
+                uid=user.uid,
+                display_name=name,
+                user_email=user.email,  # Phase 3: required for email-bound check
+            )
+            auto_accept_result = {"accepted": True, "household": household}
+            logger.info(
+                "Auto-accepted invitation code=%s for uid=%s on registration",
+                code, user.uid,
+            )
+        except ValueError as e:
+            # Invitation expired or invalid between sign-in and registration —
+            # surface the warning but don't fail registration. User can retry
+            # the join via the household UI later.
+            logger.warning(
+                "Auto-accept failed for uid=%s code=%s: %s", user.uid, code, e,
+            )
+            auto_accept_result = {"accepted": False, "error": str(e)}
+
+    return {
+        "success": True,
+        "state": "active",
+        "profile": profile,
+        "invitation": auto_accept_result,
     }
 
 
@@ -411,6 +685,50 @@ async def update_my_currency_preference(request: Request):
         merge=True,
     )
     return {"success": True, "currency_preference": currency}
+
+
+@app.put("/api/me/grocery-preferences")
+async def update_my_grocery_preferences(request: Request):
+    """Per-user shopping-list preferences (v3 beta).
+
+    Body: any subset of:
+      default_grocery_storage   — string location key or '_unsorted'
+      record_purchase_patterns  — bool (default false; opt-in for analytics)
+
+    Both fields persist on users/{uid}. The shopping-list checkout flow
+    reads them at confirm time. Defaults if unset:
+      default_grocery_storage = '_unsorted'
+      record_purchase_patterns = False
+    """
+    from app.core.auth import get_current_user
+    from app.core.metadata import apply_update_metadata
+    from firebase_admin import firestore
+    from fastapi import HTTPException
+
+    user = await get_current_user(request)
+    body = await request.json() or {}
+    updates = {}
+    if "default_grocery_storage" in body:
+        loc = body.get("default_grocery_storage")
+        if loc is not None and not isinstance(loc, str):
+            raise HTTPException(status_code=400, detail="default_grocery_storage must be a string")
+        if isinstance(loc, str) and len(loc) > 80:
+            raise HTTPException(status_code=400, detail="default_grocery_storage too long")
+        updates["default_grocery_storage"] = loc or "_unsorted"
+    if "record_purchase_patterns" in body:
+        rec = body.get("record_purchase_patterns")
+        if not isinstance(rec, bool):
+            raise HTTPException(status_code=400, detail="record_purchase_patterns must be boolean")
+        updates["record_purchase_patterns"] = rec
+    if not updates:
+        raise HTTPException(status_code=400, detail="No recognized fields in body")
+
+    db = firestore.client()
+    db.collection("users").document(user.uid).set(
+        apply_update_metadata(updates),
+        merge=True,
+    )
+    return {"success": True, **updates}
 
 
 @app.get("/api/inventory/my")
