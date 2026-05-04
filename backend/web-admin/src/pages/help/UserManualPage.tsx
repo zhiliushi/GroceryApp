@@ -309,6 +309,46 @@ function GettingStarted() {
         every subsequent sign-in.
       </p>
 
+      <H3>Belonging to more than one household</H3>
+      <p>
+        You can own at most one household, but you can be a <em>member</em> of as
+        many as you&apos;re invited to. So a parent can own their family household
+        AND be a member of their parents&apos; household, or a friend group&apos;s pantry,
+        without losing either.
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>Joining another household</strong> — open the invite link.
+          The page shows "You&apos;re already in <em>HouseholdA</em>" and joining
+          keeps that membership. You&apos;ll see both in the active-household pill
+          at the top of every page.
+        </li>
+        <li>
+          <strong>Switching scope</strong> — tap the household pill (top right
+          on desktop) to choose which household&apos;s inventory, shopping list,
+          spending and waste totals you&apos;re viewing. Each page reads from one
+          scope at a time so the dashboard numbers stay meaningful.
+        </li>
+        <li>
+          <strong>Creating your own</strong> — if you&apos;re a member of someone
+          else&apos;s household but not yet an owner, <em>Settings → Household</em>
+          surfaces a "Create your own household" link. Existing memberships
+          stay intact.
+        </li>
+        <li>
+          <strong>Leaving</strong> — you can leave any household you&apos;re a
+          member of without affecting the others. If the household you&apos;re
+          actively viewing is the one you leave, the app falls back to another
+          one you&apos;re in.
+        </li>
+      </ul>
+      <p className="text-xs text-ga-text-secondary">
+        Tier features (Plus / Pro) come from the household&apos;s owner — so a
+        member of a Plus household sees Plus features there, even on a Free
+        account elsewhere. The pill shows each household&apos;s tier when you have
+        more than one.
+      </p>
+
       <H3>Privacy &amp; Terms</H3>
       <p>
         Two reference documents linked from{' '}

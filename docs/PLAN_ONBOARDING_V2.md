@@ -461,18 +461,43 @@ If a serious bug requires schema rollback, the backfill script is reversible: a 
 | Phone-based auth | Phase 4 (UAE/KSA — phone auth is dominant pattern there) |
 | `/api/household/join/<code>` GET requires auth | Phase 2 — small addition; reduces enumeration surface |
 
-### Multi-household support (deferred — captured 2026-05-03)
+### Multi-household support (shipped 2026-05-04 — asymmetric model)
 
-User-flagged scenarios that the current 1:1 user-to-household model cannot represent. Schema changes are non-trivial; defer until current Onboarding v2 is fully shipped and validated against real users.
+Corrected scope per user feedback (2026-05-04): a user can OWN at most one
+household but can be a MEMBER of N. Asymmetric model — single-slot owner,
+multi-slot membership. The original symmetric framing in the table below
+is preserved for reference; the **Status** column reflects what actually
+shipped.
 
-| # | Scenario | Current behaviour | Desired behaviour | Dependencies |
+| # | Scenario | Original target | Shipped behaviour | Commit |
 |---|---|---|---|---|
-| MH-1 | Solo user invited to another household | `accept_invite` blocks: "Already in a household" — but a user with NO household membership today shows `household_id=null` and can join freely. The block fires when they're already a member somewhere. **Edge** to clarify: when they HAVE a household + receive a new invite, UX should offer a choice (stay / leave-then-join) rather than a hard error | UX flow at `/join/<code>` shows: "You're currently in `<HouseholdA>`. Joining `<HouseholdB>` will [a] leave A or [b] keep both as a member of multiple households." Choice pre-resolved by the user before any state mutation | None for the `leave-then-join` path. The `keep both` path needs MH-3 |
-| MH-2 | Net-new user lands on a `/join/<code>` link without an existing account | After Phase 2: `/api/me` with `?invitation_code=` auto-creates profile with status=active. Their email need only match `invited_email` if it was set | Already covered — the "wait for invitation" framing is exactly what hybrid mode enables for invited users. Self-signups STILL go to admin pending. Optional future tightening: flip `registration_open=false` system-wide so the only entry path is via invitation | Phase 2 ships; then optional config toggle |
-| MH-3 | One user in N households (1 owned + N joined) | `users/{uid}.household_id: string` is single-valued. Cannot represent multi-membership | Replace `household_id` with `users/{uid}/memberships/{household_id}` subcollection (or `households: [{...}]` array on user doc). Each membership counts against the **OWNER's** tier quota, not the member's own. The current `TIER_MAX_MEMBERS` matrix already keys off owner tier, so the quota math is unchanged — only the membership lookup changes | Major refactor: every `get_user_household(uid)` call site (40+ places) becomes `get_active_membership(uid)` with an "active household" concept. SPA needs an active-household switcher in the header. Firestore rules need `householdId` parameter where they currently infer from user doc |
-| MH-4 | Member of household A wants to create their own household B | `create_household` blocks: "Already in a household. Leave first." | After MH-3 lands: drop the block; create_household just creates a new household where this user is owner. UX entry: a "Create your own household" button hidden in Settings → Advanced (searchable but not on main household page) so existing members don't accidentally fragment shared inventories | Depends on MH-3. UX-only: hide the entry behind Settings → Advanced + searchable. Add a confirmation modal explaining "you'll still be a member of `<HouseholdA>`" |
+| MH-1 | Solo user invited to another household | "[a] leave A or [b] keep both" two-branch dialog | **Shipped as one-line confirm.** Asymmetric model collapses the two branches: members can simply join the new one, keeping the existing membership. JoinPage detects the case and surfaces an accent-tinted clarifier. | `b74ea55` |
+| MH-2 | Net-new user lands on a `/join/<code>` link without an existing account | Already covered by Phase 4 hybrid mode | Unchanged. Optional registration-closed system-wide toggle still deferred. | n/a |
+| MH-3 | One user in N households (1 owned + N joined) | Replace single `household_id` field with subcollection; SPA active-household switcher; rules need `householdId` parameter | **Shipped in 4 sub-steps** (3a–3d). See breakdown below. | `5b4526a`, `ebd4697`, `da60a99`, `95afeaa` |
+| MH-4 | Member of household A wants to create their own household B | Drop the block; UX hidden behind Settings → Advanced | **Shipped without the hide.** Under asymmetric model, only members-without-an-owned-household see the create entry — visible-by-default in `<HouseholdView>` with a `<details>` collapsible. Backend `create_household` enforces "you can only own one"; the UI surfaces the entry only when actionable. | `5f14385` |
 
-**Sequence when ready to build:** MH-3 (data model) → MH-1 (join UX) + MH-4 (create UX, both unlocked by MH-3 in parallel) → MH-2 optional toggle. Estimate: ~3–5 days of focused work, gated on Phase 2+ being live with retention signal so the multi-household demand is real.
+#### MH-3 sub-steps (as built)
+
+| Step | What | Commit |
+|---|---|---|
+| MH-3a | No-op switcher skeleton: `useActiveHouseholdStore` (Zustand + per-user localStorage `ga:active_household:${uid}`), `apiClient` interceptor sets `X-Household` header, `<HouseholdSwitcher />` pill in AppLayout. Single value today; forward-compatible API. | `5b4526a` |
+| MH-3b | `backend/scripts/backfill_memberships.py` — idempotent `--dry-run` / `--execute` script that seeds `users/{uid}/memberships/{household_id}` from the legacy single-valued `household_id` field. Not yet run against prod. | `ebd4697` |
+| MH-3c | Backend block adjustments: `create_household` now checks `get_owned_household(uid)` (only blocks if user already owns one); `add_member` and `accept_invite` drop the cross-household block; new `_write_membership` helper dual-writes to the canonical subcollection on every join; new `list_user_memberships(uid)` with legacy fallback. Legacy `household_id` field stays as the active-scope shadow. | `da60a99` |
+| MH-3d | Firestore rules: new `isMemberOf(householdId)` predicate (memberships subcollection OR legacy field), `isHouseholdMember` refactored to use it, `match /users/{userId}/memberships/{householdId}` with owner-only read + write blocked, purchase-event rule keys access on the event's own `household_id` rather than the owner's active scope (prevents regression when users switch scopes). | `95afeaa` (parallel agent commit picked up the file; functionally landed) |
+
+#### Migration window invariants (still in effect)
+
+- Legacy `users/{uid}.household_id` field still exists and reflects the user's **active scope**. Read paths that use it keep working.
+- `list_user_memberships(uid)` falls back to the legacy field when the subcollection is empty (pre-backfill state). Both paths produce equivalent results for single-membership users.
+- Rules `isMemberOf` checks both paths so unbacked-filled users still pass.
+- Backfill (MH-3b script) is committed but **not yet run against prod**. Run with `python -m scripts.backfill_memberships --dry-run` first; `--execute` when ready.
+- The legacy fallback branches in `list_user_memberships` and Firestore rules can be dropped once all users have memberships subcollection entries.
+
+#### Known gaps / follow-ups
+
+- **`/api/me/memberships` endpoint not yet shipped.** The SPA's `<HouseholdSwitcher />` derives memberships from the legacy `useHousehold()` (single household). Multi-membership won't surface in the switcher dropdown until this endpoint exists. Deferred — easy add when needed.
+- **MH-4 owns-detection heuristic.** The Create-your-own button uses `data.household.owner_uid === currentUid` for the *active* household. Accurate today (one household_role slot), edge case for multi-household where user owns A but is currently scoped to B (button still shows; backend rejects with the right error). Full accuracy needs the membership endpoint above.
+- **SPA build refresh** lands at the end of this work, not per-step.
 
 ## Cross-references
 

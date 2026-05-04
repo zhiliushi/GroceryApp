@@ -67,6 +67,35 @@ Two view states gated by `useHousehold().data?.household`:
   The destructive copy mirrors the dialog text shown by
   `useConfirmDialog` so the tooltip and the dialog don't disagree.
 
+  **MH-4 — Create your own household entry** (members only): when
+  `data.household.owner_uid !== currentUid`, the household-view
+  branch additionally renders a `<CreateOwnHouseholdInline />`
+  collapsible at the bottom (after the Leave button). This surfaces
+  the create-flow for members who don't yet own one but might want
+  to manage their own inventory + invite others. Hidden for owners
+  (they're already at the cap of 1 owned household per user).
+  Backend `create_household` enforces the "owner=1" invariant; the
+  UI hides the entry when it isn't actionable.
+
+  Today's heuristic (`owner_uid !== currentUid` on the *active*
+  household) is accurate as long as the legacy `household_id` field
+  reflects whichever household the user owns. Edge case: a user
+  with the active scope on a member-only household but who owns a
+  different one (post multi-membership join) sees the Create entry
+  even though they shouldn't — backend rejects with the right
+  error. Full accuracy needs a future `/api/me/memberships`
+  endpoint; tracked in `PLAN_ONBOARDING_V2.md` MH-3 follow-ups.
+
+### Active-household switcher (`components/layout/HouseholdSwitcher.tsx`)
+
+Not part of `<SettingsPage />` directly, but related to the
+household-management surface. The switcher pill lives in
+`<AppLayout />` (top-4 right-72, desktop only). MH-3a no-op shape
+today: derives a single membership from `useHousehold()` and shows
+a one-row dropdown. Multi-row dropdown surfaces once the deferred
+`/api/me/memberships` endpoint ships and the SPA reads from it.
+See `PLAN_ONBOARDING_V2.md` MH-3 for the data flow.
+
 ### DisplayCurrencySection (`components/settings/DisplayCurrencySection.tsx`)
 
 Single dropdown of common currencies (`SGD, MYR, USD, EUR, GBP,
