@@ -1902,3 +1902,59 @@ async def admin_post_reply(
         raise HTTPException(status_code=404, detail="Feedback not found")
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/feedback/{feedback_id}/messages/{msg_id}")
+async def admin_edit_message(
+    feedback_id: str,
+    msg_id: str,
+    body: dict = None,  # type: ignore[assignment]
+    admin: UserInfo = Depends(require_admin),
+):
+    """Edit an existing admin message in a thread. Admin can only edit
+    admin-authored messages — moderation of user content goes through
+    the delete endpoint, not silent rewrite.
+
+    Body: { "text": str (1..2000) }
+    """
+    from app.services import feedback_service
+    from app.core.exceptions import NotFoundError, ValidationError
+    body = body or {}
+    text = body.get("text")
+    if not text or not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="text is required")
+    try:
+        return feedback_service.update_message(
+            feedback_id,
+            msg_id,
+            text=text,
+            requesting_author="admin",
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/feedback/{feedback_id}/messages/{msg_id}")
+async def admin_delete_message(
+    feedback_id: str,
+    msg_id: str,
+    admin: UserInfo = Depends(require_admin),
+):
+    """Soft-delete any thread message (admin moderation override).
+    Admin can delete user OR admin messages here; user-side delete
+    can only delete the user's own messages.
+    """
+    from app.services import feedback_service
+    from app.core.exceptions import NotFoundError, ValidationError
+    try:
+        return feedback_service.delete_message(
+            feedback_id,
+            msg_id,
+            requesting_author="admin",
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

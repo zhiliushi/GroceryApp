@@ -147,3 +147,58 @@ async def post_my_reply(
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return msg
+
+
+class EditMessageRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.patch("/{feedback_id}/messages/{msg_id}")
+async def edit_my_message(
+    feedback_id: str,
+    msg_id: str,
+    body: EditMessageRequest,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Edit one of the user's own thread messages. 403 when the user
+    doesn't own the thread; 400 when trying to edit someone else's
+    message kind (admin's reply); 404 when the message doesn't exist.
+    """
+    _load_user_owned(feedback_id, user)
+    try:
+        return feedback_service.update_message(
+            feedback_id,
+            msg_id,
+            text=body.text,
+            requesting_author="user",
+            requesting_user_id=user.uid,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/{feedback_id}/messages/{msg_id}")
+async def delete_my_message(
+    feedback_id: str,
+    msg_id: str,
+    user: UserInfo = Depends(get_current_user),
+):
+    """Soft-delete one of the user's own thread messages. The row stays
+    in chronological order but renders as a "(deleted)" placeholder
+    on both sides. Admin can also delete via the admin route — that's
+    the moderation override.
+    """
+    _load_user_owned(feedback_id, user)
+    try:
+        return feedback_service.delete_message(
+            feedback_id,
+            msg_id,
+            requesting_author="user",
+            requesting_user_id=user.uid,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

@@ -166,3 +166,63 @@ export function usePostThreadMessage(scope: 'mine' | 'admin') {
     },
   });
 }
+
+
+function buildMessageItemUrl(scope: 'mine' | 'admin', feedbackId: string, msgId: string): string {
+  return isAdminEndpoint(scope)
+    ? `${API.ADMIN_FEEDBACK_THREAD(feedbackId)}/${msgId}`
+    : `${API.FEEDBACK_THREAD(feedbackId)}/${msgId}`;
+}
+
+export function useEditThreadMessage(scope: 'mine' | 'admin') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      feedbackId,
+      msgId,
+      text,
+    }: {
+      feedbackId: string;
+      msgId: string;
+      text: string;
+    }) =>
+      apiClient
+        .patch<FeedbackMessage>(buildMessageItemUrl(scope, feedbackId, msgId), { text })
+        .then((r) => r.data),
+    onSuccess: (_msg, { feedbackId }) => {
+      qc.invalidateQueries({ queryKey: ['feedback', 'thread', feedbackId, 'mine'] });
+      qc.invalidateQueries({ queryKey: ['feedback', 'thread', feedbackId, 'admin'] });
+      // Admin edits resync admin_response on the parent → invalidate
+      // the parent lists so the legacy single-reply UIs (my-feedback
+      // inline fallback, v1 FeedbackTab) catch up.
+      qc.invalidateQueries({ queryKey: ['admin', 'feedback'] });
+      qc.invalidateQueries({ queryKey: ['feedback', 'mine'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data
+        ?.detail;
+      toast.error(msg || 'Failed to edit message');
+    },
+  });
+}
+
+export function useDeleteThreadMessage(scope: 'mine' | 'admin') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ feedbackId, msgId }: { feedbackId: string; msgId: string }) =>
+      apiClient
+        .delete<FeedbackMessage>(buildMessageItemUrl(scope, feedbackId, msgId))
+        .then((r) => r.data),
+    onSuccess: (_msg, { feedbackId }) => {
+      qc.invalidateQueries({ queryKey: ['feedback', 'thread', feedbackId, 'mine'] });
+      qc.invalidateQueries({ queryKey: ['feedback', 'thread', feedbackId, 'admin'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'feedback'] });
+      qc.invalidateQueries({ queryKey: ['feedback', 'mine'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data
+        ?.detail;
+      toast.error(msg || 'Failed to delete message');
+    },
+  });
+}

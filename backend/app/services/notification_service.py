@@ -193,3 +193,61 @@ def notify_admin_feedback(
 
     text = "\n".join(lines)
     notify_admin_telegram(text)
+
+
+def notify_admin_user_reply(
+    parent_doc: dict,
+    *,
+    reply_text: str,
+    web_public_url: Optional[str] = None,
+) -> None:
+    """Compose + send a Markdown notification when a user replies on
+    one of their own feedback threads.
+
+    Closes the silence in the original notify path: the v1 channel only
+    fired on the FIRST submission. With Sprint-2 threading, a user can
+    follow up — and that follow-up may re-open a thread admin had
+    marked resolved. Without this notify, those replies sit unseen
+    until admin checks Admin Hub manually.
+
+    Triggered from `feedback_service.post_message` when author='user'.
+    Fire-and-forget — wrapped in the caller's try/except so a Telegram
+    outage never blocks the user's reply write.
+
+    Deep-link points to `/admin-hub?id=<feedback_id>` (the new triage
+    surface, not the legacy /admin-settings?tab=feedback link).
+    """
+    kind = parent_doc.get("kind", "general")
+    prefix = _KIND_PREFIX.get(kind, _KIND_PREFIX["general"])
+
+    user_email = parent_doc.get("user_email") or "(unknown email)"
+    feedback_id = parent_doc.get("id", "")
+    parent_status = parent_doc.get("status", "new")
+    reopened = parent_status in ("resolved", "wont_fix")
+
+    body = (reply_text or "").strip()
+    if len(body) > 1500:
+        body = body[:1497] + "..."
+    quoted = "\n".join("> " + line for line in body.split("\n") if line.strip())
+
+    base = (web_public_url or "").rstrip("/")
+    triage_url = (
+        f"{base}/admin-hub?id={feedback_id}"
+        if base
+        else f"/admin-hub?id={feedback_id}"
+    )
+
+    lines = ["📨 *User reply* on " + prefix.replace("*", ""), ""]
+    lines.append(f"From: {user_email}")
+    if reopened:
+        # The post_message handler bumps status back to triaged when a
+        # user replies on a closed thread. Surface that explicitly so
+        # admin knows a previously-archived item is now active again.
+        lines.append("_Re-opens this thread (was marked resolved)._")
+    lines.append("")
+    if quoted:
+        lines.append(quoted)
+        lines.append("")
+    lines.append(f"🔗 [Open thread in Admin Hub]({triage_url})")
+
+    notify_admin_telegram("\n".join(lines))

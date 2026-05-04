@@ -474,7 +474,214 @@ def post_message(
         "feedback.message id=%s feedback=%s author=%s len=%d",
         msg_id, feedback_id, author, len(body),
     )
+
+    # User replies → push to admin Telegram. Admin replies don't notify
+    # (admin already knows what they sent). Wrapped so a notification
+    # outage NEVER blocks the message write.
+    if author == "user":
+        try:
+            from app.services import notification_service, config_service
+            web_public_url = (
+                config_service.get_system_config() or {}
+            ).get("web_public_url") or ""
+            # Reflect the post-update status so the notify message can
+            # mention "re-opens" correctly when the user reply bumped a
+            # closed thread back to triaged.
+            parent_for_notify = {**parent, "id": feedback_id, **parent_updates}
+            notification_service.notify_admin_user_reply(
+                parent_for_notify,
+                reply_text=body,
+                web_public_url=web_public_url,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feedback.notify user-reply failed (non-fatal): %s", exc)
+
     return msg_doc
+
+
+def _sync_admin_response_mirror(doc_ref: Any) -> None:
+    """Recompute the parent doc's `admin_response` + `responded_at`
+    mirror from the messages subcollection.
+
+    Called after a message edit / delete so legacy single-reply
+    surfaces (v1 FeedbackTab in Admin Settings, my-feedback inline
+    fallback, the 24h archive predicate that reads responded_at)
+    don't end up pointing at stale text.
+
+    Strategy: walk the messages in chronological order, find the
+    last non-deleted admin message; mirror its text + timestamp.
+    If no admin messages remain, clear the mirror (admin_response =
+    None, responded_at = None) — the thread is effectively un-replied
+    again, so the 24h timer should not fire.
+    """
+    latest_admin_text: Optional[str] = None
+    latest_admin_at: Optional[str] = None
+    for snap in (
+        doc_ref.collection(_MESSAGES_SUBCOLLECTION)
+        .order_by("created_at")
+        .stream()
+    ):
+        m = snap.to_dict() or {}
+        if m.get("author") != "admin":
+            continue
+        if m.get("deleted"):
+            continue
+        latest_admin_text = m.get("text")
+        latest_admin_at = m.get("created_at") or latest_admin_at
+    doc_ref.update(
+        {
+            "admin_response": latest_admin_text,
+            "responded_at": latest_admin_at,
+            "updated_at": _now_iso(),
+        }
+    )
+
+
+def update_message(
+    feedback_id: str,
+    msg_id: str,
+    *,
+    text: str,
+    requesting_author: str,
+    requesting_user_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Edit an existing thread message.
+
+    Authorization:
+      - 'user' caller: may only edit their own user-authored messages.
+        Verified via `requesting_user_id` matching the parent's
+        user_id (the same gate `post_message` enforces).
+      - 'admin' caller: may edit any admin-authored message. Admin
+        edits on user-authored messages are rejected (admins can
+        moderate via delete, not by silently rewriting a user's
+        words).
+
+    Stamps `edited_at` so the UI can render an "(edited)" hint.
+
+    When the edited message is the latest admin reply, the parent's
+    `admin_response` mirror is re-synced so legacy single-reply UIs
+    show the new text.
+
+    Raises:
+      ValidationError on bad text / overlong / wrong author / virtual.
+      NotFoundError when feedback or message doesn't exist.
+    """
+    if requesting_author not in _VALID_AUTHORS:
+        raise ValidationError(f"requesting_author must be one of {sorted(_VALID_AUTHORS)}")
+    body = (text or "").strip()
+    if not body:
+        raise ValidationError("text is required")
+    if len(body) > _MAX_THREAD_MESSAGE_LEN:
+        raise ValidationError(f"text must be ≤ {_MAX_THREAD_MESSAGE_LEN} characters")
+    if msg_id == "__virtual_admin_response__":
+        raise ValidationError("cannot edit the legacy single-reply projection")
+
+    doc_ref = _db().collection(_COLLECTION).document(feedback_id)
+    parent_snap = doc_ref.get()
+    if not parent_snap.exists:
+        raise NotFoundError(f"Feedback {feedback_id} not found")
+    parent = parent_snap.to_dict() or {}
+
+    if requesting_author == "user":
+        if requesting_user_id and parent.get("user_id") != requesting_user_id:
+            raise ValidationError("not your thread")
+
+    msg_ref = doc_ref.collection(_MESSAGES_SUBCOLLECTION).document(msg_id)
+    msg_snap = msg_ref.get()
+    if not msg_snap.exists:
+        raise NotFoundError(f"Message {msg_id} not found")
+    msg = msg_snap.to_dict() or {}
+    if msg.get("deleted"):
+        raise ValidationError("cannot edit a deleted message")
+
+    # Author authorization: each side can only edit their own author kind.
+    msg_author = msg.get("author")
+    if requesting_author == "user" and msg_author != "user":
+        raise ValidationError("can only edit your own messages")
+    if requesting_author == "admin" and msg_author != "admin":
+        raise ValidationError("admin can edit admin messages only")
+
+    msg_ref.update({"text": body, "edited_at": _now_iso()})
+
+    # Mirror sync only matters when the edited message was an admin
+    # reply — that's what `admin_response` shadows.
+    if msg_author == "admin":
+        _sync_admin_response_mirror(doc_ref)
+    else:
+        doc_ref.update({"updated_at": _now_iso()})
+
+    out = {**msg, "text": body, "edited_at": _now_iso(), "id": msg_id}
+    return out
+
+
+def delete_message(
+    feedback_id: str,
+    msg_id: str,
+    *,
+    requesting_author: str,
+    requesting_user_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Soft-delete a thread message. Sets `deleted: true` + `deleted_at`
+    + clears `text` so the row stays in chronological order but no
+    longer shows content.
+
+    Authorization:
+      - 'user' caller: may only delete their own user-authored
+        messages on their own thread.
+      - 'admin' caller: may delete any message (moderation override).
+        This is the asymmetry that earns admin a delete affordance on
+        user messages — same shape as comment moderation in any forum.
+
+    The mirror sync runs unconditionally after a delete since either
+    (a) we deleted an admin reply and the previous admin reply (if
+    any) becomes the canonical mirror, or (b) we deleted a user
+    message which doesn't change the mirror but bumps updated_at.
+    """
+    if requesting_author not in _VALID_AUTHORS:
+        raise ValidationError(f"requesting_author must be one of {sorted(_VALID_AUTHORS)}")
+    if msg_id == "__virtual_admin_response__":
+        raise ValidationError("cannot delete the legacy single-reply projection")
+
+    doc_ref = _db().collection(_COLLECTION).document(feedback_id)
+    parent_snap = doc_ref.get()
+    if not parent_snap.exists:
+        raise NotFoundError(f"Feedback {feedback_id} not found")
+    parent = parent_snap.to_dict() or {}
+
+    if requesting_author == "user":
+        if requesting_user_id and parent.get("user_id") != requesting_user_id:
+            raise ValidationError("not your thread")
+
+    msg_ref = doc_ref.collection(_MESSAGES_SUBCOLLECTION).document(msg_id)
+    msg_snap = msg_ref.get()
+    if not msg_snap.exists:
+        raise NotFoundError(f"Message {msg_id} not found")
+    msg = msg_snap.to_dict() or {}
+    if msg.get("deleted"):
+        # Idempotent — second delete is a no-op.
+        return {**msg, "id": msg_id}
+
+    msg_author = msg.get("author")
+    if requesting_author == "user" and msg_author != "user":
+        raise ValidationError("can only delete your own messages")
+
+    msg_ref.update(
+        {
+            "deleted": True,
+            "deleted_at": _now_iso(),
+            "deleted_by": requesting_author,
+            "text": "",
+        }
+    )
+    _sync_admin_response_mirror(doc_ref)
+
+    return {
+        **msg,
+        "deleted": True,
+        "deleted_at": _now_iso(),
+        "text": "",
+        "id": msg_id,
+    }
 
 
 def stats() -> dict[str, Any]:

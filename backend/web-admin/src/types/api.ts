@@ -121,6 +121,16 @@ export interface FeedbackMessage {
   /** ISO timestamp. May be null on legacy synthesized messages where
    *  the original timestamp is unrecoverable. */
   created_at?: string | null;
+  /** Set when the message has been edited; UI renders an "(edited)" hint. */
+  edited_at?: string | null;
+  /** True for soft-deleted messages. The row stays in chronological
+   *  order so the conversation history makes sense, but renders as a
+   *  "(deleted)" placeholder on both sides. */
+  deleted?: boolean;
+  deleted_at?: string | null;
+  /** Who soft-deleted it: 'user' = author deleted; 'admin' = admin
+   *  moderated. Renders different copy. */
+  deleted_by?: 'user' | 'admin' | null;
   /** True when the message is a read-time projection from the legacy
    *  `admin_response` field (no real subcollection row yet). The UI
    *  hides edit/delete affordances on virtual messages. */
