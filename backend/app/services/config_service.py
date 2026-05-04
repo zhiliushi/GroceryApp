@@ -185,27 +185,126 @@ def get_public_config() -> Dict[str, Any]:
 _DEFAULT_SYSTEM = {
     "max_active_users": 50,
     "registration_open": True,
+    # Onboarding v2 — Phase 0 schema additions. Defaults preserve current
+    # behaviour: empty URL means email-sending paths raise WebUrlNotConfiguredError
+    # once they're wired (Phase 2/5); maintenance_mode=False is the existing UX.
+    "web_public_url": "",
+    "maintenance_mode": False,
+    "maintenance_message": "",
     "updated_at": None,
     "updated_by": None,
 }
 
 
 def get_system_config() -> Dict[str, Any]:
-    """Get system config. Seeds defaults if not exists."""
+    """Get system config. Seeds defaults if not exists.
+
+    For docs created before the v2 schema additions, `set(merge=True)` is used
+    on the seeding path so missing keys get filled without overwriting existing
+    operator-set values. The legacy `set(...)` (no merge) is preserved for the
+    truly-missing case (initial install).
+    """
     db = _get_db()
     doc = db.collection("app_config").document("system").get()
     if doc.exists:
-        return doc.to_dict()
+        data = doc.to_dict() or {}
+        # Backfill missing v2 keys in-memory so callers always see the full shape.
+        # Persist only if any key was missing (one-time per doc).
+        missing = {k: v for k, v in _DEFAULT_SYSTEM.items() if k not in data}
+        if missing:
+            db.collection("app_config").document("system").set(missing, merge=True)
+            data.update(missing)
+        return data
     db.collection("app_config").document("system").set(_DEFAULT_SYSTEM)
     return _DEFAULT_SYSTEM.copy()
 
 
+# ---------------------------------------------------------------------------
+# Web URL gate (Onboarding v2 — Decision #5)
+# ---------------------------------------------------------------------------
+
+
+def get_web_url_or_raise() -> str:
+    """Return the configured public web URL, or raise WebUrlNotConfiguredError.
+
+    Called by every email-sending path that includes a link. If the admin
+    hasn't configured `web_public_url` (or it doesn't start with `https://`),
+    the calling endpoint surfaces a 503 with an admin-facing message.
+
+    Per Decision #5: ALL outbound emails containing links route through this
+    gate — invitation, password reset, email-verification resend, admin
+    pending-signup notification, account-status notifications.
+    """
+    from app.core.exceptions import WebUrlNotConfiguredError
+
+    config = get_system_config()
+    url = (config.get("web_public_url") or "").strip().rstrip("/")
+    if not url:
+        raise WebUrlNotConfiguredError(
+            "Public web URL not configured. Admin: set this in Settings → System "
+            "before flows that send links can run."
+        )
+    if not url.startswith("https://"):
+        raise WebUrlNotConfiguredError(
+            "Public web URL must start with https:// — current value is invalid."
+        )
+    return url
+
+
+# ---------------------------------------------------------------------------
+# Maintenance mode (Onboarding v2 — Decision #3)
+# ---------------------------------------------------------------------------
+
+# 5-second in-process TTL cache for the maintenance_mode flag. Without this,
+# every non-GET request would do a Firestore read in the middleware, which
+# burns the daily quota fast.
+_MAINT_CACHE: Dict[str, Any] = {"value": None, "expires_at": 0.0}
+_MAINT_TTL_SEC = 5.0
+
+
+def is_maintenance_mode_cached() -> bool:
+    """Return current maintenance_mode flag, cached with 5s TTL.
+
+    Used by MaintenanceModeMiddleware (added in Phase 5). Read-side helper —
+    writes go through `update_system_config` which evicts the cache.
+    """
+    now = time.time()
+    if _MAINT_CACHE["expires_at"] > now and _MAINT_CACHE["value"] is not None:
+        return bool(_MAINT_CACHE["value"])
+    config = get_system_config()
+    value = bool(config.get("maintenance_mode", False))
+    _MAINT_CACHE["value"] = value
+    _MAINT_CACHE["expires_at"] = now + _MAINT_TTL_SEC
+    return value
+
+
+def _evict_maint_cache() -> None:
+    """Force the next is_maintenance_mode_cached() call to re-read Firestore."""
+    _MAINT_CACHE["value"] = None
+    _MAINT_CACHE["expires_at"] = 0.0
+
+
 def update_system_config(config: Dict[str, Any], admin_uid: str) -> None:
-    """Update system config (max users, registration toggle)."""
+    """Update system config (max users, registration toggle, web URL, maintenance).
+
+    Validates `web_public_url` and `maintenance_message` if present.
+    Evicts the maintenance-mode cache so the new value is picked up immediately.
+    """
+    if "web_public_url" in config:
+        url = (config.get("web_public_url") or "").strip()
+        if url and not url.startswith("https://"):
+            raise ValueError("web_public_url must start with https:// or be empty")
+        config["web_public_url"] = url.rstrip("/") if url else ""
+    if "maintenance_message" in config:
+        msg = (config.get("maintenance_message") or "").strip()
+        if len(msg) > 500:
+            raise ValueError("maintenance_message must be 500 characters or fewer")
+        config["maintenance_message"] = msg
     db = _get_db()
     config["updated_at"] = int(time.time() * 1000)
     config["updated_by"] = admin_uid
     db.collection("app_config").document("system").set(config, merge=True)
+    _evict_maint_cache()
     logger.info("System config updated by %s", admin_uid)
 
 

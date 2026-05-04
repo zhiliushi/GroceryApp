@@ -684,6 +684,22 @@ export interface RevisionsListResponse {
   revisions: RecipeRevision[];
 }
 
+/**
+ * A single curated common-ingredient entry (e.g. "egg", "santan", "kicap manis").
+ * The full list is ~134 entries; the type-ahead loads it once per session.
+ */
+export interface CommonIngredient {
+  name_norm: string;
+  display_name: string;
+  default_category?: string;
+  aliases?: string[];
+}
+
+export interface CommonIngredientsResponse {
+  items: CommonIngredient[];
+  count: number;
+}
+
 export interface Recipe {
   id: string;
   name: string;

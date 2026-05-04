@@ -1,0 +1,1 @@
+import{r as e}from"./chunk-DECur_0Z.js";import{t}from"./react-DYpzXrK8.js";var n=e(t(),1),r=0,i=null;function a(e){(0,n.useEffect)(()=>{if(e)return r===0&&(i=document.body.style.overflow,document.body.style.overflow=`hidden`),r+=1,()=>{r=Math.max(0,r-1),r===0&&(document.body.style.overflow=i??``,i=null)}},[e])}export{a as t};

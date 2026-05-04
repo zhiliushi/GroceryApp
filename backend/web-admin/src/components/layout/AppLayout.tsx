@@ -8,6 +8,7 @@ import GlobalSearchBar from '@/components/search/GlobalSearchBar';
 import UpdatePrompt from '@/components/pwa/UpdatePrompt';
 import InstallPrompt from '@/components/pwa/InstallPrompt';
 import CatalogCleanupBanner from '@/components/banners/CatalogCleanupBanner';
+import MaintenanceBanner from '@/components/banners/MaintenanceBanner';
 import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/utils/cn';
 
@@ -55,6 +56,7 @@ export default function AppLayout() {
             │ Discipline rule + reasoning: project_context.md "Layout —    │
             │ global floating-action safe-zone".                           │
             └──────────────────────────────────────────────────────────────┘ */}
+        <MaintenanceBanner />
         <CatalogCleanupBanner />
         <div className="md:pt-16 pb-24 md:pb-0 min-w-0">
           <Outlet />

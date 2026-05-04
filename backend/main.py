@@ -186,7 +186,13 @@ class MaintenanceModeMiddleware(_BaseHTTPMiddleware):
     )
 
     async def dispatch(self, request: Request, call_next) -> _StarletteResponse:
-        if request.method == "GET":
+        # Read-equivalent methods bypass entirely. OPTIONS is critical: CORS
+        # preflight uses it, and the CORS middleware sits INSIDE this one in
+        # the chain. Blocking OPTIONS would silently break every cross-origin
+        # request during maintenance even though the actual request would
+        # have been a write that we WANT to block — the user would see a
+        # generic CORS error instead of the maintenance banner.
+        if request.method in ("GET", "HEAD", "OPTIONS"):
             return await call_next(request)
         path = request.url.path
         for exempt in self._EXEMPT_PATHS:

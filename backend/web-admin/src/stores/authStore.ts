@@ -28,6 +28,38 @@ function clearCookie() {
   document.cookie = '__session=; path=/; max-age=0';
 }
 
+// ── Pending-invitation handoff (Onboarding v2 / Phase 4) ─────────────────
+// When an unauthenticated user lands on /join/CODE, the JoinPage stores the
+// code here so that after Firebase sign-in completes, fetchUserInfo can pass
+// it to /api/me?invitation_code=CODE. Backend uses it to auto-approve (skip
+// admin queue) and link the user's profile to the invitation for later
+// auto-accept on registration completion.
+const PENDING_INVITE_KEY = 'groceryapp.pending_invite_code';
+
+export function setPendingInvite(code: string): void {
+  try {
+    window.localStorage.setItem(PENDING_INVITE_KEY, code.toUpperCase());
+  } catch {
+    /* localStorage disabled — invitation will fall back to self-signup pending */
+  }
+}
+
+function readPendingInvite(): string | null {
+  try {
+    return window.localStorage.getItem(PENDING_INVITE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingInvite(): void {
+  try {
+    window.localStorage.removeItem(PENDING_INVITE_KEY);
+  } catch {
+    /* non-fatal */
+  }
+}
+
 interface AuthStoreState {
   user: AuthUser | null;
   firebaseUser: FBUser | null;
@@ -81,11 +113,21 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
     try {
       const cookie = document.cookie.match(/__session=([^;]+)/);
       const token = cookie?.[1] || '';
-      const resp = await fetch('/api/me', {
+      // Onboarding v2: pass any pending invitation code to /api/me so the
+      // backend can auto-approve invited users (skip admin queue).
+      const pendingCode = readPendingInvite();
+      const url = pendingCode
+        ? `/api/me?invitation_code=${encodeURIComponent(pendingCode)}`
+        : '/api/me';
+      const resp = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await resp.json();
       if (data.authenticated) {
+        // Clear pending invite once it's been bound (or fell through to self-signup).
+        // Done unconditionally: re-trying with the same stale code on every page load
+        // would burn the auto-approve match against a different account by mistake.
+        if (pendingCode) clearPendingInvite();
         set({
           user: data as AuthUser,
           isAuthenticated: true,
@@ -94,7 +136,13 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
           initialized: true,
         });
       } else {
-        set({ loading: false, initialized: true });
+        // Anonymous response — but it still carries maintenance_mode / web_public_url.
+        // Stash those in user so the maintenance banner can render on /login.
+        set({
+          user: data as AuthUser,
+          loading: false,
+          initialized: true,
+        });
       }
     } catch {
       set({ loading: false, initialized: true });

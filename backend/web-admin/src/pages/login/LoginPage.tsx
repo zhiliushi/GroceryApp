@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function LoginPage() {
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
 
   if (initialized && isAuthenticated) return <Navigate to="/dashboard" replace />;
 
@@ -19,6 +21,26 @@ export default function LoginPage() {
       await signInWithEmail(email, password);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign in failed';
+      setError(msg.replace('Firebase: ', '').replace(/\(auth\/.*\)/, '').trim());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError('');
+    setResetSentTo(null);
+    if (!email || !/^[^@]+@[^@]+\.[^@]+$/.test(email)) {
+      setError('Enter your email address above first, then click "Forgot password".');
+      return;
+    }
+    setLoading(true);
+    try {
+      const auth = getAuth();
+      await sendPasswordResetEmail(auth, email);
+      setResetSentTo(email);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send reset email';
       setError(msg.replace('Firebase: ', '').replace(/\(auth\/.*\)/, '').trim());
     } finally {
       setLoading(false);
@@ -79,7 +101,24 @@ export default function LoginPage() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={loading}
+                className="text-xs text-ga-text-secondary hover:text-ga-text-primary disabled:opacity-50"
+              >
+                Forgot password?
+              </button>
+            </div>
           </form>
+
+          {resetSentTo && (
+            <div className="mt-3 bg-green-500/10 border border-green-500/30 text-green-400 rounded-md px-3 py-2 text-xs">
+              Password reset email sent to <strong>{resetSentTo}</strong>. Check your inbox + spam.
+            </div>
+          )}
 
           <div className="flex items-center my-4">
             <div className="flex-1 border-t border-ga-border" />

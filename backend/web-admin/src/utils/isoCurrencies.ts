@@ -1,0 +1,115 @@
+/**
+ * ISO 4217 currency list (subset — common-use tier prioritised by phased
+ * launch markets; the rest sorted alphabetically).
+ *
+ * Used for the registration form's currency dropdown. The country selector
+ * pre-fills a default; users can override here.
+ */
+
+export interface CurrencyEntry {
+  code: string; // ISO 4217 3-letter
+  name: string;
+}
+
+const PRIORITY: CurrencyEntry[] = [
+  { code: 'MYR', name: 'Malaysian Ringgit' },
+  { code: 'SGD', name: 'Singapore Dollar' },
+  { code: 'AUD', name: 'Australian Dollar' },
+  { code: 'GBP', name: 'British Pound' },
+  { code: 'USD', name: 'US Dollar' },
+  { code: 'EUR', name: 'Euro' },
+  { code: 'AED', name: 'UAE Dirham' },
+  { code: 'SAR', name: 'Saudi Riyal' },
+  { code: 'IDR', name: 'Indonesian Rupiah' },
+  { code: 'THB', name: 'Thai Baht' },
+  { code: 'PHP', name: 'Philippine Peso' },
+];
+
+const REST: CurrencyEntry[] = [
+  { code: 'AFN', name: 'Afghan Afghani' },
+  { code: 'ALL', name: 'Albanian Lek' },
+  { code: 'AMD', name: 'Armenian Dram' },
+  { code: 'ARS', name: 'Argentine Peso' },
+  { code: 'AZN', name: 'Azerbaijani Manat' },
+  { code: 'BAM', name: 'Bosnia-Herzegovina Convertible Mark' },
+  { code: 'BDT', name: 'Bangladeshi Taka' },
+  { code: 'BGN', name: 'Bulgarian Lev' },
+  { code: 'BHD', name: 'Bahraini Dinar' },
+  { code: 'BND', name: 'Brunei Dollar' },
+  { code: 'BOB', name: 'Bolivian Boliviano' },
+  { code: 'BRL', name: 'Brazilian Real' },
+  { code: 'BYN', name: 'Belarusian Ruble' },
+  { code: 'CAD', name: 'Canadian Dollar' },
+  { code: 'CHF', name: 'Swiss Franc' },
+  { code: 'CLP', name: 'Chilean Peso' },
+  { code: 'CNY', name: 'Chinese Yuan' },
+  { code: 'COP', name: 'Colombian Peso' },
+  { code: 'CRC', name: 'Costa Rican Colón' },
+  { code: 'CZK', name: 'Czech Koruna' },
+  { code: 'DKK', name: 'Danish Krone' },
+  { code: 'DOP', name: 'Dominican Peso' },
+  { code: 'DZD', name: 'Algerian Dinar' },
+  { code: 'EGP', name: 'Egyptian Pound' },
+  { code: 'ETB', name: 'Ethiopian Birr' },
+  { code: 'GEL', name: 'Georgian Lari' },
+  { code: 'GHS', name: 'Ghanaian Cedi' },
+  { code: 'GTQ', name: 'Guatemalan Quetzal' },
+  { code: 'HKD', name: 'Hong Kong Dollar' },
+  { code: 'HUF', name: 'Hungarian Forint' },
+  { code: 'ILS', name: 'Israeli New Shekel' },
+  { code: 'INR', name: 'Indian Rupee' },
+  { code: 'IQD', name: 'Iraqi Dinar' },
+  { code: 'IRR', name: 'Iranian Rial' },
+  { code: 'ISK', name: 'Icelandic Króna' },
+  { code: 'JMD', name: 'Jamaican Dollar' },
+  { code: 'JOD', name: 'Jordanian Dinar' },
+  { code: 'JPY', name: 'Japanese Yen' },
+  { code: 'KES', name: 'Kenyan Shilling' },
+  { code: 'KHR', name: 'Cambodian Riel' },
+  { code: 'KRW', name: 'South Korean Won' },
+  { code: 'KWD', name: 'Kuwaiti Dinar' },
+  { code: 'KZT', name: 'Kazakhstani Tenge' },
+  { code: 'LAK', name: 'Lao Kip' },
+  { code: 'LBP', name: 'Lebanese Pound' },
+  { code: 'LKR', name: 'Sri Lankan Rupee' },
+  { code: 'MAD', name: 'Moroccan Dirham' },
+  { code: 'MDL', name: 'Moldovan Leu' },
+  { code: 'MMK', name: 'Myanmar Kyat' },
+  { code: 'MNT', name: 'Mongolian Tögrög' },
+  { code: 'MOP', name: 'Macanese Pataca' },
+  { code: 'MVR', name: 'Maldivian Rufiyaa' },
+  { code: 'MXN', name: 'Mexican Peso' },
+  { code: 'NGN', name: 'Nigerian Naira' },
+  { code: 'NOK', name: 'Norwegian Krone' },
+  { code: 'NPR', name: 'Nepalese Rupee' },
+  { code: 'NZD', name: 'New Zealand Dollar' },
+  { code: 'OMR', name: 'Omani Rial' },
+  { code: 'PAB', name: 'Panamanian Balboa' },
+  { code: 'PEN', name: 'Peruvian Sol' },
+  { code: 'PKR', name: 'Pakistani Rupee' },
+  { code: 'PLN', name: 'Polish Złoty' },
+  { code: 'PYG', name: 'Paraguayan Guaraní' },
+  { code: 'QAR', name: 'Qatari Riyal' },
+  { code: 'RON', name: 'Romanian Leu' },
+  { code: 'RSD', name: 'Serbian Dinar' },
+  { code: 'RUB', name: 'Russian Ruble' },
+  { code: 'RWF', name: 'Rwandan Franc' },
+  { code: 'SEK', name: 'Swedish Krona' },
+  { code: 'TRY', name: 'Turkish Lira' },
+  { code: 'TWD', name: 'New Taiwan Dollar' },
+  { code: 'TZS', name: 'Tanzanian Shilling' },
+  { code: 'UAH', name: 'Ukrainian Hryvnia' },
+  { code: 'UGX', name: 'Ugandan Shilling' },
+  { code: 'UYU', name: 'Uruguayan Peso' },
+  { code: 'UZS', name: 'Uzbekistani Som' },
+  { code: 'VES', name: 'Venezuelan Bolívar' },
+  { code: 'VND', name: 'Vietnamese Đồng' },
+  { code: 'YER', name: 'Yemeni Rial' },
+  { code: 'ZAR', name: 'South African Rand' },
+  { code: 'ZMW', name: 'Zambian Kwacha' },
+  { code: 'ZWG', name: 'Zimbabwean Dollar' },
+];
+
+REST.sort((a, b) => a.name.localeCompare(b.name));
+
+export const ISO_4217_CURRENCIES: CurrencyEntry[] = [...PRIORITY, ...REST];

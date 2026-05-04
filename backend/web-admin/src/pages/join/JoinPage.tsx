@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Navigate, useParams, useNavigate, Link } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useJoinHousehold } from '@/api/mutations/useHouseholdMutations';
-import { useAuthStore } from '@/stores/authStore';
+import { setPendingInvite, useAuthStore } from '@/stores/authStore';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 
 interface InviteInfo {
@@ -17,7 +17,7 @@ interface InviteInfo {
 export default function JoinPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const joinMutation = useJoinHousehold();
 
   const [info, setInfo] = useState<InviteInfo | null>(null);
@@ -38,6 +38,17 @@ export default function JoinPage() {
     });
   };
 
+  const handleSignInToJoin = () => {
+    if (!code) return;
+    // Onboarding v2 (PLAN_ONBOARDING_V2.md Phase 4): stash the code so
+    // authStore.fetchUserInfo passes it to /api/me?invitation_code= after
+    // Firebase sign-in completes. The backend then auto-approves the user
+    // (skip admin queue) and links the profile to the invitation for later
+    // auto-accept on registration completion.
+    setPendingInvite(code);
+    navigate('/login', { state: { from: `/join/${code}` } });
+  };
+
   if (loading) return <LoadingSpinner text="Loading invitation..." />;
 
   if (!isAuthenticated) {
@@ -48,15 +59,30 @@ export default function JoinPage() {
           <h1 className="text-lg font-semibold text-ga-text-primary mb-2">Join Household</h1>
           <p className="text-sm text-ga-text-secondary mb-4">
             {info?.valid
-              ? `You're invited to join "${info.household_name}". Log in or register to continue.`
-              : 'Log in to accept this invitation.'}
+              ? `You're invited to join "${info.household_name}". Sign in to continue.`
+              : 'Sign in to accept this invitation.'}
           </p>
-          <Link to="/login" className="bg-ga-accent hover:bg-ga-accent/90 text-white text-sm font-medium rounded-lg px-6 py-2.5 inline-block">
-            Log In / Register
-          </Link>
+          <button
+            onClick={handleSignInToJoin}
+            className="bg-ga-accent hover:bg-ga-accent/90 text-white text-sm font-medium rounded-lg px-6 py-2.5"
+          >
+            Sign in to join
+          </button>
+          <p className="mt-3 text-[11px] text-ga-text-secondary">
+            Use the email address that received this invitation — codes are email-bound.
+          </p>
         </div>
       </div>
     );
+  }
+
+  // Authenticated but not yet active (e.g. registration_required, pending_approval).
+  // Send them through the normal auth funnel — ProtectedRoute / StateGate handles
+  // the destination. The pending invitation, if it was bound at sign-in time,
+  // auto-accepts when registration completes.
+  const state = user?.state ?? 'active';
+  if (state !== 'active') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (!info?.valid) {

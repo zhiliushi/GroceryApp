@@ -175,7 +175,13 @@ async def update_my_role(body: dict, user: UserInfo = Depends(get_current_user))
 
 @router.post("/invite")
 async def generate_invite(body: dict, user: UserInfo = Depends(get_current_user)):
-    """Generate an invitation code (owner only)."""
+    """Generate an invitation code (owner only).
+
+    Onboarding v2 — Decision #5: if `email` is provided in the body (i.e. the
+    owner wants the system to send an email with a join link), the public web
+    URL must be configured first. Returns 503 if not, with an admin-facing
+    message. No invitation record is created in that case (no zombie codes).
+    """
     household = household_service.get_user_household(user.uid)
     if not household:
         raise HTTPException(404, "You're not in a household")
@@ -185,6 +191,16 @@ async def generate_invite(body: dict, user: UserInfo = Depends(get_current_user)
     assigned_role = body.get("role", "brother")
     invited_email = body.get("email")  # optional
 
+    # Pre-flight: if email will be sent, web URL must be configured.
+    # Validate BEFORE generating any record so failures don't leave zombie codes.
+    if invited_email:
+        from app.core.exceptions import WebUrlNotConfiguredError
+        from app.services import config_service
+        try:
+            config_service.get_web_url_or_raise()
+        except WebUrlNotConfiguredError as e:
+            raise HTTPException(status_code=e.http_status, detail=e.message)
+
     try:
         invitation = invitation_service.generate_invite(
             household_id=household["id"],
@@ -193,7 +209,7 @@ async def generate_invite(body: dict, user: UserInfo = Depends(get_current_user)
             invited_email=invited_email,
         )
 
-        # Send email if provided (best-effort)
+        # Send email if provided (best-effort once URL was pre-validated above)
         if invited_email:
             try:
                 from app.services import email_service
@@ -248,12 +264,17 @@ async def get_invitation_info(code: str):
 
 @router.post("/join/{code}")
 async def accept_invitation(code: str, user: UserInfo = Depends(get_current_user)):
-    """Accept an invitation and join the household."""
+    """Accept an invitation and join the household.
+
+    Onboarding v2 — Phase 3: passes `user_email` to enforce email-bound
+    matching when the invitation specifies `invited_email`.
+    """
     try:
         household = invitation_service.accept_invite(
             code=code,
             uid=user.uid,
             display_name=user.display_name or user.email.split("@")[0],
+            user_email=user.email,
         )
         return {"success": True, "household": household}
     except ValueError as e:

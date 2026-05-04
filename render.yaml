@@ -9,6 +9,10 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
+      # Wildcard is closed-beta default. BEFORE PUBLIC LAUNCH: override in
+      # Render dashboard with the actual brand domains, e.g.
+      #   ["https://app.<brand>.com","https://www.<brand>.com"]
+      # main.py logs a SECURITY warning on every startup if production sees '*'.
       - key: ALLOWED_ORIGINS
         value: '["*"]'
       - key: FIREBASE_CREDENTIALS_JSON

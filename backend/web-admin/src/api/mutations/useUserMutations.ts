@@ -81,6 +81,24 @@ export function useDeleteUser() {
   });
 }
 
+/** Onboarding v2 — Phase 5. Reject a pending self-signup user.
+ *  Sets status=disabled with `disabled_reason` set so the queue UI can
+ *  distinguish rejected (was-pending) from disabled (was-active). */
+export function useRejectUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ uid, reason }: { uid: string; reason?: string }) =>
+      apiClient
+        .post(`/api/admin/users/${uid}/reject`, { reason: reason || 'rejected' })
+        .then((r) => r.data),
+    onSuccess: () => {
+      toast.success('User rejected');
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Failed to reject user'),
+  });
+}
+
 export function useUpdateUserTools() {
   const qc = useQueryClient();
   return useMutation({

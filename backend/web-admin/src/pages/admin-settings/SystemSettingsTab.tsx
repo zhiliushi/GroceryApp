@@ -11,6 +11,10 @@ interface SystemConfig {
   active_users: number;
   capacity_percent: number;
   capacity_level: 'normal' | 'warning' | 'critical';
+  // Onboarding v2 — Phase 5 additions
+  web_public_url: string;
+  maintenance_mode: boolean;
+  maintenance_message: string;
   updated_at: number | null;
 }
 
@@ -24,10 +28,18 @@ export default function SystemSettingsTab() {
   const qc = useQueryClient();
   const [maxUsers, setMaxUsers] = useState<number | null>(null);
   const [regOpen, setRegOpen] = useState<boolean | null>(null);
+  // Onboarding v2 — Phase 5 staged fields
+  const [webUrl, setWebUrl] = useState<string | null>(null);
+  const [maintMode, setMaintMode] = useState<boolean | null>(null);
+  const [maintMsg, setMaintMsg] = useState<string | null>(null);
 
   const updateMutation = useMutation({
     mutationFn: (config: Record<string, unknown>) => apiClient.put('/api/admin/config/system', config),
     onSuccess: () => { toast.success('System config saved'); qc.invalidateQueries({ queryKey: ['system'] }); },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Save failed');
+    },
   });
 
   if (isLoading) return <LoadingSpinner text="Loading system config..." />;
@@ -36,7 +48,15 @@ export default function SystemSettingsTab() {
 
   const displayMax = maxUsers ?? data.max_active_users;
   const displayRegOpen = regOpen ?? data.registration_open;
-  const hasChanges = maxUsers !== null || regOpen !== null;
+  const displayWebUrl = webUrl ?? (data.web_public_url || '');
+  const displayMaintMode = maintMode ?? data.maintenance_mode;
+  const displayMaintMsg = maintMsg ?? (data.maintenance_message || '');
+  const hasChanges =
+    maxUsers !== null ||
+    regOpen !== null ||
+    webUrl !== null ||
+    maintMode !== null ||
+    maintMsg !== null;
 
   const barColor = data.capacity_level === 'critical'
     ? 'bg-red-500'
@@ -44,12 +64,28 @@ export default function SystemSettingsTab() {
       ? 'bg-yellow-500'
       : 'bg-green-500';
 
+  const webUrlValid =
+    displayWebUrl.length === 0 || /^https:\/\/.+/.test(displayWebUrl);
+
   const handleSave = () => {
+    if (!webUrlValid) {
+      toast.error('Web URL must start with https:// or be empty');
+      return;
+    }
     const update: Record<string, unknown> = {};
     if (maxUsers !== null) update.max_active_users = maxUsers;
     if (regOpen !== null) update.registration_open = regOpen;
+    if (webUrl !== null) update.web_public_url = webUrl.trim();
+    if (maintMode !== null) update.maintenance_mode = maintMode;
+    if (maintMsg !== null) update.maintenance_message = maintMsg;
     updateMutation.mutate(update, {
-      onSuccess: () => { setMaxUsers(null); setRegOpen(null); },
+      onSuccess: () => {
+        setMaxUsers(null);
+        setRegOpen(null);
+        setWebUrl(null);
+        setMaintMode(null);
+        setMaintMsg(null);
+      },
     });
   };
 
@@ -130,14 +166,88 @@ export default function SystemSettingsTab() {
         )}
       </div>
 
+      {/* Public web URL — Onboarding v2 / Decision #5 */}
+      <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
+        <h3 className="text-sm font-semibold text-ga-text-primary mb-1">Public web URL</h3>
+        <p className="text-xs text-ga-text-secondary mb-3">
+          Used in invitation, password-reset, and admin notification emails.
+          Must start with <code className="text-ga-accent">https://</code>. While
+          empty, all flows that send link-bearing emails return 503.
+        </p>
+        <input
+          type="url"
+          value={displayWebUrl}
+          onChange={(e) => setWebUrl(e.target.value)}
+          placeholder="https://app.<brand>.com"
+          className={cn(
+            'w-full bg-ga-bg-hover border rounded-lg px-3 py-2 text-sm text-ga-text-primary outline-none',
+            webUrlValid ? 'border-ga-border' : 'border-red-500/60',
+          )}
+        />
+        {!webUrlValid && (
+          <p className="text-xs text-red-400 mt-1.5">
+            Must start with <code>https://</code> or be empty.
+          </p>
+        )}
+      </div>
+
+      {/* Maintenance mode — Onboarding v2 / Decision #3 */}
+      <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
+        <h3 className="text-sm font-semibold text-ga-text-primary mb-1">Maintenance mode</h3>
+        <p className="text-xs text-ga-text-secondary mb-3">
+          When ON, all non-GET endpoints return 503 for non-admin users (admin
+          bypass). Reads still work. Used during the Tier-3 Firestore migration
+          and other planned downtime. Backend caches the flag for 5 seconds, so
+          changes take effect on the next minute.
+        </p>
+
+        <div className="flex items-center gap-3 mb-3">
+          <button
+            onClick={() => setMaintMode(!displayMaintMode)}
+            className={cn(
+              'relative w-12 h-6 rounded-full transition-colors',
+              displayMaintMode ? 'bg-yellow-500' : 'bg-gray-600',
+            )}
+          >
+            <div className={cn(
+              'absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform',
+              displayMaintMode ? 'translate-x-6' : 'translate-x-0.5',
+            )} />
+          </button>
+          <span className="text-sm text-ga-text-primary">
+            {displayMaintMode ? 'ON — writes blocked for non-admins' : 'OFF — normal operation'}
+          </span>
+        </div>
+
+        <label className="block text-xs text-ga-text-secondary mb-1.5">
+          Banner message (≤500 chars)
+        </label>
+        <textarea
+          value={displayMaintMsg}
+          onChange={(e) => setMaintMsg(e.target.value.slice(0, 500))}
+          placeholder="We're updating the system — back shortly."
+          rows={2}
+          className="w-full bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary outline-none resize-y"
+        />
+        <p className="text-xs text-ga-text-secondary mt-1">
+          {displayMaintMsg.length}/500 — shown in the site-wide banner when maintenance is ON.
+        </p>
+      </div>
+
       {/* Save */}
       {hasChanges && (
         <div className="flex gap-2">
-          <button onClick={handleSave} disabled={updateMutation.isPending}
+          <button onClick={handleSave} disabled={updateMutation.isPending || !webUrlValid}
             className="bg-ga-accent hover:bg-ga-accent/90 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-4 py-2">
             {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
           </button>
-          <button onClick={() => { setMaxUsers(null); setRegOpen(null); }}
+          <button onClick={() => {
+              setMaxUsers(null);
+              setRegOpen(null);
+              setWebUrl(null);
+              setMaintMode(null);
+              setMaintMsg(null);
+            }}
             className="border border-ga-border text-ga-text-secondary text-sm rounded-lg px-4 py-2">
             Cancel
           </button>

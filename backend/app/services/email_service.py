@@ -156,8 +156,19 @@ def send_invitation_email(
     inviter_name: str,
     code: str,
 ) -> None:
-    """Send a household invitation email. Sync wrapper — fire and forget."""
+    """Send a household invitation email. Sync wrapper.
+
+    Onboarding v2 — Decision #5: requires `web_public_url` to be configured.
+    Raises `WebUrlNotConfiguredError` synchronously if unset; the calling
+    endpoint surfaces this as a 503 with an admin-facing message. Once the
+    URL passes the check, the actual send is async fire-and-forget — provider
+    failures are logged but don't surface to the caller.
+    """
     import asyncio
+    from app.services import config_service
+
+    web_url = config_service.get_web_url_or_raise()  # raises if unset / non-https
+    join_url = f"{web_url}/join/{code}"
 
     subject = f"Join {inviter_name}'s household on GroceryApp"
     html = f"""
@@ -167,12 +178,13 @@ def send_invitation_email(
         "<strong>{household_name}</strong>" on GroceryApp.</p>
         <p>You'll share grocery inventory, shopping lists, and price tracking with the family.</p>
         <div style="text-align: center; margin: 24px 0;">
-            <div style="background: #f0f0f5; border-radius: 8px; padding: 16px; display: inline-block;">
-                <span style="font-size: 12px; color: #666;">Your invite code:</span><br>
-                <span style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #4f46e5;">{code}</span>
+            <a href="{join_url}" style="background: #4f46e5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Join household</a>
+            <div style="margin-top: 16px; background: #f0f0f5; border-radius: 8px; padding: 16px; display: inline-block;">
+                <span style="font-size: 12px; color: #666;">Or use code:</span><br>
+                <span style="font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #4f46e5;">{code}</span>
             </div>
         </div>
-        <p style="font-size: 13px; color: #666;">This invitation expires in 7 days.</p>
+        <p style="font-size: 13px; color: #666;">This invitation expires in 7 days. Use the same email address that received this message — invitations are email-bound.</p>
         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
         <p style="font-size: 11px; color: #999;">GroceryApp — Smart grocery management for families.</p>
     </div>
@@ -186,6 +198,87 @@ def send_invitation_email(
             loop.run_until_complete(send_email(to_email, subject, html))
     except Exception as e:
         logger.warning("Failed to send invitation email to %s: %s", to_email, e)
+
+
+# ---------------------------------------------------------------------------
+# Admin pending-signup notification (Onboarding v2 — Decision #2)
+# ---------------------------------------------------------------------------
+
+
+def send_admin_pending_signup_notification(pending_uid: str, pending_email: str) -> None:
+    """Notify admin(s) when a self-signup user enters the pending-approval queue.
+
+    Per Decision #2: best-effort, never blocks the user-facing /api/me response.
+    Per Decision #5: requires `web_public_url` to be configured (the email
+    contains a dashboard link). If URL unset, logs warning and skips silently.
+
+    Recipient resolution: each UID in `settings.ADMIN_UIDS` → looked up in
+    Firestore `users/{uid}.email`. Sends to all admins with resolvable emails.
+    """
+    import asyncio
+    from app.core.exceptions import WebUrlNotConfiguredError
+    from app.services import config_service, user_service
+
+    if not settings.ADMIN_UIDS:
+        logger.info(
+            "admin pending-signup notification skipped: no ADMIN_UIDS configured "
+            "(pending_uid=%s)", pending_uid,
+        )
+        return
+
+    try:
+        web_url = config_service.get_web_url_or_raise()
+    except WebUrlNotConfiguredError as e:
+        logger.warning(
+            "admin pending-signup notification skipped: %s (pending_uid=%s)",
+            e.message, pending_uid,
+        )
+        return
+
+    admin_emails = []
+    for admin_uid in settings.ADMIN_UIDS:
+        admin_profile = user_service.get_user(admin_uid)
+        if admin_profile and admin_profile.get("email"):
+            admin_emails.append(admin_profile["email"])
+
+    if not admin_emails:
+        logger.warning(
+            "admin pending-signup notification skipped: no admin emails resolvable "
+            "from ADMIN_UIDS (configured=%d)", len(settings.ADMIN_UIDS),
+        )
+        return
+
+    dashboard_url = f"{web_url}/admin/users/pending"
+    subject = f"GroceryApp — Pending signup: {pending_email}"
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #1a1a2e;">🆕 New signup pending approval</h2>
+        <p>A new user has signed up and is awaiting your approval:</p>
+        <div style="background: #f0f0f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <div><strong>Email:</strong> {pending_email}</div>
+            <div style="font-size: 11px; color: #666; margin-top: 4px;">UID: {pending_uid}</div>
+        </div>
+        <div style="text-align: center; margin: 24px 0;">
+            <a href="{dashboard_url}" style="background: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">Review Pending Approvals</a>
+        </div>
+        <p style="font-size: 13px; color: #666;">If you don't recognise this person, reject the signup from the admin queue.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="font-size: 11px; color: #999;">Automated notification from GroceryApp.</p>
+    </div>
+    """
+
+    for admin_email in admin_emails:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(send_email(admin_email, subject, html))
+            else:
+                loop.run_until_complete(send_email(admin_email, subject, html))
+        except Exception as e:
+            logger.warning(
+                "Failed to send admin pending-signup notification to %s: %s",
+                admin_email, e,
+            )
 
 
 # ---------------------------------------------------------------------------

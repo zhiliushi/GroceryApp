@@ -4,6 +4,7 @@ import {
   useChangeTier,
   useToggleUserStatus,
   useApproveUser,
+  useRejectUser,
   useDeleteUser,
   useUpdateUserTools,
 } from '@/api/mutations/useUserMutations';
@@ -38,6 +39,7 @@ export default function UserApprovalTab() {
   const changeTier = useChangeTier();
   const toggleStatus = useToggleUserStatus();
   const approveUser = useApproveUser();
+  const rejectUser = useRejectUser();
   const deleteUser = useDeleteUser();
   const updateTools = useUpdateUserTools();
   const dialog = useConfirmDialog();
@@ -153,14 +155,29 @@ export default function UserApprovalTab() {
                           </button>
                         )}
 
-                        {/* Approve button for pending */}
+                        {/* Approve / Reject buttons for pending — Onboarding v2 Phase 5 */}
                         {status === 'pending' && (
-                          <button
-                            onClick={() => approveUser.mutate(user.uid)}
-                            className="text-green-400 hover:text-green-300 text-xs px-2 py-1 border border-green-500/30 rounded transition-colors"
-                          >
-                            ✓ Approve
-                          </button>
+                          <>
+                            <button
+                              onClick={() => approveUser.mutate(user.uid)}
+                              className="text-green-400 hover:text-green-300 text-xs px-2 py-1 border border-green-500/30 rounded transition-colors"
+                            >
+                              ✓ Approve
+                            </button>
+                            <button
+                              onClick={() =>
+                                dialog.confirm({
+                                  title: 'Reject User',
+                                  message: `Reject ${user.email || user.uid}? Their account is disabled and refresh tokens revoked. They can sign up again later if you re-open the queue.`,
+                                  variant: 'danger',
+                                  onConfirm: () => rejectUser.mutate({ uid: user.uid, reason: 'rejected' }),
+                                })
+                              }
+                              className="text-red-400 hover:text-red-300 text-xs px-2 py-1 border border-red-500/30 rounded transition-colors"
+                            >
+                              ✗ Reject
+                            </button>
+                          </>
                         )}
 
                         {/* Enable/Disable toggle */}

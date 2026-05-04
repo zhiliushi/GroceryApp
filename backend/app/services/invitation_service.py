@@ -128,38 +128,170 @@ def validate_code(code: str) -> Dict[str, Any]:
     return invitation
 
 
-def accept_invite(code: str, uid: str, display_name: str) -> Dict[str, Any]:
-    """Accept an invitation and join the household."""
+def accept_invite(
+    code: str,
+    uid: str,
+    display_name: str,
+    user_email: str = "",
+) -> Dict[str, Any]:
+    """Accept an invitation and join the household — race-safe, email-bound.
+
+    Onboarding v2 — Phase 3 (PLAN_ONBOARDING_V2.md). Wrapped in a Firestore
+    transaction so concurrent accepts of the same code race-fairly: exactly
+    one wins, the other gets `ValueError("This invitation was already used.")`.
+
+    Email-bound enforcement (per Decision #5 / IP audit gap): if the invitation
+    specifies `invited_email`, the accepting user's email MUST match (case-
+    insensitive). Anonymous-share invitations (no `invited_email` set) accept
+    any signed-in user — owner's choice at invite time.
+
+    Args:
+        code: 6-char invitation code (case-insensitive)
+        uid: accepting user's Firebase UID
+        display_name: name to record on the household member entry
+        user_email: accepting user's email — REQUIRED when the invitation has
+                    `invited_email` set, ignored otherwise. Defaults to ""
+                    for callers that don't pass it (legacy compatibility).
+
+    Returns:
+        Updated household dict.
+
+    Raises:
+        ValueError: with a human-readable message for any of:
+            - Invalid code, already used, revoked, expired
+            - Email mismatch (if invitation is email-bound)
+            - User already in another household / same household
+            - Household full / not found
+    """
     from app.services import household_service
 
-    invitation = validate_code(code)
     code_upper = code.upper()
+    db = firestore.client()
+    transaction = db.transaction()
 
-    # Check user not already in a household
-    existing = household_service.get_user_household(uid)
-    if existing:
-        raise ValueError(f"You're already in '{existing['name']}'. Leave first to join another household.")
+    @firestore.transactional
+    def _txn(txn):
+        # ----- Reads phase -----
+        inv_ref = _invitations().document(code_upper)
+        inv_snap = inv_ref.get(transaction=txn)
+        if not inv_snap.exists:
+            raise ValueError("Invalid invitation code.")
+        invitation = inv_snap.to_dict()
 
-    household_id = invitation["household_id"]
-    assigned_role = invitation.get("assigned_role", "brother")
+        if invitation["status"] == "accepted":
+            raise ValueError("This invitation was already used.")
+        if invitation["status"] == "revoked":
+            raise ValueError("This invitation was cancelled by the owner.")
 
-    # Add member (this also checks capacity)
-    household = household_service.add_member(
-        household_id=household_id,
-        uid=uid,
-        display_name=display_name,
-        default_role=assigned_role,
+        # Expiry check — write expired status atomically and return a sentinel.
+        expires_iso = invitation.get("expires_at", "")
+        if expires_iso:
+            expires_at = datetime.fromisoformat(expires_iso)
+            if expires_at < datetime.utcnow():
+                txn.update(inv_ref, {"status": "expired"})
+                return {"_status": "expired"}
+
+        if invitation["status"] != "pending":
+            raise ValueError(
+                f"This invitation is no longer valid (status: {invitation['status']})."
+            )
+
+        # Email-bound enforcement (Phase 3)
+        invited_email = (invitation.get("invited_email") or "").strip().lower()
+        if invited_email:
+            actual_email = (user_email or "").strip().lower()
+            if invited_email != actual_email:
+                raise ValueError("This invitation is for a different email address.")
+
+        # Read user — check existing household membership
+        user_ref = db.collection("users").document(uid)
+        user_snap = user_ref.get(transaction=txn)
+        existing_hid = None
+        if user_snap.exists:
+            existing_hid = (user_snap.to_dict() or {}).get("household_id")
+
+        if existing_hid:
+            if existing_hid == invitation["household_id"]:
+                raise ValueError("You're already a member of this household.")
+            raise ValueError(
+                f"You're already in another household. Leave first to join "
+                f"'{invitation.get('household_name', 'this household')}'."
+            )
+
+        # Read target household
+        household_id = invitation["household_id"]
+        household_ref = db.collection("households").document(household_id)
+        household_snap = household_ref.get(transaction=txn)
+        if not household_snap.exists:
+            raise ValueError("Household not found.")
+        household = household_snap.to_dict()
+        members = household.get("members", [])
+
+        # Capacity check
+        active_count = sum(1 for m in members if not m.get("frozen"))
+        max_members = household.get("max_members", 2)
+        if active_count >= max_members:
+            raise ValueError(
+                f"Household is full ({active_count}/{max_members} members)."
+            )
+
+        # Defensive dedup — already covered by existing_hid check, but cheap
+        if any(m["uid"] == uid for m in members):
+            raise ValueError("You're already a member of this household.")
+
+        # Resolve role from household_service.DEFAULT_ROLES
+        assigned_role = invitation.get("assigned_role", "brother")
+        role_def = next(
+            (r for r in household_service.DEFAULT_ROLES if r["key"] == assigned_role),
+            household_service.DEFAULT_ROLES[2],
+        )
+
+        now_iso = datetime.utcnow().isoformat()
+        new_member = {
+            "uid": uid,
+            "role": "member",
+            "default_role": assigned_role,
+            "display_role": role_def["name"],
+            "role_icon": role_def["icon"],
+            "role_color": role_def["color"],
+            "display_name": display_name,
+            "joined_at": now_iso,
+            "frozen": False,
+        }
+        members.append(new_member)
+
+        # ----- Writes phase -----
+        txn.update(household_ref, {
+            "members": members,
+            "updated_at": now_iso,
+        })
+        txn.update(user_ref, {
+            "household_id": household_id,
+            "household_role": "member",
+        })
+        txn.update(inv_ref, {
+            "status": "accepted",
+            "accepted_by": uid,
+            "accepted_at": now_iso,
+        })
+
+        result_household = dict(household)
+        result_household["id"] = household_id
+        result_household["members"] = members
+        return {"_status": "success", "household": result_household}
+
+    result = _txn(transaction)
+
+    if result.get("_status") == "expired":
+        raise ValueError(
+            "This invitation expired. Ask the household owner for a new code."
+        )
+
+    logger.info(
+        "User %s accepted invite %s for household %s (txn-safe)",
+        uid, code_upper, result["household"]["id"],
     )
-
-    # Mark invitation as accepted
-    _invitations().document(code_upper).update({
-        "status": "accepted",
-        "accepted_by": uid,
-        "accepted_at": datetime.utcnow().isoformat(),
-    })
-
-    logger.info("User %s accepted invite %s for household %s", uid, code_upper, household_id)
-    return household
+    return result["household"]
 
 
 # ---------------------------------------------------------------------------

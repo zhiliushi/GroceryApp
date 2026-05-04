@@ -9,6 +9,14 @@ const TierRoute = lazy(() => import('@/components/layout/TierRoute'));
 
 // Pages
 const LoginPage = lazy(() => import('@/pages/login/LoginPage'));
+
+// Onboarding v2 — auth-state pages (PLAN_ONBOARDING_V2.md Phase 4)
+const StateGate = lazy(() => import('@/components/auth/StateGate'));
+const VerifyEmailPage = lazy(() => import('@/pages/auth/VerifyEmailPage'));
+const PendingApprovalPage = lazy(() => import('@/pages/auth/PendingApprovalPage'));
+const DisabledPage = lazy(() => import('@/pages/auth/DisabledPage'));
+const RegistrationClosedPage = lazy(() => import('@/pages/auth/RegistrationClosedPage'));
+const RegistrationFormPage = lazy(() => import('@/pages/register/RegistrationFormPage'));
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
 const ShoppingListsPage = lazy(() => import('@/pages/shopping-lists/ShoppingListsPage'));
 const ShoppingListDetailPage = lazy(() => import('@/pages/shopping-lists/ShoppingListDetailPage'));
@@ -90,6 +98,60 @@ export const router = createBrowserRouter([
     element: (
       <SuspenseWrapper>
         <JoinPage />
+      </SuspenseWrapper>
+    ),
+  },
+  // Onboarding v2 — auth-state pages. Each is StateGate-wrapped so it only
+  // renders for users in the matching state; otherwise StateGate redirects
+  // to the destination for the user's actual state. See PLAN_ONBOARDING_V2.md
+  // Phase 4. Lives outside AppLayout — full-screen standalone screens.
+  {
+    path: '/auth/verify-email',
+    element: (
+      <SuspenseWrapper>
+        <StateGate requires="verify_email_required">
+          <VerifyEmailPage />
+        </StateGate>
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/auth/pending',
+    element: (
+      <SuspenseWrapper>
+        <StateGate requires="pending_approval">
+          <PendingApprovalPage />
+        </StateGate>
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/auth/disabled',
+    element: (
+      <SuspenseWrapper>
+        <StateGate requires="disabled">
+          <DisabledPage />
+        </StateGate>
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/auth/closed',
+    element: (
+      <SuspenseWrapper>
+        <StateGate requires="registration_closed">
+          <RegistrationClosedPage />
+        </StateGate>
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/register',
+    element: (
+      <SuspenseWrapper>
+        <StateGate requires="registration_required">
+          <RegistrationFormPage />
+        </StateGate>
       </SuspenseWrapper>
     ),
   },

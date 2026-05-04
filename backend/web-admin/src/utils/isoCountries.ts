@@ -1,0 +1,142 @@
+/**
+ * ISO 3166-1 alpha-2 country list (subset prioritised by GroceryApp launch
+ * markets — Phase 1 MY, Phase 2 SG, Phase 3 AU/UK, Phase 4 UAE/KSA — followed
+ * by the rest of the recognised UN member states + common territories).
+ *
+ * `currency` is a sensible default for that country's primary use (used as the
+ * pre-fill for the registration form's currency dropdown). Users can override
+ * after country is picked. Source: ISO 4217 official + de-facto common pairs.
+ */
+
+export interface CountryEntry {
+  code: string; // ISO 3166-1 alpha-2
+  name: string;
+  currency: string; // default ISO 4217 (user can change)
+}
+
+/** Markets prioritised by the phased launch plan — surface at the top of the
+ *  dropdown so MY/SG users don't scroll past 200 entries. */
+const PRIORITY: CountryEntry[] = [
+  { code: 'MY', name: 'Malaysia', currency: 'MYR' },
+  { code: 'SG', name: 'Singapore', currency: 'SGD' },
+  { code: 'AU', name: 'Australia', currency: 'AUD' },
+  { code: 'GB', name: 'United Kingdom', currency: 'GBP' },
+  { code: 'US', name: 'United States', currency: 'USD' },
+  { code: 'AE', name: 'United Arab Emirates', currency: 'AED' },
+  { code: 'SA', name: 'Saudi Arabia', currency: 'SAR' },
+  { code: 'ID', name: 'Indonesia', currency: 'IDR' },
+  { code: 'TH', name: 'Thailand', currency: 'THB' },
+  { code: 'PH', name: 'Philippines', currency: 'PHP' },
+];
+
+const REST: CountryEntry[] = [
+  { code: 'AF', name: 'Afghanistan', currency: 'AFN' },
+  { code: 'AL', name: 'Albania', currency: 'ALL' },
+  { code: 'DZ', name: 'Algeria', currency: 'DZD' },
+  { code: 'AR', name: 'Argentina', currency: 'ARS' },
+  { code: 'AM', name: 'Armenia', currency: 'AMD' },
+  { code: 'AT', name: 'Austria', currency: 'EUR' },
+  { code: 'AZ', name: 'Azerbaijan', currency: 'AZN' },
+  { code: 'BH', name: 'Bahrain', currency: 'BHD' },
+  { code: 'BD', name: 'Bangladesh', currency: 'BDT' },
+  { code: 'BY', name: 'Belarus', currency: 'BYN' },
+  { code: 'BE', name: 'Belgium', currency: 'EUR' },
+  { code: 'BO', name: 'Bolivia', currency: 'BOB' },
+  { code: 'BA', name: 'Bosnia and Herzegovina', currency: 'BAM' },
+  { code: 'BR', name: 'Brazil', currency: 'BRL' },
+  { code: 'BN', name: 'Brunei', currency: 'BND' },
+  { code: 'BG', name: 'Bulgaria', currency: 'BGN' },
+  { code: 'KH', name: 'Cambodia', currency: 'KHR' },
+  { code: 'CA', name: 'Canada', currency: 'CAD' },
+  { code: 'CL', name: 'Chile', currency: 'CLP' },
+  { code: 'CN', name: 'China', currency: 'CNY' },
+  { code: 'CO', name: 'Colombia', currency: 'COP' },
+  { code: 'CR', name: 'Costa Rica', currency: 'CRC' },
+  { code: 'HR', name: 'Croatia', currency: 'EUR' },
+  { code: 'CY', name: 'Cyprus', currency: 'EUR' },
+  { code: 'CZ', name: 'Czechia', currency: 'CZK' },
+  { code: 'DK', name: 'Denmark', currency: 'DKK' },
+  { code: 'DO', name: 'Dominican Republic', currency: 'DOP' },
+  { code: 'EC', name: 'Ecuador', currency: 'USD' },
+  { code: 'EG', name: 'Egypt', currency: 'EGP' },
+  { code: 'EE', name: 'Estonia', currency: 'EUR' },
+  { code: 'ET', name: 'Ethiopia', currency: 'ETB' },
+  { code: 'FI', name: 'Finland', currency: 'EUR' },
+  { code: 'FR', name: 'France', currency: 'EUR' },
+  { code: 'GE', name: 'Georgia', currency: 'GEL' },
+  { code: 'DE', name: 'Germany', currency: 'EUR' },
+  { code: 'GH', name: 'Ghana', currency: 'GHS' },
+  { code: 'GR', name: 'Greece', currency: 'EUR' },
+  { code: 'GT', name: 'Guatemala', currency: 'GTQ' },
+  { code: 'HK', name: 'Hong Kong', currency: 'HKD' },
+  { code: 'HU', name: 'Hungary', currency: 'HUF' },
+  { code: 'IS', name: 'Iceland', currency: 'ISK' },
+  { code: 'IN', name: 'India', currency: 'INR' },
+  { code: 'IR', name: 'Iran', currency: 'IRR' },
+  { code: 'IQ', name: 'Iraq', currency: 'IQD' },
+  { code: 'IE', name: 'Ireland', currency: 'EUR' },
+  { code: 'IL', name: 'Israel', currency: 'ILS' },
+  { code: 'IT', name: 'Italy', currency: 'EUR' },
+  { code: 'JM', name: 'Jamaica', currency: 'JMD' },
+  { code: 'JP', name: 'Japan', currency: 'JPY' },
+  { code: 'JO', name: 'Jordan', currency: 'JOD' },
+  { code: 'KZ', name: 'Kazakhstan', currency: 'KZT' },
+  { code: 'KE', name: 'Kenya', currency: 'KES' },
+  { code: 'KR', name: 'South Korea', currency: 'KRW' },
+  { code: 'KW', name: 'Kuwait', currency: 'KWD' },
+  { code: 'LA', name: 'Laos', currency: 'LAK' },
+  { code: 'LV', name: 'Latvia', currency: 'EUR' },
+  { code: 'LB', name: 'Lebanon', currency: 'LBP' },
+  { code: 'LT', name: 'Lithuania', currency: 'EUR' },
+  { code: 'LU', name: 'Luxembourg', currency: 'EUR' },
+  { code: 'MO', name: 'Macau', currency: 'MOP' },
+  { code: 'MV', name: 'Maldives', currency: 'MVR' },
+  { code: 'MT', name: 'Malta', currency: 'EUR' },
+  { code: 'MX', name: 'Mexico', currency: 'MXN' },
+  { code: 'MD', name: 'Moldova', currency: 'MDL' },
+  { code: 'MN', name: 'Mongolia', currency: 'MNT' },
+  { code: 'ME', name: 'Montenegro', currency: 'EUR' },
+  { code: 'MA', name: 'Morocco', currency: 'MAD' },
+  { code: 'MM', name: 'Myanmar', currency: 'MMK' },
+  { code: 'NP', name: 'Nepal', currency: 'NPR' },
+  { code: 'NL', name: 'Netherlands', currency: 'EUR' },
+  { code: 'NZ', name: 'New Zealand', currency: 'NZD' },
+  { code: 'NG', name: 'Nigeria', currency: 'NGN' },
+  { code: 'NO', name: 'Norway', currency: 'NOK' },
+  { code: 'OM', name: 'Oman', currency: 'OMR' },
+  { code: 'PK', name: 'Pakistan', currency: 'PKR' },
+  { code: 'PA', name: 'Panama', currency: 'PAB' },
+  { code: 'PY', name: 'Paraguay', currency: 'PYG' },
+  { code: 'PE', name: 'Peru', currency: 'PEN' },
+  { code: 'PL', name: 'Poland', currency: 'PLN' },
+  { code: 'PT', name: 'Portugal', currency: 'EUR' },
+  { code: 'PR', name: 'Puerto Rico', currency: 'USD' },
+  { code: 'QA', name: 'Qatar', currency: 'QAR' },
+  { code: 'RO', name: 'Romania', currency: 'RON' },
+  { code: 'RU', name: 'Russia', currency: 'RUB' },
+  { code: 'RW', name: 'Rwanda', currency: 'RWF' },
+  { code: 'RS', name: 'Serbia', currency: 'RSD' },
+  { code: 'SK', name: 'Slovakia', currency: 'EUR' },
+  { code: 'SI', name: 'Slovenia', currency: 'EUR' },
+  { code: 'ZA', name: 'South Africa', currency: 'ZAR' },
+  { code: 'ES', name: 'Spain', currency: 'EUR' },
+  { code: 'LK', name: 'Sri Lanka', currency: 'LKR' },
+  { code: 'SE', name: 'Sweden', currency: 'SEK' },
+  { code: 'CH', name: 'Switzerland', currency: 'CHF' },
+  { code: 'TW', name: 'Taiwan', currency: 'TWD' },
+  { code: 'TZ', name: 'Tanzania', currency: 'TZS' },
+  { code: 'TR', name: 'Türkiye', currency: 'TRY' },
+  { code: 'UG', name: 'Uganda', currency: 'UGX' },
+  { code: 'UA', name: 'Ukraine', currency: 'UAH' },
+  { code: 'UY', name: 'Uruguay', currency: 'UYU' },
+  { code: 'UZ', name: 'Uzbekistan', currency: 'UZS' },
+  { code: 'VE', name: 'Venezuela', currency: 'VES' },
+  { code: 'VN', name: 'Vietnam', currency: 'VND' },
+  { code: 'YE', name: 'Yemen', currency: 'YER' },
+  { code: 'ZM', name: 'Zambia', currency: 'ZMW' },
+  { code: 'ZW', name: 'Zimbabwe', currency: 'ZWG' },
+];
+
+REST.sort((a, b) => a.name.localeCompare(b.name));
+
+export const ISO_3166_COUNTRIES: CountryEntry[] = [...PRIORITY, ...REST];

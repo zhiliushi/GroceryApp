@@ -68,3 +68,16 @@ class QuotaExceededError(DomainError):
     """
 
     http_status = 409
+
+
+class WebUrlNotConfiguredError(DomainError):
+    """Public web URL is missing from app_config/system. Maps to HTTP 503.
+
+    Raised by `config_service.get_web_url_or_raise()` and surfaced by any
+    endpoint that triggers an outbound email containing a link (invitation,
+    password reset, email-verification resend, admin pending-signup
+    notification, account-status notification). Admin must set the URL in
+    Settings → System before the affected flows can run.
+    """
+
+    http_status = 503
