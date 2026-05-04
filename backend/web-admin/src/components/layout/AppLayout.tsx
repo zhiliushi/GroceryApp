@@ -3,6 +3,7 @@ import Sidebar from './Sidebar';
 import FloatingScanButton from '@/components/barcode/FloatingScanButton';
 import StickyAddButton from './StickyAddButton';
 import PrimaryActionFab from './PrimaryActionFab';
+import HouseholdSwitcher from './HouseholdSwitcher';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import GlobalSearchBar from '@/components/search/GlobalSearchBar';
 import UpdatePrompt from '@/components/pwa/UpdatePrompt';
@@ -66,6 +67,10 @@ export default function AppLayout() {
       {/* Desktop Add pill + Scan pill (top-right). Mobile uses PrimaryActionFab below. */}
       <StickyAddButton />
       <FloatingScanButton />
+      {/* MH-3a: active-household switcher pill — top-4 right-72 (between Scan
+          pill at right-36 and the global content). No-op today (single
+          household per user); shows real switcher rows once MH-3b lands. */}
+      <HouseholdSwitcher />
       <QuickAddModal open={quickAddOpen} onClose={closeQuickAdd} />
 
       {/* Mobile-only speed-dial FAB — consolidates Add + Scan into one thumb-zone control. */}

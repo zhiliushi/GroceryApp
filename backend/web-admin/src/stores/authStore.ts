@@ -10,6 +10,7 @@ import {
   type User as FBUser,
 } from 'firebase/auth';
 import type { AuthUser } from '@/types/api';
+import { useActiveHouseholdStore } from './activeHouseholdStore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -101,6 +102,11 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
   signOut: async () => {
     await fbSignOut(auth);
     clearCookie();
+    // MH-3a: clear cross-store active-household state so a different user
+    // signing in on the same browser doesn't inherit the previous user's
+    // membership list. Per-user localStorage keys still survive — each user
+    // sees their own choice on the next sign-in.
+    useActiveHouseholdStore.getState().reset();
     set({
       user: null,
       firebaseUser: null,
