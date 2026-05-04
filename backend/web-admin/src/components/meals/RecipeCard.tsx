@@ -81,8 +81,8 @@ export default function RecipeCard({ recipe, onCook, showMatchDetails = true }: 
           <button onClick={onCook}
             title={
               allMatched
-                ? 'Open the cook checklist. Each checked row deducts from your inventory (recipe needs ↔ you have). Sub-portion ingredients (1 tsp, 1 slice) start unchecked so a 1-bottle / 1-block event isn't consumed in full.'
-                : 'Open the cook checklist for the ingredients you have. Each checked row deducts from your inventory; uncheck anything you're saving.'
+                ? `Open the cook checklist. Each checked row deducts from your inventory (recipe needs ↔ you have). Sub-portion ingredients (1 tsp, 1 slice) start unchecked so a 1-bottle / 1-block event isn${'’'}t consumed in full.`
+                : `Open the cook checklist for the ingredients you have. Each checked row deducts from your inventory; uncheck anything you${'’'}re saving.`
             }
             className={cn(
               'text-xs font-medium rounded-lg px-3 py-1.5 transition-colors',
