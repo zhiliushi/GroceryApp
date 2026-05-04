@@ -1,18 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   useCommonPreserves,
   usePrepBatches,
   usePrepEligibility,
   usePrepRecipes,
+  usePreppersHousehold,
+  usePreppersSupply,
   useCreatePrepBatch,
   useSetPrepBatchStatus,
   useDeletePrepBatch,
   useDeletePrepRecipe,
+  useUpdatePreppersHousehold,
 } from '@/api/queries/usePreppers';
 import { usePreppers } from '@/hooks/usePreppers';
 import { batchHeadline, PREP_TYPE_ICONS, prepTypeLabel } from '@/utils/prepCountdown';
-import type { CommonPreserve, PrepBatch, PrepEligibility, PrepRecipe } from '@/types/api';
+import type {
+  CommonPreserve,
+  PrepBatch,
+  PrepEligibility,
+  PrepHousehold,
+  PrepRecipe,
+  PrepSupplyEstimate,
+} from '@/types/api';
 
 /**
  * Preppers landing page — beta cut.
@@ -32,6 +42,8 @@ export default function PreppersPage() {
   const { data: recipes, isLoading: recipesLoading } = usePrepRecipes(enabled);
   const { data: preserves, isLoading: preservesLoading } = useCommonPreserves(enabled);
   const { data: eligibility } = usePrepEligibility(enabled);
+  const { data: household } = usePreppersHousehold(enabled);
+  const { data: supply } = usePreppersSupply(enabled);
 
   if (!enabled) {
     return <NotAvailable userEnabled={userEnabled} flagEnabled={flagEnabled} />;
@@ -49,6 +61,10 @@ export default function PreppersPage() {
       </header>
 
       <BetaBanner />
+
+      {supply && <SupplyEstimateCard supply={supply} />}
+
+      {household && <HouseholdForm household={household} />}
 
       {eligibility && <EligibilityScore eligibility={eligibility} />}
 
@@ -99,6 +115,193 @@ function BetaBanner() {
         </p>
       </div>
     </details>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SupplyEstimateCard({ supply }: { supply: PrepSupplyEstimate }) {
+  const days = supply.days_of_supply;
+  let bigText: string;
+  let tone: string;
+  if (days == null) {
+    bigText = '—';
+    tone = 'text-ga-text-secondary';
+  } else if (days >= 30) {
+    bigText = `${days.toFixed(1)} days`;
+    tone = 'text-emerald-300';
+  } else if (days >= 7) {
+    bigText = `${days.toFixed(1)} days`;
+    tone = 'text-amber-300';
+  } else {
+    bigText = `${days.toFixed(1)} days`;
+    tone = 'text-red-300';
+  }
+
+  return (
+    <section className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
+      <header className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold text-ga-text-primary flex items-center gap-2">
+          🍱 Stockpile supply
+        </h2>
+        <span className="text-[10px] text-ga-text-secondary">
+          {supply.active_batches_count} active batch
+          {supply.active_batches_count !== 1 ? 'es' : ''}
+        </span>
+      </header>
+
+      <div className="flex items-baseline justify-between gap-4 mb-3">
+        <div>
+          <div className={`text-3xl font-bold tabular-nums ${tone}`}>
+            {bigText}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-ga-text-secondary mt-0.5">
+            of supply
+          </div>
+        </div>
+        <div className="text-right text-xs text-ga-text-secondary space-y-0.5">
+          <div className="tabular-nums">
+            <strong className="text-ga-text-primary">{supply.total_servings}</strong>{' '}
+            servings on hand
+          </div>
+          <div className="tabular-nums">
+            <strong className="text-ga-text-primary">{supply.daily_consumption}</strong>{' '}
+            servings/day for household
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-ga-text-secondary border-t border-ga-border/40 pt-2">
+        {supply.explanation}
+      </p>
+
+      {supply.batches_breakdown.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-ga-text-secondary hover:text-ga-text-primary">
+            Breakdown ({supply.batches_breakdown.length})
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs">
+            {supply.batches_breakdown.map((b) => (
+              <li
+                key={b.id}
+                className="flex items-center justify-between gap-2 px-2 py-1 bg-ga-bg-hover/40 rounded"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="flex-shrink-0">{PREP_TYPE_ICONS[b.prep_type] || '🥫'}</span>
+                  <span className="truncate text-ga-text-primary">{b.name}</span>
+                </span>
+                <span className="text-ga-text-secondary tabular-nums flex-shrink-0">
+                  {b.servings} servings · expires in {b.days_until_expires.toFixed(1)}d
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function HouseholdForm({ household }: { household: PrepHousehold }) {
+  const [adults, setAdults] = useState(household.adults);
+  const [youth, setYouth] = useState(household.youth);
+  const [elderly, setElderly] = useState(household.elderly);
+  const mutation = useUpdatePreppersHousehold();
+
+  // Sync local state when server data refreshes (e.g., after first load).
+  useEffect(() => {
+    setAdults(household.adults);
+    setYouth(household.youth);
+    setElderly(household.elderly);
+  }, [household.adults, household.youth, household.elderly]);
+
+  const dirty =
+    adults !== household.adults ||
+    youth !== household.youth ||
+    elderly !== household.elderly;
+
+  function save() {
+    mutation.mutate({ adults, youth, elderly });
+  }
+
+  return (
+    <section className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+      <header className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold text-ga-text-primary flex items-center gap-2">
+          👪 Household
+        </h2>
+        <span className="text-[10px] text-ga-text-secondary">
+          {(household.adults * household.servings_per_adult +
+            household.youth * household.servings_per_youth +
+            household.elderly * household.servings_per_elderly).toFixed(1)}{' '}
+          servings/day
+        </span>
+      </header>
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        <NumberField
+          label="Adults"
+          value={adults}
+          onChange={setAdults}
+          hint={`${household.servings_per_adult}/day each`}
+        />
+        <NumberField
+          label="Youth"
+          value={youth}
+          onChange={setYouth}
+          hint={`${household.servings_per_youth}/day each`}
+        />
+        <NumberField
+          label="Elderly"
+          value={elderly}
+          onChange={setElderly}
+          hint={`${household.servings_per_elderly}/day each`}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] text-ga-text-secondary italic">
+          Used to project how long your stockpile lasts. Defaults: 3 servings/
+          day for adults, 2.5 for youth + elderly.
+        </p>
+        <button
+          onClick={save}
+          disabled={!dirty || mutation.isPending}
+          className="text-xs px-3 py-1.5 bg-ga-accent/20 hover:bg-ga-accent/30 text-ga-accent rounded-lg disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+        >
+          {mutation.isPending ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  hint: string;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] uppercase tracking-wider text-ga-text-secondary mb-1">
+        {label}
+      </span>
+      <input
+        type="number"
+        min={0}
+        max={20}
+        value={value}
+        onChange={(e) => onChange(Math.max(0, parseInt(e.target.value) || 0))}
+        className="w-full bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary text-center"
+      />
+      <span className="block text-[10px] text-ga-text-secondary mt-1">{hint}</span>
+    </label>
   );
 }
 
@@ -333,6 +536,7 @@ function RecipeRow({ recipe }: { recipe: PrepRecipe }) {
               prep_type: recipe.prep_type,
               ready_after_hours: recipe.ready_after_hours,
               shelf_life_days: recipe.shelf_life_days,
+              servings: recipe.servings || 4,
               recipe_id: recipe.id,
               ingredients_snapshot: recipe.ingredients,
               notes: recipe.notes,
@@ -430,6 +634,7 @@ function PresetRow({ preset }: { preset: CommonPreserve }) {
             prep_type: preset.prep_type,
             ready_after_hours: preset.default_ready_after_hours,
             shelf_life_days: preset.default_shelf_life_days,
+            servings: 4,
             common_preserve_ref: preset.name_norm,
           })
         }

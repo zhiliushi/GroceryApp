@@ -753,6 +753,8 @@ export interface PrepRecipe {
   prep_type: PrepType;
   ready_after_hours: number;
   shelf_life_days: number;
+  /** Estimated servings the batch yields. Powers the supply-estimate. */
+  servings: number;
   ingredients: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
   notes: string;
   /** name_norm of the common-preserve this was cloned from, if any. */
@@ -776,6 +778,8 @@ export interface PrepBatch {
   prep_type: PrepType;
   ready_after_hours: number;
   shelf_life_days: number;
+  /** Estimated servings the batch yields. Powers the supply-estimate. */
+  servings: number;
   started_at: string;
   ready_at: string;
   expires_at: string;
@@ -791,6 +795,43 @@ export interface PrepBatch {
 export interface PrepBatchesResponse {
   batches: PrepBatch[];
   count: number;
+}
+
+/**
+ * Household composition used by the preppers supply estimate. Per-person
+ * daily servings are configurable; defaults are 3.0 / 2.5 / 2.5.
+ */
+export interface PrepHousehold {
+  adults: number;
+  youth: number;
+  elderly: number;
+  servings_per_adult: number;
+  servings_per_youth: number;
+  servings_per_elderly: number;
+  updated_at?: number | null;
+}
+
+/**
+ * Days-of-supply projection. `days_of_supply` is null when daily
+ * consumption is 0 (no household set) OR no batches have servings counts.
+ */
+export interface PrepSupplyEstimate {
+  days_of_supply: number | null;
+  total_servings: number;
+  daily_consumption: number;
+  household: PrepHousehold;
+  active_batches_count: number;
+  batches_breakdown: Array<{
+    id: string;
+    name: string;
+    prep_type: PrepType;
+    servings: number;
+    status: PrepBatchStatus;
+    days_until_ready: number;
+    days_until_expires: number;
+  }>;
+  empty: boolean;
+  explanation: string;
 }
 
 /**

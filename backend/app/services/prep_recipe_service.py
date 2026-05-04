@@ -100,6 +100,8 @@ def create_recipe(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
     if len(existing) >= PREP_RECIPE_LIMIT:
         raise ValueError(f"prep recipe limit reached ({PREP_RECIPE_LIMIT})")
 
+    servings = max(int(body.get("servings") or 4), 1)
+
     rid = uuid.uuid4().hex[:16]
     now = datetime.now(timezone.utc)
     doc = {
@@ -107,6 +109,7 @@ def create_recipe(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
         "prep_type": prep_type,
         "ready_after_hours": ready_after_hours,
         "shelf_life_days": shelf_life_days,
+        "servings": servings,
         "ingredients": _normalize_ingredients(body.get("ingredients")),
         "notes": (body.get("notes") or "").strip(),
         "common_preserve_ref": body.get("common_preserve_ref") or None,
@@ -145,6 +148,11 @@ def update_recipe(uid: str, rid: str, body: Dict[str, Any]) -> Optional[Dict[str
         if v <= 0:
             raise ValueError("shelf_life_days must be > 0")
         update["shelf_life_days"] = v
+    if "servings" in body:
+        v = int(body["servings"] or 0)
+        if v < 1:
+            raise ValueError("servings must be >= 1")
+        update["servings"] = v
     if "ingredients" in body:
         update["ingredients"] = _normalize_ingredients(body["ingredients"])
     if "notes" in body:

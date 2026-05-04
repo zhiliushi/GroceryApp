@@ -309,6 +309,36 @@ function GettingStarted() {
         every subsequent sign-in.
       </p>
 
+      <H3>Privacy &amp; Terms</H3>
+      <p>
+        Two reference documents linked from{' '}
+        <Link to="/settings" className="text-ga-accent hover:underline">Settings</Link>{' '}
+        → Legal:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <Link to="/privacy" className="text-ga-accent hover:underline">
+            Privacy Policy
+          </Link>{' '}
+          — what we collect, why, where it&apos;s stored, how long we keep it, and how
+          to ask for a copy or deletion (PDPA Malaysia + equivalents).
+        </li>
+        <li>
+          <Link to="/terms" className="text-ga-accent hover:underline">
+            Terms of Service
+          </Link>{' '}
+          — the agreement that lets you use the app. Most-asked sections:{' '}
+          <em>account responsibilities</em>, <em>your content</em>, and the food-safety
+          disclaimer (the app is a tracking aid, not a food-safety oracle — when in
+          doubt, throw it out).
+        </li>
+      </ul>
+      <p className="text-xs text-ga-text-secondary">
+        Both pages are public — you can read them without signing in. Material changes
+        are announced in-app and by email; the &quot;Last updated&quot; date at the top reflects
+        the most recent meaningful change.
+      </p>
+
       <H3>The dashboard</H3>
       <p>
         Open the app and you land on{' '}
@@ -1093,6 +1123,21 @@ function Preppers() {
         <strong className="text-amber-300">Beta:</strong> the feature is open
         to enrolled users. Pricing for the long-term niche tier is still TBD.
       </div>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Stockpile supply estimate
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        At the very top is a <strong>days of supply</strong> projection — how
+        long your active batches will feed your household. To make it
+        meaningful, fill in the <strong>Household</strong> form (adults / youth
+        / elderly counts) and set a <strong>servings</strong> count when you
+        save a recipe or start a batch.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        Defaults: 3 servings/day per adult, 2.5 per youth, 2.5 per elderly. The
+        bar tints emerald (≥30d), amber (≥7d), or red (&lt;7d).
+      </p>
 
       <h3 className="text-sm font-semibold text-emerald-400 mt-4">
         Data readiness score

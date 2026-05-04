@@ -7,8 +7,10 @@ import type {
   PrepBatchStatus,
   PrepBatchesResponse,
   PrepEligibility,
+  PrepHousehold,
   PrepRecipe,
   PrepRecipesResponse,
+  PrepSupplyEstimate,
 } from '@/types/api';
 
 /**
@@ -99,7 +101,10 @@ export function useCreatePrepBatch() {
       apiClient
         .post<{ success: boolean; batch: PrepBatch }>(API.PREPPERS_BATCHES, body)
         .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'batches'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+    },
   });
 }
 
@@ -115,7 +120,10 @@ export function useSetPrepBatchStatus() {
           { status, notes },
         )
         .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'batches'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+    },
   });
 }
 
@@ -124,7 +132,10 @@ export function useDeletePrepBatch() {
   return useMutation({
     mutationFn: (bid: string) =>
       apiClient.delete(API.PREPPERS_BATCH(bid)).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'batches'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+    },
   });
 }
 
@@ -142,5 +153,53 @@ export function usePrepEligibility(enabled = true) {
         .then((r) => r.data),
     enabled,
     staleTime: 5 * 60_000, // 5 min
+  });
+}
+
+/**
+ * Household composition (adults / youth / elderly) — drives the supply
+ * estimate. Stored on the user doc; one value per user.
+ */
+export function usePreppersHousehold(enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'household'],
+    queryFn: () =>
+      apiClient.get<PrepHousehold>(API.PREPPERS_HOUSEHOLD).then((r) => r.data),
+    enabled,
+    staleTime: 60 * 60_000,
+  });
+}
+
+export function useUpdatePreppersHousehold() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<PrepHousehold>) =>
+      apiClient
+        .put<{ success: boolean; household: PrepHousehold }>(
+          API.PREPPERS_HOUSEHOLD,
+          body,
+        )
+        .then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'household'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+    },
+  });
+}
+
+/**
+ * Days-of-supply projection. Refetched whenever batches or household
+ * change (active batches list invalidates this via useCreatePrepBatch /
+ * useSetPrepBatchStatus / useDeletePrepBatch onSuccess).
+ */
+export function usePreppersSupply(enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'supply-estimate'],
+    queryFn: () =>
+      apiClient
+        .get<PrepSupplyEstimate>(API.PREPPERS_SUPPLY_ESTIMATE)
+        .then((r) => r.data),
+    enabled,
+    staleTime: 30_000,
   });
 }

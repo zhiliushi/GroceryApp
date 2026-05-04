@@ -25,6 +25,7 @@ from app.services import (
     prep_batch_service,
     prep_eligibility_service,
     prep_recipe_service,
+    prep_supply_service,
     user_service,
 )
 
@@ -65,6 +66,41 @@ async def get_preppers_eligibility(user: UserInfo = Depends(require_preppers)):
     improve over time.
     """
     return prep_eligibility_service.compute_eligibility(user.uid)
+
+
+# ---------------------------------------------------------------------------
+# Household composition + supply estimate
+# ---------------------------------------------------------------------------
+
+
+@router.get("/household")
+async def get_preppers_household(user: UserInfo = Depends(require_preppers)):
+    """User's household composition for supply projection (adults / youth /
+    elderly + per-person daily servings)."""
+    return user_service.get_preppers_household(user.uid)
+
+
+@router.put("/household")
+async def update_preppers_household(
+    body: dict, user: UserInfo = Depends(require_preppers),
+):
+    """Upsert household composition. Body fields (any subset):
+      adults, youth, elderly (int >= 0)
+      servings_per_adult, servings_per_youth, servings_per_elderly (float > 0)
+    """
+    try:
+        updated = user_service.update_preppers_household(user.uid, body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if updated is None:
+        raise HTTPException(404, "User not found")
+    return {"success": True, "household": updated}
+
+
+@router.get("/supply-estimate")
+async def get_preppers_supply_estimate(user: UserInfo = Depends(require_preppers)):
+    """Days-of-supply projection from active batches + household composition."""
+    return prep_supply_service.compute_supply_estimate(user.uid)
 
 
 # ---------------------------------------------------------------------------

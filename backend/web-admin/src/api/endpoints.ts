@@ -37,6 +37,12 @@ export const API = {
   ADMIN_FEEDBACK: '/api/admin/feedback',
   ADMIN_FEEDBACK_ITEM: (id: string) => `/api/admin/feedback/${id}`,
 
+  // External links (donation / reference / social) surfaced on AboutPage
+  EXTERNAL_LINKS: '/api/external-links',
+  ADMIN_EXTERNAL_LINKS: '/api/admin/external-links',
+  ADMIN_EXTERNAL_LINK: (id: string) => `/api/admin/external-links/${id}`,
+  ADMIN_EXTERNAL_LINKS_SEED: '/api/admin/external-links/seed-defaults',
+
   PRODUCTS: '/api/admin/products',
   PRODUCT: (barcode: string) => `/api/admin/products/${barcode}`,
   PRODUCT_LOOKUP: (barcode: string) => `/api/admin/products/lookup/${barcode}`,
@@ -98,6 +104,8 @@ export const API = {
   PREPPERS_BATCH: (bid: string) => `/api/preppers/batches/${bid}`,
   PREPPERS_BATCH_STATUS: (bid: string) => `/api/preppers/batches/${bid}/status`,
   PREPPERS_ELIGIBILITY: '/api/preppers/eligibility',
+  PREPPERS_HOUSEHOLD: '/api/preppers/household',
+  PREPPERS_SUPPLY_ESTIMATE: '/api/preppers/supply-estimate',
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',

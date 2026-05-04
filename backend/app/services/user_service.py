@@ -337,6 +337,61 @@ def update_user_preppers(uid: str, enabled: bool, admin_uid: str) -> bool:
     return True
 
 
+# ── Preppers household composition ────────────────────────────────────────
+# User enters how many adults / youth / elderly live in their household so
+# the preppers supply-estimate can project days of supply from active
+# batches' servings counts. Defaults if never set: 1 adult, 0 others.
+
+DEFAULT_HOUSEHOLD = {
+    "adults": 1,
+    "youth": 0,
+    "elderly": 0,
+    "servings_per_adult": 3.0,
+    "servings_per_youth": 2.5,
+    "servings_per_elderly": 2.5,
+}
+
+
+def get_preppers_household(uid: str) -> Dict[str, Any]:
+    """Return the user's preppers household composition with defaults
+    applied for missing fields."""
+    user = get_user(uid) or {}
+    stored = user.get("preppers_household") or {}
+    out = dict(DEFAULT_HOUSEHOLD)
+    for k, v in stored.items():
+        if k in DEFAULT_HOUSEHOLD:
+            out[k] = v
+    out["updated_at"] = stored.get("updated_at")
+    return out
+
+
+def update_preppers_household(uid: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Upsert household composition. Validates non-negative ints for counts
+    and positive floats for per-person servings."""
+    db = _get_db()
+    if not db.collection("users").document(uid).get().exists:
+        return None
+    payload: Dict[str, Any] = {}
+    for k in ("adults", "youth", "elderly"):
+        if k in body:
+            v = int(body[k] or 0)
+            if v < 0:
+                raise ValueError(f"{k} must be >= 0")
+            payload[k] = v
+    for k in ("servings_per_adult", "servings_per_youth", "servings_per_elderly"):
+        if k in body:
+            v = float(body[k] or 0)
+            if v <= 0:
+                raise ValueError(f"{k} must be > 0")
+            payload[k] = v
+    import time
+    payload["updated_at"] = int(time.time() * 1000)
+    db.collection("users").document(uid).update({
+        f"preppers_household.{k}": v for k, v in payload.items()
+    })
+    return get_preppers_household(uid)
+
+
 def is_preppers_enabled(uid: str) -> bool:
     """Resolve preppers access for a user.
 

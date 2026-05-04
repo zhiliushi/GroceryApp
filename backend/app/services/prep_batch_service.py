@@ -131,6 +131,8 @@ def create_batch(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
     ready_at = started_at + timedelta(hours=ready_after_hours)
     expires_at = ready_at + timedelta(days=shelf_life_days)
 
+    servings = max(int(body.get("servings") or 4), 1)
+
     bid = uuid.uuid4().hex[:16]
     now = datetime.now(timezone.utc)
     doc = {
@@ -138,6 +140,7 @@ def create_batch(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
         "prep_type": prep_type,
         "ready_after_hours": ready_after_hours,
         "shelf_life_days": shelf_life_days,
+        "servings": servings,
         "started_at": started_at,
         "ready_at": ready_at,
         "expires_at": expires_at,

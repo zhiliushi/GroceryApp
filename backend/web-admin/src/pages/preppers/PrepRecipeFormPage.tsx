@@ -48,6 +48,7 @@ export default function PrepRecipeFormPage() {
   const [prepType, setPrepType] = useState<PrepType>('ferment');
   const [readyAfterHours, setReadyAfterHours] = useState(72); // 3 days default
   const [shelfLifeDays, setShelfLifeDays] = useState(30);
+  const [servings, setServings] = useState(4);
   const [ingredients, setIngredients] = useState<FormIngredient[]>([]);
   const [notes, setNotes] = useState('');
 
@@ -56,6 +57,7 @@ export default function PrepRecipeFormPage() {
     setName(existing.name);
     setPrepType(existing.prep_type);
     setReadyAfterHours(existing.ready_after_hours);
+    setServings(existing.servings || 4);
     setShelfLifeDays(existing.shelf_life_days);
     setNotes(existing.notes || '');
     setIngredients(
@@ -98,6 +100,7 @@ export default function PrepRecipeFormPage() {
       prep_type: prepType,
       ready_after_hours: Number(readyAfterHours),
       shelf_life_days: Number(shelfLifeDays),
+      servings: Math.max(1, Number(servings)),
       ingredients: ingredients
         .filter((i) => i.name.trim())
         .map((i) => ({
@@ -193,6 +196,24 @@ export default function PrepRecipeFormPage() {
                 ? `${shelfLifeDays} days`
                 : `~${Math.round(shelfLifeDays / 30)} months`}
             </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-ga-text-secondary mb-1">
+            Servings per batch *
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={servings}
+            onChange={(e) => setServings(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-32 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary"
+          />
+          <div className="text-[10px] text-ga-text-secondary mt-1">
+            How many meal-portions one batch yields. Used to project days of
+            supply for your household.
           </div>
         </div>
 
