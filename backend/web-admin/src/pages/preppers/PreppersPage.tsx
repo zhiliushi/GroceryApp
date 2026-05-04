@@ -17,6 +17,7 @@ import {
   useUpdatePreppersHousehold,
 } from '@/api/queries/usePreppers';
 import { usePreppers } from '@/hooks/usePreppers';
+import BetaBadge from '@/components/shared/BetaBadge';
 import { batchHeadline, PREP_TYPE_ICONS, prepTypeLabel } from '@/utils/prepCountdown';
 import { formatCurrencyWithSymbol } from '@/utils/format';
 import type {
@@ -61,12 +62,10 @@ export default function PreppersPage() {
   return (
     <div className="space-y-6 max-w-5xl">
       <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold text-ga-text-primary">
+        <h1 className="text-2xl font-bold text-ga-text-primary flex items-center gap-2">
           🥒 Preppers
+          <BetaBadge title="Preppers — beta. Logic-based preservation tracker (kimchi, achar, kaya, jam, jerky shelf-life). Score is informational during beta; nothing here gates other features. Tell admin if anything breaks." />
         </h1>
-        <span className="text-[10px] uppercase tracking-wider bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">
-          beta
-        </span>
       </header>
 
       <BetaBanner />

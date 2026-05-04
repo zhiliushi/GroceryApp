@@ -10,6 +10,7 @@ import RecipeHistoryModal from '@/components/meals/RecipeHistoryModal';
 import RecipeCostCard from '@/components/meals/RecipeCostCard';
 import IngredientSocialRow from '@/components/meals/IngredientSocialRow';
 import IngredientAutocomplete from '@/components/meals/IngredientAutocomplete';
+import BetaBadge from '@/components/shared/BetaBadge';
 import type { Recipe, RecipeIngredient } from '@/types/api';
 
 interface FormIngredient extends RecipeIngredient {
@@ -154,14 +155,17 @@ export default function RecipeFormPage() {
           <span className="text-ga-text-primary">{isEdit ? 'Edit Recipe' : 'Add Recipe'}</span>
         </div>
         {isEdit && homemaker.versioning && (
-          <button
-            type="button"
-            onClick={() => setHistoryOpen(true)}
-            className="text-xs px-3 py-1 rounded border border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
-            title="View revision history (homemaker)"
-          >
-            🕘 History
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="text-xs px-3 py-1 rounded border border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+              title="View revision history (Homemaker — beta). Up to 7 saved revisions per recipe; oldest rotates out silently when an 8th edit lands."
+            >
+              🕘 History
+            </button>
+            <BetaBadge size="sm" tone="purple" title="Homemaker — beta. Revision history + ingredient star/pin are still being tuned." />
+          </div>
         )}
       </div>
 
@@ -260,10 +264,15 @@ export default function RecipeFormPage() {
 
         {/* Ingredients */}
         <div>
-          <label
-            className="block text-xs text-ga-text-secondary mb-1"
-            title="At least one ingredient is required. Names auto-link to your catalog or to the common-ingredients list."
-          >Ingredients *</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label
+              className="block text-xs text-ga-text-secondary"
+              title="At least one ingredient is required. Names auto-link to your catalog or to the common-ingredients list."
+            >Ingredients *</label>
+            {isEdit && id && homemaker.social && (
+              <BetaBadge size="sm" tone="purple" title="Homemaker — beta. Star, pin and comments per ingredient. Visual only — no effect on cook flow yet." />
+            )}
+          </div>
           <div className="space-y-1.5">
             {sortedIngredients.map(({ ing, originalIdx }) => (
               <div key={ing._key}>

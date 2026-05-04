@@ -8,6 +8,7 @@ import DataTable, { type Column } from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import EmptyState from '@/components/shared/EmptyState';
+import BetaBadge from '@/components/shared/BetaBadge';
 import { formatDate, formatRelativeDate, formatCurrency, formatExpiry, truncateUid } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import type { InventoryItem } from '@/types/api';
@@ -220,11 +221,15 @@ export default function UserDetailPage() {
                 <TierToggle uid={user.uid} currentTier={user.tier || 'free'} />
               </div>
               <div>
-                <span className="text-ga-text-secondary block">Homemaker</span>
+                <span className="text-ga-text-secondary block">
+                  Homemaker <BetaBadge size="sm" tone="purple" />
+                </span>
                 <HomemakerToggle uid={user.uid} enabled={user.homemaker_enabled ?? false} />
               </div>
               <div>
-                <span className="text-ga-text-secondary block">Preppers</span>
+                <span className="text-ga-text-secondary block">
+                  Preppers <BetaBadge size="sm" />
+                </span>
                 <PreppersToggle uid={user.uid} enabled={user.preppers_enabled ?? true} />
               </div>
               <div>

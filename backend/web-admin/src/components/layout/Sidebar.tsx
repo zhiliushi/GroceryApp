@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
 import { usePreppers } from '@/hooks/usePreppers';
+import BetaBadge from '@/components/shared/BetaBadge';
 import { cn } from '@/utils/cn';
 
 interface NavItem {
@@ -16,6 +17,9 @@ interface NavItem {
    *  (per-user toggle AND global flag). Cleaner than `requiresFlag`
    *  alone for features whose gate composes multiple signals. */
   requiresPreppers?: boolean;
+  /** When set, renders a small Beta badge after the label. Sets the
+   *  expectation that this surface is still being shaped. */
+  beta?: 'amber' | 'purple';
 }
 
 // Primary nav — always visible. Keep this list minimal (3 items per the plan).
@@ -30,7 +34,7 @@ const secondaryNav: NavItem[] = [
   { path: '/catalog', label: 'Catalog', icon: '📚' },
   { path: '/storage', label: 'Storage', icon: '🗄️' },
   { path: '/meals', label: 'Meals', icon: '🍳' },
-  { path: '/preppers', label: 'Preppers', icon: '🥒', requiresPreppers: true },
+  { path: '/preppers', label: 'Preppers', icon: '🥒', requiresPreppers: true, beta: 'amber' },
   { path: '/foodbanks', label: 'Foodbanks', icon: '📍' },
   { path: '/waste', label: 'Waste', icon: '🗑️' },
   { path: '/spending', label: 'Spending', icon: '💳' },
@@ -85,6 +89,9 @@ function NavLink({
       {!collapsed && (
         <>
           <span className="flex-1">{item.label}</span>
+          {item.beta && (
+            <BetaBadge size="sm" tone={item.beta} className="border-white/30 bg-white/15 text-white" />
+          )}
           {item.badge != null && item.badge > 0 && (
             <span className="bg-white/20 text-white text-xs font-medium rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
               {item.badge}

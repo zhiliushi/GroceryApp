@@ -234,6 +234,20 @@ When the recipe omits a unit entirely or uses a "whole-portion" unit
 To extend: add to `SUB_PORTION_UNITS` and the new unit will pre-uncheck
 on next render. No backend change needed — units are recipe-side metadata.
 
+## Beta tagging (Homemaker)
+
+Captured 2026-05-04. Three Homemaker surfaces carry purple
+`<BetaBadge tone="purple" />` so users know they're in beta:
+
+- **🕘 History button** on `RecipeFormPage` (next to the button itself).
+- **Ingredients section heading** on `RecipeFormPage` — only when
+  `homemaker.social` resolves true.
+- **`<RecipeHistoryModal />` header** — beside the "History — \<recipe>" title.
+
+Convention: purple for homemaker family, amber for generic beta
+(Preppers, future AI Chef). Canonical list lives in
+`.claude/docs/feature-inventory.md` "Beta-tagged surfaces".
+
 ## Data sources
 
 - `useRecipes()` — `/api/meals/recipes`. Drives the **My Recipes**

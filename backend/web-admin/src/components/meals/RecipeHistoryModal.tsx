@@ -5,6 +5,7 @@ import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import BetaBadge from '@/components/shared/BetaBadge';
 import { formatCurrencyWithSymbol, formatRelativeDate } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import type { RecipeRevision } from '@/types/api';
@@ -59,9 +60,10 @@ export default function RecipeHistoryModal({ open, recipeId, recipeName, onClose
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-5 py-4 border-b border-ga-border flex-shrink-0">
-            <div className="flex items-baseline justify-between gap-2">
-              <h3 className="text-base font-semibold text-ga-text-primary">
+            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+              <h3 className="text-base font-semibold text-ga-text-primary flex items-center gap-2">
                 History — {recipeName}
+                <BetaBadge size="sm" tone="purple" title="Homemaker revision history — beta. The 7-version cap and rotation behaviour may change as we tune the model." />
               </h3>
               <span className="text-[10px] text-ga-text-secondary">
                 Max 7 versions · oldest rotates

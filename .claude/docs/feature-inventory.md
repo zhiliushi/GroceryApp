@@ -27,6 +27,32 @@ is a separate add-on (pricing TBD).
 `plus` users pick 3 tools from a menu (`tool_menu` in tier config). `pro`
 gets all of them. `free` gets none.
 
+## Beta-tagged surfaces
+
+Captured 2026-05-04. Beta badges (`<BetaBadge />` in
+`backend/web-admin/src/components/shared/BetaBadge.tsx`) are mandatory
+for any user-visible surface that's still being shaped. Sets
+expectations + earns trust + invites feedback.
+
+| Surface | Tone | Where tagged |
+|---|---|---|
+| Sidebar nav `/preppers` link | amber | `Sidebar.tsx` — small badge after the label, hidden when sidebar is collapsed |
+| Preppers page header | amber | `PreppersPage.tsx` — beside the 🥒 Preppers title |
+| Prep recipe form | amber | `PrepRecipeFormPage.tsx` — beside the breadcrumb |
+| Recipe form 🕘 History button (homemaker.versioning) | purple | `RecipeFormPage.tsx` — small badge next to button |
+| Recipe form Ingredients section heading (homemaker.social) | purple | `RecipeFormPage.tsx` — only when homemaker.social ON |
+| Recipe history modal header | purple | `RecipeHistoryModal.tsx` — beside "History — \<recipe>" |
+| Admin user detail Homemaker / Preppers labels | purple / amber | `UserDetailPage.tsx` — beside the toggle labels |
+
+Tone convention:
+- **amber** — generic beta (Preppers + future Plan & shop second-wave, AI Chef when shipped)
+- **purple** — homemaker family of features
+- **orange** — closed-beta access notes (currently used in auth pages text only)
+
+When adding a new gated surface: import `<BetaBadge />`, place beside
+the title or section heading, set `tone` to match the feature family,
+override `title=` with feature-specific tooltip copy.
+
 ## Pages × tier matrix
 
 User-facing pages (admin-only pages omitted — see `Sidebar.tsx adminNav`).

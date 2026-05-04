@@ -7,6 +7,7 @@ import {
   useCreatePrepRecipe,
   useUpdatePrepRecipe,
 } from '@/api/queries/usePreppers';
+import BetaBadge from '@/components/shared/BetaBadge';
 import type { PrepRecipe, PrepType } from '@/types/api';
 
 const PREP_TYPES: { value: PrepType; label: string; emoji: string }[] = [
@@ -142,10 +143,11 @@ export default function PrepRecipeFormPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <header className="text-sm text-ga-text-secondary">
+      <header className="text-sm text-ga-text-secondary flex items-baseline gap-2 flex-wrap">
         <Link to="/preppers" className="hover:text-ga-accent">← Preppers</Link>
-        {' / '}
+        <span>/</span>
         <span className="text-ga-text-primary">{isEdit ? 'Edit Recipe' : 'Add Prep Recipe'}</span>
+        <BetaBadge size="sm" title="Preppers — beta. Recipe schema and shelf-life math may change as we tune the model." />
       </header>
 
       <div className="bg-ga-bg-card border border-ga-border rounded-lg p-6 space-y-4">
