@@ -41,12 +41,48 @@ export default function MealsPage() {
         </div>
       </div>
 
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group mb-4">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ How does this page work?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">🔥 Cook These Now</span>{' '}
+            shows recipes that already match at least half their ingredients to what
+            you have in stock. Recipes that use items expiring within 7 days appear
+            first — that&apos;s the waste-prevention angle of this page.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Match badge</span>{' '}
+            (e.g. <code>3/5</code>) is matched ingredients ÷ total. Green is 100%.
+            The <em>🔥 Perfect match!</em> tag means all ingredients are in stock AND
+            at least one is expiring soon.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Cook buttons</span> —
+            tapping <em>Cook &amp; Mark All Used</em> or <em>Cook with what you have</em>{' '}
+            opens a checklist. Confirming deducts the matched purchase events from
+            inventory (status → used). Uncheck anything you&apos;re saving for later
+            before confirming.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">My Recipes</span> —
+            your saved collection. Free tier holds up to 15. Tap a recipe to edit
+            ingredients, prep time, or servings.
+          </p>
+        </div>
+      </details>
+
       {/* ============================================================
           COOK THESE NOW — waste prevention section
           Only shows recipes that match ≥50% ingredients from expiring inventory
           ============================================================ */}
       <div className="mb-6">
-        <h2 className="text-sm font-bold text-orange-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+        <h2
+          className="text-sm font-bold text-orange-400 uppercase tracking-wide mb-3 flex items-center gap-2"
+          title="Recipes that use what you already have, with expiring items prioritised."
+        >
           🔥 Cook These Now
         </h2>
 
@@ -87,7 +123,10 @@ export default function MealsPage() {
           ============================================================ */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-ga-text-primary">
+          <h2
+            className="text-sm font-semibold text-ga-text-primary"
+            title="Your saved recipes. Tap to edit, or use the Delete link to remove."
+          >
             My Recipes ({recipeCount}/{recipeLimit})
           </h2>
           {atLimit && (

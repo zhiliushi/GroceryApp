@@ -31,6 +31,27 @@ export default function MergeNudgeWidget() {
         Catalog cleanup
       </h2>
 
+      <details className="group">
+        <summary className="cursor-pointer list-none text-xs text-ga-accent hover:underline">
+          ⓘ How does this work? <span className="text-[10px] group-open:rotate-180 inline-block transition-transform">▾</span>
+        </summary>
+        <div className="text-xs text-ga-text-secondary mt-2 space-y-1.5 pl-1 border-l border-ga-border">
+          <p className="pl-2">
+            <span className="text-ga-text-primary font-medium">Likely duplicates</span>{' '}
+            are pairs of catalog items the app thinks might be the same product, either
+            because they share a barcode or because the names are very close. Tap{' '}
+            <em>Review</em> to open one side and decide whether to merge into the other.
+          </p>
+          <p className="pl-2">
+            <span className="text-ga-text-primary font-medium">Recent transfers</span>{' '}
+            shows merges you ran in the last 7 days. While the window is open, the{' '}
+            <em>Reverse</em> button puts every moved purchase back where it came from —
+            useful if you merged the wrong way round. After 7 days the merge becomes
+            permanent.
+          </p>
+        </div>
+      </details>
+
       {/* Duplicate pairs */}
       <div>
         <h3 className="text-xs uppercase tracking-wide text-ga-text-secondary mb-2">

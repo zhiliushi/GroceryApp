@@ -48,17 +48,56 @@ export default function CatalogListPage() {
         <PageHeader title="My Catalog" icon="📚" />
       </div>
 
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ What is My Catalog?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">Your catalog</span> is the
+            list of item names you have ever bought — one row per unique name. It&apos;s
+            different from My Items (which is each purchase, can be many per item) and
+            different from Storage (which is where things physically sit).
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Tap a row</span> to see
+            full purchase history, expiry trends, and the option to delete the entry.
+            Tap <em>+ Add</em> to log another purchase of the same item without retyping
+            the name.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Sort</span> by{' '}
+            <em>Last bought</em> (default — recently used items first), <em>Most bought</em>{' '}
+            (your top staples), or <em>Alphabetical</em>.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Search</span> matches the
+            start of an item name. While searching, results are always alphabetical — sort
+            preference resumes once you clear the box.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">🏷️ Linked to barcode</span>{' '}
+            means a barcode was scanned for that name at least once. Future scans of the
+            same code auto-find this entry. Items without barcodes work the same — they
+            just need to be typed.
+          </p>
+        </div>
+      </details>
+
       <div className="flex flex-wrap gap-2 items-center">
         <input
           type="text"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="🔍 Search…"
+          title="Match the start of an item name. While searching, results are alphabetical."
           className="flex-1 min-w-[200px] px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
         />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          title="How to order the catalog. Searching temporarily switches to alphabetical."
           className="px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary"
         >
           <option value="last_purchased_at">Last bought</option>
@@ -70,7 +109,10 @@ export default function CatalogListPage() {
       {!isLoading && entries.length > 0 && (
         <div className="text-xs text-ga-text-secondary">
           {entries.length}
-          {hasNextPage ? '+' : ''} entries · {linkedCount} linked to barcode
+          {hasNextPage ? '+' : ''} entries ·{' '}
+          <span title="Number of entries with a barcode on file. Items without barcodes work the same — just typed instead of scanned.">
+            {linkedCount} linked to barcode
+          </span>
         </div>
       )}
 
@@ -129,21 +171,32 @@ function CatalogRow({
     <div className="bg-ga-bg-card border border-ga-border rounded-lg p-3 flex items-center gap-3">
       <Link
         to={`/catalog/${entry.name_norm}`}
+        title="Open the full history for this item."
         className="flex-1 min-w-0 hover:opacity-90"
       >
         <div className="text-sm font-medium text-ga-text-primary truncate">
           {entry.display_name}
         </div>
         <div className="text-xs text-ga-text-secondary flex items-center gap-2">
-          {entry.barcode && <span>🏷️ {entry.barcode}</span>}
-          <span>{entry.total_purchases}× bought</span>
+          {entry.barcode && (
+            <span title={`Barcode on file: ${entry.barcode}`}>🏷️ {entry.barcode}</span>
+          )}
+          <span title="Total times you have logged buying this item.">
+            {entry.total_purchases}× bought
+          </span>
           {entry.active_purchases > 0 && (
-            <span className="text-green-600">{entry.active_purchases} active</span>
+            <span
+              className="text-green-600"
+              title="Currently in stock — purchases not yet marked used or thrown."
+            >
+              {entry.active_purchases} active
+            </span>
           )}
         </div>
       </Link>
       <button
         onClick={() => onAdd(entry)}
+        title="Log another purchase of this item without retyping the name."
         className="text-xs px-3 py-1 bg-ga-accent/20 text-ga-accent rounded hover:bg-ga-accent/30 flex-shrink-0"
       >
         + Add

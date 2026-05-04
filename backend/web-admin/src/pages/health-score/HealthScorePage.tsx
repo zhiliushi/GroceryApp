@@ -11,11 +11,11 @@ import { cn } from '@/utils/cn';
 
 type TabKey = 'expiring' | 'expired' | 'untracked' | 'wasted';
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'expiring', label: 'Expiring' },
-  { key: 'expired', label: 'Expired' },
-  { key: 'untracked', label: 'Untracked' },
-  { key: 'wasted', label: 'Wasted this month' },
+const TABS: { key: TabKey; label: string; hint: string }[] = [
+  { key: 'expiring', label: 'Expiring', hint: 'Items going off in the next 7 days, soonest first.' },
+  { key: 'expired', label: 'Expired', hint: 'Items already past their expiry date — decide Use or Throw.' },
+  { key: 'untracked', label: 'Untracked', hint: 'Bought items with no expiry date. Older buckets are riskier.' },
+  { key: 'wasted', label: 'Wasted this month', hint: 'Items you marked Thrown since the 1st of this month.' },
 ];
 
 const MS_DAY = 24 * 60 * 60 * 1000;
@@ -65,10 +65,44 @@ export default function HealthScorePage() {
     );
   }, [thrown.data]);
 
+  const activeTabHint = TABS.find((t) => t.key === tab)?.hint ?? '';
+
   return (
     <div className="p-6 space-y-4">
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Health Score' }]} />
       <PageHeader title="Inventory Health" icon="💚" />
+
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ How is this score calculated?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">The score (0–100)</span>{' '}
+            blends two things: 70% from how healthy your active items look right now (fewer
+            expiring or expired = higher score), 30% from your waste rate this month
+            (less thrown = higher score).
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Colour bands:</span>{' '}
+            <span className="text-green-500">green ≥ 80 (healthy)</span>,
+            <span className="text-yellow-500"> yellow 50–79 (needs attention)</span>,
+            <span className="text-red-500"> red &lt; 50 (urgent)</span>.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">The four tabs below</span>{' '}
+            group items by the action you can take: Expiring (use soon), Expired (decide
+            now), Untracked (set an expiry), Wasted this month (look back).
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">The 30-day chart</span>{' '}
+            uses one snapshot per day at 23:30 UTC. Days without a snapshot copy the
+            previous day&apos;s value, so the line may look flat across gaps.
+          </p>
+        </div>
+      </details>
+
       <HealthBar drillToPath="/health-score" />
       <HealthTrendChart />
 
@@ -78,6 +112,7 @@ export default function HealthScorePage() {
             key={t.key}
             type="button"
             onClick={() => setParams({ tab: t.key })}
+            title={t.hint}
             className={cn(
               'px-4 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors',
               tab === t.key
@@ -100,6 +135,9 @@ export default function HealthScorePage() {
           </button>
         ))}
       </div>
+      <p className="text-[11px] text-ga-text-secondary -mt-2" aria-live="polite">
+        {activeTabHint}
+      </p>
 
       {tab === 'expiring' && <ItemList items={expiring} emptyMsg="Nothing expiring in the next 7 days — nice!" />}
       {tab === 'expired' && (

@@ -63,6 +63,22 @@ export default {
   run: async (page, expect, step) => {
     page.on('dialog', (dlg) => dlg.accept())  // confirm() prompts auto-accept
 
+    // Network tracing: surface 4xx/5xx responses on shopping-lists API so a
+    // failing tick / checkout shows up in the test log instead of just a UI
+    // toast.
+    page.on('response', async (resp) => {
+      const url = resp.url()
+      const status = resp.status()
+      if (/\/api\//.test(url) && status >= 400) {
+        let body = ''
+        try { body = (await resp.text()).slice(0, 1500) } catch {}
+        const reqBody = resp.request().postData() || ''
+        console.log(`[net] ${status} ${resp.request().method()} ${url}`)
+        if (reqBody) console.log(`[net]   request: ${reqBody.slice(0, 400)}`)
+        console.log(`[net]   response: ${body}`)
+      }
+    })
+
     // ─── Auth ─────────────────────────────────────────────────
     await step('unlock-and-open', async () => {
       // Cache-bust + SW unregister to survive Brave-profile carry-over
@@ -145,9 +161,14 @@ export default {
     await step('add-alternative-manually', async () => {
       // Click "+ Alt" on the primary row (first one with that label)
       await page.locator('button:has-text("+ Alt")').first().click()
-      const brandInput = page.locator('input[placeholder*="Brand / variant"]').first()
-      await expect(brandInput).toBeVisible()
-      await brandInput.fill(ALT_BRAND)
+      // The first input ("Brand / variant" / candidate_name) has autoFocus,
+      // which races with Playwright's fill/type and leaves the React state
+      // unset. Side-step by using the second-row "Brand" input (no autoFocus)
+      // — altDisplayLabel falls back to brand when candidate_name is empty,
+      // so the displayed text is still ALT_BRAND.
+      const brandFieldRow2 = page.locator('input[placeholder="Brand"]').first()
+      await expect(brandFieldRow2).toBeVisible()
+      await brandFieldRow2.fill(ALT_BRAND)
       await page.locator('input[placeholder*="Price"]').first().fill('5.99')
       await page.locator('button:has-text("Add alternative")').first().click()
       // The alt should now appear in the expanded panel

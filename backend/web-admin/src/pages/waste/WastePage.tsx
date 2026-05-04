@@ -7,21 +7,50 @@ import WasteScoreboard from '@/components/dashboard/WasteScoreboard';
 import { cn } from '@/utils/cn';
 
 type Period = 'week' | 'month' | 'year' | 'all';
-const PERIODS: Array<{ key: Period; label: string }> = [
-  { key: 'week', label: 'Week' },
-  { key: 'month', label: 'Month' },
-  { key: 'year', label: 'Year' },
-  { key: 'all', label: 'All time' },
+const PERIODS: Array<{ key: Period; label: string; hint: string }> = [
+  { key: 'week', label: 'Week', hint: 'Last 7 days (rolling).' },
+  { key: 'month', label: 'Month', hint: 'From the 1st of this month to today.' },
+  { key: 'year', label: 'Year', hint: 'From January 1 to today.' },
+  { key: 'all', label: 'All time', hint: 'Everything you have thrown since you started.' },
 ];
 
 export default function WastePage() {
   const [period, setPeriod] = useState<Period>('month');
   const { data, isLoading } = useWasteSummary(period);
+  const activeHint = PERIODS.find((p) => p.key === period)?.hint ?? '';
 
   return (
     <div className="p-6 space-y-4">
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Waste' }]} />
       <PageHeader title="Waste breakdown" icon="🗑️" />
+
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ What does this page show?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">What counts as waste:</span>{' '}
+            only items you marked <em>Thrown</em> with a reason of <em>expired</em> or
+            <em> unexpected event</em> (e.g. spoiled, damaged). Items given away or fully used up are not waste.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">The three cards above</span>{' '}
+            show <em>this week / this month / last month</em> at a glance. Tap any card to
+            see its top thrown items.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">The buttons below</span>{' '}
+            zoom into a single window — pick the range you want to study.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">"Top wasted items"</span>{' '}
+            is sorted by money lost, not how often. Two RM 12 items thrown matter more than
+            ten RM 0.50 items.
+          </p>
+        </div>
+      </details>
 
       {/* Top scoreboard — week / month / last_month at a glance, before
           drilling into a single-period view below. Symmetric with the
@@ -30,19 +59,25 @@ export default function WastePage() {
 
       <div className="pt-2 border-t border-ga-border" />
 
-      <div className="flex gap-2">
-        {PERIODS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => setPeriod(p.key)}
-            className={cn(
-              'px-3 py-1 text-sm rounded',
-              period === p.key ? 'bg-ga-accent text-white' : 'bg-ga-bg-hover text-ga-text-secondary',
-            )}
-          >
-            {p.label}
-          </button>
-        ))}
+      <div>
+        <div className="flex gap-2">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              title={p.hint}
+              className={cn(
+                'px-3 py-1 text-sm rounded',
+                period === p.key ? 'bg-ga-accent text-white' : 'bg-ga-bg-hover text-ga-text-secondary',
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-ga-text-secondary mt-1.5" aria-live="polite">
+          {activeHint}
+        </p>
       </div>
 
       {isLoading ? (
@@ -64,7 +99,10 @@ export default function WastePage() {
 
           {data.top_wasted.length > 0 && (
             <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
-              <h3 className="text-sm font-semibold text-ga-text-primary mb-3">Top wasted items</h3>
+              <h3 className="text-sm font-semibold text-ga-text-primary">Top wasted items</h3>
+              <p className="text-[11px] text-ga-text-secondary mb-3">
+                Sorted by money lost. Number after × is units thrown.
+              </p>
               <ul className="space-y-2">
                 {data.top_wasted.map((item) => (
                   <li

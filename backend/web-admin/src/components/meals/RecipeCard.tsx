@@ -30,12 +30,18 @@ export default function RecipeCard({ recipe, onCook, showMatchDetails = true }: 
         </div>
         <div className="flex items-center gap-1.5">
           {allMatched && hasExpiring && (
-            <span className="text-[10px] bg-orange-500/20 text-orange-400 rounded-full px-2 py-0.5 font-bold">🔥 Perfect match!</span>
+            <span
+              className="text-[10px] bg-orange-500/20 text-orange-400 rounded-full px-2 py-0.5 font-bold"
+              title="All ingredients in stock and at least one is expiring within 7 days — cook this first."
+            >🔥 Perfect match!</span>
           )}
-          <span className={cn(
-            'text-[10px] rounded-full px-2 py-0.5 font-bold',
-            matchPct === 100 ? 'bg-green-500/20 text-green-400' : 'bg-ga-bg-hover text-ga-text-secondary',
-          )}>
+          <span
+            className={cn(
+              'text-[10px] rounded-full px-2 py-0.5 font-bold',
+              matchPct === 100 ? 'bg-green-500/20 text-green-400' : 'bg-ga-bg-hover text-ga-text-secondary',
+            )}
+            title={`${recipe.matched_count} of ${recipe.total_ingredients} ingredients are in your inventory.`}
+          >
             {recipe.matched_count}/{recipe.total_ingredients}
           </span>
         </div>
@@ -73,6 +79,11 @@ export default function RecipeCard({ recipe, onCook, showMatchDetails = true }: 
       <div className="flex items-center gap-2">
         {onCook && recipe.matched_count > 0 && (
           <button onClick={onCook}
+            title={
+              allMatched
+                ? 'Open the cook checklist. Confirming will mark every matched ingredient as used in your inventory.'
+                : 'Open the cook checklist for the ingredients you have. Confirming will mark only the checked ones as used.'
+            }
             className={cn(
               'text-xs font-medium rounded-lg px-3 py-1.5 transition-colors',
               allMatched

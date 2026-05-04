@@ -37,6 +37,43 @@ export default function SettingsPage() {
       <PageHeader title="Settings" icon="⚙️" />
 
       <div className="space-y-4 max-w-3xl">
+        <details className="bg-ga-bg-card border border-ga-border rounded-lg group">
+          <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+            <span>ⓘ What can I change here?</span>
+            <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+          </summary>
+          <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+            <p>
+              <span className="text-ga-text-primary font-medium">Account</span> —
+              your email, support ID, and role (read-only).
+            </p>
+            <p>
+              <span className="text-ga-text-primary font-medium">Household</span> —
+              create one to share groceries with family, or join with an invite code.
+            </p>
+            <p>
+              <span className="text-ga-text-primary font-medium">Display currency</span> —
+              the currency every total on the dashboard / waste / spending pages is shown in.
+              Past purchases keep their original FX rate; only future entries use the new
+              setting.
+            </p>
+            <p>
+              <span className="text-ga-text-primary font-medium">Shopping list</span> —
+              where checkout-confirmed items land by default, and an opt-in to track which
+              brands you actually pick.
+            </p>
+            <p>
+              <span className="text-ga-text-primary font-medium">Catalog cleanup</span>{' '}
+              (only appears when there&apos;s something to review) — likely-duplicate items the
+              app spotted, plus an undo log for any merges you ran in the last 7 days.
+            </p>
+            <p>
+              <span className="text-ga-text-primary font-medium">Security</span> —
+              change your password, link Google sign-in, or delete your account.
+            </p>
+          </div>
+        </details>
+
         {/* Account card */}
         <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
           <h2 className="text-sm font-semibold text-ga-text-primary mb-3">Account</h2>
@@ -46,11 +83,17 @@ export default function SettingsPage() {
               <span className="text-sm text-ga-text-primary">{user?.email || '—'}</span>
             </div>
             <div>
-              <span className="block text-xs font-medium text-ga-text-secondary mb-0.5">UID</span>
+              <span
+                className="block text-xs font-medium text-ga-text-secondary mb-0.5"
+                title="Your unique account ID. Share this if support asks."
+              >UID</span>
               <code className="text-xs font-mono text-ga-text-secondary">{user?.uid || '—'}</code>
             </div>
             <div>
-              <span className="block text-xs font-medium text-ga-text-secondary mb-0.5">Role</span>
+              <span
+                className="block text-xs font-medium text-ga-text-secondary mb-0.5"
+                title="Your access level. Admins can manage products, users, and feature flags."
+              >Role</span>
               <StatusBadge status={user?.role} />
             </div>
           </div>

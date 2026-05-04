@@ -49,9 +49,34 @@ function NoHouseholdView({ availableRoles }: { availableRoles: FamilyRole[] }) {
     <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
       <h2 className="text-sm font-semibold text-ga-text-primary mb-4">🏠 Household</h2>
 
-      <p className="text-sm text-ga-text-secondary mb-4">
+      <p className="text-sm text-ga-text-secondary mb-2">
         You're not in a household. Create one to share grocery data with family.
       </p>
+
+      <details className="mb-4 group">
+        <summary className="cursor-pointer list-none text-xs text-ga-accent hover:underline">
+          What is a household? <span className="text-[10px] group-open:rotate-180 inline-block transition-transform">▾</span>
+        </summary>
+        <div className="text-xs text-ga-text-secondary mt-2 space-y-1.5 pl-1 border-l border-ga-border">
+          <p className="pl-2">
+            A household is a small group (you + family members) that shares the same
+            inventory, shopping list, storage locations, and waste totals. Roles like
+            <em> mama, papa, brother</em> are just labels — they don&apos;t change what
+            anyone can do; they only show on members&apos; cards.
+          </p>
+          <p className="pl-2">
+            <span className="text-ga-text-primary font-medium">Create</span> if you&apos;re
+            the first person from your home to use the app. You become the owner and can
+            invite others.{' '}
+            <span className="text-ga-text-primary font-medium">Join</span> if a family
+            member already created one and shared a 6-letter invite code with you.
+          </p>
+          <p className="pl-2">
+            You can leave or change household later. You only ever lose the
+            <em> shared</em> view — your own grocery data stays with you.
+          </p>
+        </div>
+      </details>
 
       {/* Create */}
       <div className="space-y-3 mb-6">
@@ -192,6 +217,7 @@ function HouseholdView({ data, currentUid }: { data: import('@/types/api').House
                   variant: 'danger',
                   onConfirm: () => removeMutation.mutate(m.uid),
                 })}
+                  title="Remove this member from the shared household. Their personal data stays with them."
                   className="text-xs text-red-400 hover:text-red-300">Remove</button>
               )}
             </div>
@@ -274,6 +300,7 @@ function HouseholdView({ data, currentUid }: { data: import('@/types/api').House
             variant: 'danger',
             onConfirm: () => dissolveMutation.mutate(),
           })}
+            title="Disband the household for everyone. Each member keeps their own data; only the shared view goes away."
             className="text-xs text-red-400 hover:text-red-300">
             🗑 Dissolve Household
           </button>
@@ -284,6 +311,7 @@ function HouseholdView({ data, currentUid }: { data: import('@/types/api').House
             variant: 'danger',
             onConfirm: () => leaveMutation.mutate(),
           })}
+            title="Stop sharing with this household. Your own purchases, shopping list, and waste totals stay with you."
             className="text-xs text-red-400 hover:text-red-300">
             Leave Household
           </button>
