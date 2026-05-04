@@ -117,6 +117,9 @@ nul
 # Claude Code personal memory (not committed)
 .claude/memory/
 
+# Claude Code artifacts — e2e test reports + screenshots, build per-run
+.claude/artifacts/
+
 # Browser-test-agent credentials (per-developer; never committed)
 .test-password
 **/.test-password
