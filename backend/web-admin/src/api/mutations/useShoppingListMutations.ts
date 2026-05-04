@@ -82,6 +82,32 @@ export function useDeleteShoppingList() {
 
 // ─── Items ────────────────────────────────────────────────────────────────
 
+/** Detect a quota error response and emit a `grocery:cap-hit` window event
+ *  so the page can show the CapHitPrompt instead of a generic toast. */
+function maybeFireCapHit(
+  err: unknown,
+  scope: 'primaries' | 'alternatives',
+  context?: Record<string, unknown>,
+): boolean {
+  const response = (err as { response?: { status?: number; data?: { details?: { scope?: string; limit?: number } } } })?.response;
+  const data = response?.data;
+  const expectedScope =
+    scope === 'primaries' ? 'shopping_list_primaries' : 'shopping_list_alternatives';
+  if (response?.status === 409 && data?.details?.scope === expectedScope) {
+    window.dispatchEvent(
+      new CustomEvent('grocery:cap-hit', {
+        detail: {
+          cap_type: scope === 'primaries' ? 'primary' : 'alternative',
+          cap_value: data.details.limit,
+          context,
+        },
+      }),
+    );
+    return true;
+  }
+  return false;
+}
+
 export function useAddShoppingListItem() {
   const qc = useQueryClient();
   return useMutation({
@@ -99,7 +125,8 @@ export function useAddShoppingListItem() {
       qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
       qc.invalidateQueries({ queryKey: qk.shoppingLists.mine });
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, { listId }) => {
+      if (maybeFireCapHit(err, 'primaries', { list_id: listId })) return;
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg || 'Failed to add item');
     },
@@ -161,7 +188,8 @@ export function useAddShoppingListPrice() {
     onSuccess: (_, { listId }) => {
       qc.invalidateQueries({ queryKey: qk.shoppingLists.mineDetail(listId) });
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, { listId, itemId }) => {
+      if (maybeFireCapHit(err, 'alternatives', { list_id: listId, item_id: itemId })) return;
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg || 'Failed to add price');
     },

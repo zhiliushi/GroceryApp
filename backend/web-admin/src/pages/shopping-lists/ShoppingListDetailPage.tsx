@@ -14,6 +14,7 @@ import {
 } from '@/api/mutations/useShoppingListMutations';
 import { useVisibility } from '@/hooks/useVisibility';
 import ScanReceiptButton from '@/components/receipt/ScanReceiptButton';
+import CapHitPrompt from '@/components/feedback/CapHitPrompt';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import EmptyState from '@/components/shared/EmptyState';
 import ContextualScannerModal from '@/components/barcode/ContextualScannerModal';
@@ -110,6 +111,11 @@ export default function ShoppingListDetailPage() {
    */
   const [scanMode, setScanMode] = useState<'add' | 'buy' | 'compare'>('add');
   const [scanCompareTargetId, setScanCompareTargetId] = useState<string | null>(null);
+  const [capHit, setCapHit] = useState<{
+    cap_type: 'primary' | 'alternative';
+    cap_value: number;
+    context?: Record<string, unknown>;
+  } | null>(null);
 
   useEffect(() => {
     if (data?.list?.name && renameValue === '') {
@@ -193,6 +199,25 @@ export default function ShoppingListDetailPage() {
     promoteMutation,
     tickMutation,
   ]);
+
+  // Listen for cap-hit events fired by useShoppingListMutations on 409 quota
+  // responses. Surfaces CapHitPrompt so the user can describe what they were
+  // trying to do — admin uses these to decide whether to bump caps.
+  useEffect(() => {
+    type CapHitDetail = {
+      cap_type: 'primary' | 'alternative';
+      cap_value: number;
+      context?: Record<string, unknown>;
+    };
+    function onCapHit(e: Event) {
+      const detail = (e as CustomEvent<CapHitDetail>).detail;
+      if (detail?.cap_type && Number.isFinite(detail.cap_value)) {
+        setCapHit(detail);
+      }
+    }
+    window.addEventListener('grocery:cap-hit', onCapHit);
+    return () => window.removeEventListener('grocery:cap-hit', onCapHit);
+  }, []);
 
   const items = useMemo(() => data?.items ?? [], [data]);
 
@@ -682,6 +707,18 @@ export default function ShoppingListDetailPage() {
           // Defer mode reset until the scan handler completes (in finally{})
         }}
       />
+
+      {/* Beta cap-hit feedback prompt. Triggered by 'grocery:cap-hit' events
+          fired from useShoppingListMutations when a 409 quota response comes
+          back. Lets the user describe what they were trying to do. */}
+      {capHit && (
+        <CapHitPrompt
+          capType={capHit.cap_type}
+          capValue={capHit.cap_value}
+          context={capHit.context}
+          onClose={() => setCapHit(null)}
+        />
+      )}
     </div>
   );
 }

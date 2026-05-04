@@ -1757,3 +1757,40 @@ async def reconcile_catalog_refs(
         result.get("drift_count", 0), result.get("fixed_count", 0),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Feedback browse + triage
+# ---------------------------------------------------------------------------
+
+@router.get("/feedback")
+async def list_feedback(
+    kind: Optional[str] = None,
+    status: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+    admin: UserInfo = Depends(require_admin),
+):
+    """Admin: browse feedback. All filters optional."""
+    from app.services import feedback_service
+    items = feedback_service.list_feedback(
+        kind=kind, status=status, user_id=user_id, limit=limit,
+    )
+    stats = feedback_service.stats()
+    return {"items": items, "count": len(items), "stats": stats}
+
+
+@router.patch("/feedback/{feedback_id}")
+async def update_feedback(
+    feedback_id: str,
+    body: dict = None,  # type: ignore[assignment]
+    admin: UserInfo = Depends(require_admin),
+):
+    """Admin: update status / admin_notes on a feedback entry."""
+    from app.services import feedback_service
+    body = body or {}
+    return feedback_service.update_feedback(
+        feedback_id,
+        status=body.get("status"),
+        admin_notes=body.get("admin_notes"),
+    )

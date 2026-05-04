@@ -9,6 +9,7 @@ import SystemSettingsTab from './SystemSettingsTab';
 import FeatureFlagsTab from './FeatureFlagsTab';
 import NudgesTab from './NudgesTab';
 import CatalogMaintenanceTab from './CatalogMaintenanceTab';
+import FeedbackTab from './FeedbackTab';
 
 const TABS = [
   { key: 'features', label: 'Feature Flags', icon: '🎚️' },
@@ -19,6 +20,7 @@ const TABS = [
   { key: 'email', label: 'Email', icon: '📧' },
   { key: 'system', label: 'System', icon: '🖥️' },
   { key: 'catalog', label: 'Catalog Maintenance', icon: '🧹' },
+  { key: 'feedback', label: 'Feedback', icon: '📨' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -56,6 +58,7 @@ export default function AdminSettingsPage() {
       {activeTab === 'email' && <EmailSettingsTab />}
       {activeTab === 'system' && <SystemSettingsTab />}
       {activeTab === 'catalog' && <CatalogMaintenanceTab />}
+      {activeTab === 'feedback' && <FeedbackTab />}
     </div>
   );
 }

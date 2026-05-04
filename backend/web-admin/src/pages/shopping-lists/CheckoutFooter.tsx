@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocations } from '@/api/queries/useLocations';
+import { useExchangeRates } from '@/api/queries/useConfig';
 import { useAuthStore } from '@/stores/authStore';
 import StoreSelect from '@/components/stores/StoreSelect';
 import { useConfirmCheckout } from '@/api/mutations/useShoppingListMutations';
@@ -70,6 +71,7 @@ export default function CheckoutFooter({
   ) || '_unsorted';
 
   const { locations } = useLocations();
+  const { data: fxData } = useExchangeRates();
   const [storage, setStorage] = useState<string>(defaultStorage);
   const [storeId, setStoreId] = useState<string | null>(null);
   const [storeLabel, setStoreLabel] = useState<string>('');
@@ -77,6 +79,19 @@ export default function CheckoutFooter({
   const [date, setDate] = useState<string>(today);
 
   const checkoutMutation = useConfirmCheckout();
+
+  /** Convert `amount` from `from` to `to` using cached rates relative to fxData.base.
+   *  Returns null if rates are unavailable or the conversion can't be computed. */
+  function convertCurrency(amount: number, from: string, to: string): number | null {
+    if (!Number.isFinite(amount)) return null;
+    if (from === to) return amount;
+    if (!fxData?.rates) return null;
+    const rateFrom = from === fxData.base ? 1 : fxData.rates[from];
+    const rateTo = to === fxData.base ? 1 : fxData.rates[to];
+    if (!rateFrom || !rateTo) return null;
+    // amount(from) → amount(base) → amount(to)
+    return (amount / rateFrom) * rateTo;
+  }
 
   const ticked: TickedRef[] = useMemo(() => {
     const out: TickedRef[] = [];
@@ -104,26 +119,67 @@ export default function CheckoutFooter({
     return out;
   }, [items, tripCurrency]);
 
-  // List estimate = sum of lowest-price alternative per primary (only counts
-  // primaries that have at least one priced alternative).
-  const listEstimate = useMemo(() => {
-    let total = 0;
+  // Per-currency totals so we can show dual-display when a trip mixes
+  // currencies (P2: stored values are exact; conversion is UI-only).
+  // `spentByCurrency` is the raw sum per currency; `spentInTrip` converts
+  // each per-trip and sums (uses cached FX rates; falls back to raw sum if
+  // rates unavailable). Same for the list estimate.
+  const spentByCurrency: Record<string, number> = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const r of ticked) {
+      if (r.rowSpend == null) continue;
+      out[r.currency] = (out[r.currency] || 0) + r.rowSpend;
+    }
+    return out;
+  }, [ticked]);
+
+  const listEstimateByCurrency: Record<string, number> = useMemo(() => {
+    const out: Record<string, number> = {};
     for (const item of items) {
       const alts = (item.prices ?? []) as ShoppingListPrice[];
       const priced = alts.filter((a) => a.price != null);
       if (priced.length === 0) continue;
-      const min = Math.min(...priced.map((a) => Number(a.price)));
-      total += min;
+      // Lowest-price candidate (in its own currency — we don't FX-convert
+      // for the per-currency raw view; that's only for the estimate
+      // displayed in trip currency below).
+      const lowest = priced.reduce((a, b) =>
+        Number(a.price) <= Number(b.price) ? a : b,
+      );
+      const cur = lowest.currency || tripCurrency;
+      out[cur] = (out[cur] || 0) + Number(lowest.price);
     }
-    return total;
-  }, [items]);
+    return out;
+  }, [items, tripCurrency]);
 
-  const spent = useMemo(
-    () => ticked.reduce((sum, r) => sum + (r.rowSpend ?? 0), 0),
-    [ticked],
-  );
-  const delta = spent - listEstimate;
+  /** Sum a per-currency map into trip currency. Returns
+   *  { value: number, complete: boolean } where complete=false means at
+   *  least one currency couldn't be converted (FX missing). */
+  function sumIntoTripCurrency(byCurrency: Record<string, number>) {
+    let total = 0;
+    let complete = true;
+    for (const [cur, amt] of Object.entries(byCurrency)) {
+      const converted = convertCurrency(amt, cur, tripCurrency);
+      if (converted == null) {
+        complete = false;
+        // Best-effort: include same-currency amounts; skip un-convertible
+        if (cur === tripCurrency) total += amt;
+      } else {
+        total += converted;
+      }
+    }
+    return { value: total, complete };
+  }
+
+  const spent = sumIntoTripCurrency(spentByCurrency);
+  const listEstimate = sumIntoTripCurrency(listEstimateByCurrency);
+  const delta = spent.value - listEstimate.value;
+  const deltaComplete = spent.complete && listEstimate.complete;
   const tickedCount = ticked.length;
+
+  // Multi-currency = ticked alts span more than one currency
+  const tickedCurrencies = Object.keys(spentByCurrency);
+  const isMixedCurrency = tickedCurrencies.length > 1
+    || (tickedCurrencies.length === 1 && tickedCurrencies[0] !== tripCurrency);
 
   const noPriceTickedCount = ticked.filter((r) => r.rowSpend === null).length;
   const unitMismatchCount = ticked.filter((r) => r.unitMismatch).length;
@@ -158,14 +214,36 @@ export default function CheckoutFooter({
                 {tickedCount} ticked
               </span>
               <span className="text-sm text-ga-text-primary">
-                spent <span className="font-medium">{tripCurrency} {spent.toFixed(2)}</span>
+                spent{' '}
+                <span className="font-medium">
+                  {tripCurrency} {spent.value.toFixed(2)}
+                </span>
+                {!spent.complete && (
+                  <span
+                    className="ml-1 text-[10px] text-amber-300"
+                    title="Some currencies couldn't be converted (FX rates unavailable). Showing partial total."
+                  >
+                    ⚠ partial
+                  </span>
+                )}
               </span>
-              {listEstimate > 0 && (
-                <span className="text-xs text-ga-text-secondary">
-                  · list est. {tripCurrency} {listEstimate.toFixed(2)}
+              {/* Per-currency breakdown when the trip mixes currencies — P2:
+                  conversion is UI-only, so we always show the originals. */}
+              {isMixedCurrency && (
+                <span className="text-[11px] text-ga-text-secondary">
+                  (
+                  {Object.entries(spentByCurrency)
+                    .map(([cur, amt]) => `${cur} ${amt.toFixed(2)}`)
+                    .join(' + ')}
+                  )
                 </span>
               )}
-              {listEstimate > 0 && (
+              {listEstimate.value > 0 && (
+                <span className="text-xs text-ga-text-secondary">
+                  · list est. {tripCurrency} {listEstimate.value.toFixed(2)}
+                </span>
+              )}
+              {listEstimate.value > 0 && deltaComplete && (
                 <span
                   className={cn(
                     'text-xs font-medium',

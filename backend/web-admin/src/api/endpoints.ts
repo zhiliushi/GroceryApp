@@ -32,6 +32,10 @@ export const API = {
     `/api/shopping-lists/${listId}/checkout`,
   // v3 user grocery preferences (default storage + analytics opt-in)
   MY_GROCERY_PREFERENCES: '/api/me/grocery-preferences',
+  // Feedback (cap-hit auto-prompt + general feedback form + RPi-ready)
+  FEEDBACK: '/api/feedback',
+  ADMIN_FEEDBACK: '/api/admin/feedback',
+  ADMIN_FEEDBACK_ITEM: (id: string) => `/api/admin/feedback/${id}`,
 
   PRODUCTS: '/api/admin/products',
   PRODUCT: (barcode: string) => `/api/admin/products/${barcode}`,
@@ -84,6 +88,7 @@ export const API = {
     `/api/meals/recipes/${rid}/ingredients/${idx}/comment`,
   MEALS_INGREDIENT_COMMENT_ITEM: (rid: string, idx: number, cid: string) =>
     `/api/meals/recipes/${rid}/ingredients/${idx}/comment/${cid}`,
+  MEALS_COMMON_INGREDIENTS: '/api/meals/common-ingredients',
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',
