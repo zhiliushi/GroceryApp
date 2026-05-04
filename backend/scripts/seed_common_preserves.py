@@ -22,133 +22,156 @@ logger = logging.getLogger(__name__)
 
 
 # (name_norm, display_name, prep_type, default_ready_after_hours,
-#  default_shelf_life_days, description, ingredients)
+#  default_shelf_life_days, description, ingredients, source)
+#
+# `source` cites the canonical reference per the principles doc P4
+# (.claude/docs/preppers_principles.md). Values:
+#   "katz"     — Sandor Katz, Art of Fermentation (and Wild Fermentation)
+#   "ball"     — Ball Blue Book Guide to Preserving
+#   "nchfp"    — National Center for Home Food Preservation (UGA)
+#   "usda"     — USDA Complete Guide to Home Canning
+#   "judgment" — synthesized across sources or culturally-specific
+#                (Malaysian items not in Western references); flagged
+#                so future audits know what still needs primary-source
+#                verification.
+#
 # Defaults err on the conservative side for shelf life — unrefrigerated
 # ferments and oils degrade fast; user can extend per-batch when in doubt.
 # Ingredient lists are normalized lower-case names that match how items
 # typically appear in users' cooking recipes / personal catalogs — used
 # by the recommendation engine to score "worth keeping in rotation"
 # matches against frequent purchases.
-SEED: List[Tuple[str, str, str, int, int, str, List[str]]] = [
-    # === Ferments ===
+SEED: List[Tuple[str, str, str, int, int, str, List[str], str]] = [
+    # === Ferments (Katz primary) ===
     ("kimchi", "Kimchi", "ferment", 72, 60,
      "Salted napa cabbage + chilli + garlic + ginger. Tangy after ~3d, peak 1-2 weeks.",
-     ["cabbage", "chilli", "garlic", "ginger", "salt"]),
+     ["cabbage", "chilli", "garlic", "ginger", "salt"], "katz"),
     ("sauerkraut", "Sauerkraut", "ferment", 336, 180,
      "Salt-fermented cabbage. ~2 weeks for tang, refrigerate for months.",
-     ["cabbage", "salt"]),
+     ["cabbage", "salt"], "katz"),
     ("kombucha", "Kombucha", "ferment", 168, 30,
      "Sweet tea + SCOBY. ~7d primary fermentation; bottle-condition for fizz.",
-     ["tea", "sugar"]),
+     ["tea", "sugar"], "katz"),
     ("miso", "Miso paste", "ferment", 4320, 540,
      "Soybean + koji + salt. 6 months minimum; up to 18 months for richer flavour.",
-     ["soybean", "salt"]),
+     ["soybean", "salt"], "katz"),
     ("tempeh", "Tempeh", "ferment", 36, 7,
      "Cultured soybean cake. ~36h to fully knit; refrigerate after.",
-     ["soybean"]),
+     ["soybean"], "katz"),
     ("tapai", "Tapai (fermented sweet rice)", "ferment", 48, 14,
      "Glutinous rice + ragi yeast. Ready in 2-3d, sweetens fast.",
-     ["rice", "glutinous rice"]),
+     ["rice", "glutinous rice"], "judgment"),
     ("tempoyak", "Tempoyak (fermented durian)", "ferment", 336, 90,
      "Salted durian flesh. ~2 weeks to mature; pungent — keep sealed.",
-     ["durian", "salt"]),
+     ["durian", "salt"], "judgment"),
     ("yoghurt", "Home yogurt", "ferment", 8, 14,
      "Heated milk + culture. ~6-8h incubation; refrigerated.",
-     ["milk"]),
+     ["milk"], "katz"),
 
-    # === Pickles (vinegar, quick) ===
+    # === Pickles (Ball + Katz mix) ===
     ("dill_pickles", "Dill pickles", "pickle", 24, 30,
      "Cucumbers in vinegar brine + dill + garlic. Ready next day.",
-     ["cucumber", "vinegar", "dill", "garlic"]),
+     ["cucumber", "vinegar", "dill", "garlic"], "ball"),
     ("achar", "Achar (Malaysian pickled veg)", "pickle", 48, 30,
      "Veg + turmeric + chilli + vinegar + sugar. Mature 1-2 days.",
-     ["vinegar", "turmeric", "chilli", "sugar", "carrot", "cucumber"]),
+     ["vinegar", "turmeric", "chilli", "sugar", "carrot", "cucumber"], "judgment"),
     ("pickled_ginger", "Pickled ginger (gari)", "pickle", 24, 60,
      "Sliced young ginger + sweet vinegar brine.",
-     ["ginger", "vinegar", "sugar"]),
+     ["ginger", "vinegar", "sugar"], "ball"),
     ("pickled_onions", "Pickled onions", "pickle", 24, 30,
      "Red onion in vinegar + sugar. Ready in hours, peak after a day.",
-     ["onion", "vinegar", "sugar"]),
+     ["onion", "vinegar", "sugar"], "ball"),
     ("asam_jeruk", "Asam jeruk (pickled fruit)", "pickle", 48, 60,
      "Salted/sugared fruit. Sweet-sour snack staple.",
-     ["fruit", "salt", "sugar"]),
+     ["fruit", "salt", "sugar"], "judgment"),
 
-    # === Cures ===
+    # === Cures (Ball + Katz) ===
     ("gravlax", "Gravlax", "cure", 48, 7,
      "Salt + sugar + dill cure on salmon. Ready in ~2d; refrigerated.",
-     ["salmon", "salt", "sugar", "dill"]),
+     ["salmon", "salt", "sugar", "dill"], "ball"),
     ("bacon_home_cured", "Home-cured bacon", "cure", 168, 30,
      "Pork belly + salt + sugar + nitrate. ~7d cure, then optional cold-smoke.",
-     ["pork", "pork belly", "salt", "sugar"]),
+     ["pork", "pork belly", "salt", "sugar"], "ball"),
     ("cured_egg_yolks", "Cured egg yolks", "cure", 96, 30,
      "Yolks in salt-sugar bed for ~4d, then dried. Grate over pasta.",
-     ["eggs", "salt", "sugar"]),
+     ["eggs", "salt", "sugar"], "katz"),
 
-    # === Cans / preserves ===
+    # === Jams (Ball — water-bath canning bible) ===
     ("strawberry_jam", "Strawberry jam", "jam", 4, 180,
      "Fruit + sugar + acid, water-bath sealed. Unopened: 6 months.",
-     ["strawberry", "sugar"]),
+     ["strawberry", "sugar"], "ball"),
     ("marmalade", "Marmalade", "jam", 4, 180,
      "Citrus + sugar, set with pectin. Unopened: 6 months.",
-     ["orange", "lemon", "sugar"]),
+     ["orange", "lemon", "sugar"], "ball"),
     ("kaya", "Kaya (coconut egg jam)", "jam", 4, 14,
      "Egg + santan + sugar + pandan. Refrigerated, ~2 weeks.",
-     ["eggs", "santan", "coconut milk", "sugar", "pandan"]),
+     ["eggs", "santan", "coconut milk", "sugar", "pandan"], "judgment"),
     ("chilli_paste", "Sambal / chilli paste", "jam", 4, 30,
      "Chilli + onion + belacan + oil. Refrigerated, ~1 month.",
-     ["chilli", "onion", "belacan", "oil"]),
+     ["chilli", "onion", "belacan", "oil"], "judgment"),
+
+    # === Cans (USDA / NCHFP — safety-critical) ===
     ("canned_tomatoes", "Canned tomatoes", "can", 24, 365,
      "Water-bath sealed in jars. ~1 year if seal holds.",
-     ["tomato"]),
+     ["tomato"], "usda"),
     ("canned_beans", "Pressure-canned beans", "can", 24, 365,
      "Pressure-canner only — atmospheric/water bath is unsafe for beans.",
-     ["beans"]),
+     ["beans"], "usda"),
 
-    # === Dried ===
+    # === Dried (NCHFP / Mary Bell) ===
     ("beef_jerky", "Beef jerky", "dry", 8, 14,
      "Marinated strips dried at low heat. Vacuum-seal extends to ~30d.",
-     ["beef"]),
+     ["beef"], "nchfp"),
     ("dried_mushrooms", "Dried mushrooms", "dry", 24, 180,
      "Sliced + air-dried or dehydrator. Store in airtight jar.",
-     ["mushroom", "mushrooms"]),
+     ["mushroom", "mushrooms"], "nchfp"),
     ("dried_herbs", "Dried herbs", "dry", 168, 365,
      "Hang-dry or low-oven. Whole leaves keep longer than crushed.",
-     ["herbs", "basil", "rosemary", "thyme"]),
+     ["herbs", "basil", "rosemary", "thyme"], "nchfp"),
     ("sun_dried_tomatoes", "Sun-dried tomatoes", "dry", 72, 180,
      "Halved + salted + dried. In oil for richer flavour.",
-     ["tomato", "salt"]),
+     ["tomato", "salt"], "nchfp"),
 
-    # === Freezer ===
+    # === Freezer (USDA general guidelines) ===
     ("frozen_stew", "Batch-cooked frozen stew", "freeze", 4, 90,
      "Cooked, cooled, portioned, frozen. Best within 3 months.",
-     ["beef", "chicken", "vegetables", "potato"]),
+     ["beef", "chicken", "vegetables", "potato"], "usda"),
     ("frozen_stock", "Frozen stock", "freeze", 4, 180,
      "Reduced + portioned (ice cubes / bags). 6 months in -18C freezer.",
-     ["chicken", "bones", "vegetables"]),
+     ["chicken", "bones", "vegetables"], "usda"),
     ("frozen_pesto", "Frozen pesto", "freeze", 4, 90,
      "Basil + oil + nuts + cheese, portioned in ice trays.",
-     ["basil", "oil", "olive oil", "nuts", "cheese"]),
+     ["basil", "oil", "olive oil", "nuts", "cheese"], "judgment"),
 
-    # === Infusions ===
+    # === Infusions (Katz / general practice — short refrigerated life) ===
     ("chilli_oil", "Chilli oil", "infuse", 24, 60,
      "Heated oil over chilli flakes. Refrigerated for safety.",
-     ["chilli", "oil"]),
+     ["chilli", "oil"], "judgment"),
     ("herb_vinegar", "Herb-infused vinegar", "infuse", 168, 180,
      "Fresh herbs steeped in vinegar 1-2 weeks. Strain before storing.",
-     ["herbs", "vinegar"]),
+     ["herbs", "vinegar"], "katz"),
 ]
 
 
 def run() -> dict:
     """Execute the seed. Returns a summary dict.
 
-    Idempotent — `upsert` on each entry, so re-runs are safe.
+    Idempotent — `upsert` on each entry, so re-runs are safe. Always
+    bumps the `_meta.seeded_version` doc to the current SEED_VERSION
+    so future startup checks know the data is fresh.
     """
     from app.services import common_preserves_service
 
     created = 0
     updated = 0
-    for name_norm, display_name, prep_type, ready_h, shelf_d, desc, ingredients in SEED:
+    for entry in SEED:
+        # 8-tuple after P13: includes `source` citation as last field.
+        # Backward-compat with 7-tuples (no source) just in case.
+        if len(entry) == 8:
+            name_norm, display_name, prep_type, ready_h, shelf_d, desc, ingredients, source = entry
+        else:
+            name_norm, display_name, prep_type, ready_h, shelf_d, desc, ingredients = entry
+            source = "judgment"
         result = common_preserves_service.upsert(
             name_norm=name_norm,
             display_name=display_name,
@@ -157,23 +180,57 @@ def run() -> dict:
             default_shelf_life_days=shelf_d,
             description=desc,
             ingredients=ingredients,
+            source=source,
         )
         if result["created"]:
             created += 1
         else:
             updated += 1
-    summary = {"created": created, "updated": updated, "total": len(SEED)}
+    common_preserves_service.set_seeded_version(
+        common_preserves_service.SEED_VERSION,
+    )
+    summary = {
+        "created": created,
+        "updated": updated,
+        "total": len(SEED),
+        "seeded_version": common_preserves_service.SEED_VERSION,
+    }
     logger.info("common_preserves seed: %s", summary)
     return summary
 
 
-def run_if_empty() -> dict:
-    """Skip if collection already has entries — used as a startup hook."""
+def run_if_outdated() -> dict:
+    """Re-seed when the collection's seeded_version is below the current
+    SEED_VERSION constant. Bumping SEED_VERSION in the service module
+    triggers an idempotent re-upsert on the next deploy startup, so new
+    fields (e.g., the P11 `ingredients` lists, the P13 `source`
+    citations) propagate to existing-deploy environments without manual
+    intervention.
+
+    Replaces the older `run_if_empty()`, which skipped any time the
+    collection had at least one doc — and so missed schema-additive
+    seed updates after the initial deploy.
+    """
     from app.services import common_preserves_service
 
-    if common_preserves_service.is_seeded():
-        return {"skipped": True, "reason": "already_seeded"}
-    return run()
+    current = common_preserves_service.get_seeded_version()
+    target = common_preserves_service.SEED_VERSION
+    if current >= target:
+        return {
+            "skipped": True,
+            "reason": "up_to_date",
+            "seeded_version": current,
+        }
+    summary = run()
+    summary["upgraded_from_version"] = current
+    return summary
+
+
+# Backward-compat alias for any callers still pointing at the old name.
+def run_if_empty() -> dict:
+    """Deprecated — use run_if_outdated(). Kept temporarily so an
+    in-flight upstream hook reference doesn't break."""
+    return run_if_outdated()
 
 
 if __name__ == "__main__":

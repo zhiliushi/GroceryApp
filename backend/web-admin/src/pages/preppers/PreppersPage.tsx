@@ -223,10 +223,14 @@ function SupplyEstimateCard({ supply }: { supply: PrepSupplyEstimate }) {
 function SavingsRollupCard({ savings }: { savings: PrepSavingsRollup }) {
   const cur = savings.currency || 'SGD';
   const home = savings.home_cost_per_serving;
+  const homePartial = savings.home_cost_per_serving_partial;
   const store = savings.store_cost_per_serving;
   const sav = savings.savings_per_serving;
 
-  // Big number selection — savings if available, else home cost, else "—"
+  // Big number selection — savings if available, else home cost, else "—".
+  // P5 (conservative bias): when the home-cost average is built from
+  // partially-priced batches, suffix with "+" so the user knows the real
+  // cost is at least this much.
   let bigText: string;
   let bigTone: string;
   let caption: string;
@@ -245,9 +249,11 @@ function SavingsRollupCard({ savings }: { savings: PrepSavingsRollup }) {
       caption = 'break-even';
     }
   } else if (home != null) {
-    bigText = formatCurrencyWithSymbol(home, cur);
+    bigText = `${formatCurrencyWithSymbol(home, cur)}${homePartial ? '+' : ''}`;
     bigTone = 'text-ga-text-primary';
-    caption = 'home cost per serving';
+    caption = homePartial
+      ? 'home cost per serving (partial — real cost is more)'
+      : 'home cost per serving';
   } else {
     bigText = '—';
     bigTone = 'text-ga-text-secondary';
@@ -279,12 +285,12 @@ function SavingsRollupCard({ savings }: { savings: PrepSavingsRollup }) {
         </div>
         <div className="text-right text-xs text-ga-text-secondary space-y-0.5">
           {home != null && (
-            <div className="tabular-nums">
-              home <strong className="text-ga-text-primary">{formatCurrencyWithSymbol(home, cur)}</strong>/serving
+            <div className="tabular-nums" title={`Averaged across ${savings.home_priced_servings} priced servings`}>
+              home <strong className="text-ga-text-primary">{formatCurrencyWithSymbol(home, cur)}{homePartial ? '+' : ''}</strong>/serving
             </div>
           )}
           {store != null && (
-            <div className="tabular-nums">
+            <div className="tabular-nums" title={`Averaged across ${savings.store_ref_servings} servings with store reference`}>
               store <strong className="text-ga-text-primary">{formatCurrencyWithSymbol(store, cur)}</strong>/serving
             </div>
           )}
@@ -295,7 +301,7 @@ function SavingsRollupCard({ savings }: { savings: PrepSavingsRollup }) {
                 {savings.total_savings > 0 ? '+' : ''}
                 {formatCurrencyWithSymbol(savings.total_savings, cur)}
               </strong>{' '}
-              across {savings.total_servings} servings
+              across {savings.savings_servings} priced servings
             </div>
           )}
         </div>
@@ -592,9 +598,17 @@ function BatchRow({
               >
                 · {formatCurrencyWithSymbol(cost.home_cost_per_serving, currency)}
                 {cost.partial ? '+' : ''}/serving
-                {cost.savings_per_serving != null && cost.savings_per_serving > 0 && (
-                  <span className="text-emerald-400 ml-1">
-                    (saves {formatCurrencyWithSymbol(cost.savings_per_serving, currency)})
+                {cost.savings_per_serving != null && cost.savings_per_serving !== 0 && (
+                  <span
+                    className={
+                      cost.savings_per_serving > 0
+                        ? 'text-emerald-400 ml-1'
+                        : 'text-red-400 ml-1'
+                    }
+                  >
+                    {cost.savings_per_serving > 0
+                      ? `(saves ${formatCurrencyWithSymbol(cost.savings_per_serving, currency)})`
+                      : `(+${formatCurrencyWithSymbol(-cost.savings_per_serving, currency)} vs store)`}
                   </span>
                 )}
               </span>

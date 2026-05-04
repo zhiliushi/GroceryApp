@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useFeatureFlags } from '@/api/queries/useFeatureFlags';
+import { usePreppers } from '@/hooks/usePreppers';
 import { cn } from '@/utils/cn';
 
 interface NavItem {
@@ -11,6 +12,10 @@ interface NavItem {
   badge?: number;
   /** Hidden when this feature flag is off. */
   requiresFlag?: string;
+  /** Hidden unless the full preppers two-axis gate resolves true
+   *  (per-user toggle AND global flag). Cleaner than `requiresFlag`
+   *  alone for features whose gate composes multiple signals. */
+  requiresPreppers?: boolean;
 }
 
 // Primary nav — always visible. Keep this list minimal (3 items per the plan).
@@ -25,7 +30,7 @@ const secondaryNav: NavItem[] = [
   { path: '/catalog', label: 'Catalog', icon: '📚' },
   { path: '/storage', label: 'Storage', icon: '🗄️' },
   { path: '/meals', label: 'Meals', icon: '🍳' },
-  { path: '/preppers', label: 'Preppers', icon: '🥒', requiresFlag: 'preppers_enabled' },
+  { path: '/preppers', label: 'Preppers', icon: '🥒', requiresPreppers: true },
   { path: '/foodbanks', label: 'Foodbanks', icon: '📍' },
   { path: '/waste', label: 'Waste', icon: '🗑️' },
   { path: '/spending', label: 'Spending', icon: '💳' },
@@ -102,9 +107,13 @@ export default function Sidebar() {
     setSidebarSecondaryOpen,
   } = useUiStore();
   const { data: flags } = useFeatureFlags();
+  const preppers = usePreppers();
 
-  const isVisible = (item: NavItem) =>
-    !item.requiresFlag || flags?.[item.requiresFlag] !== false;
+  const isVisible = (item: NavItem) => {
+    if (item.requiresFlag && flags?.[item.requiresFlag] === false) return false;
+    if (item.requiresPreppers && !preppers.enabled) return false;
+    return true;
+  };
 
   const handleNavClick = () => setSidebarOpen(false);
 

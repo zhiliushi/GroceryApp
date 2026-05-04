@@ -21,6 +21,7 @@ Phase P11 of preppers.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, Iterable, List, Set
 
 from app.services import (
@@ -38,6 +39,41 @@ FREQUENT_CATALOG_TOP_N = 30
 
 def _norm(s: str) -> str:
     return (s or "").strip().lower()
+
+
+# Tokenizer for bug-3 fix: split on whitespace + common punctuation so
+# "Santan (coconut milk)" → {santan, coconut, milk} and "kicap manis" →
+# {kicap, manis}. Empty strings are dropped.
+_TOKEN_SPLITTER = re.compile(r"[\s,/&()\[\]\-+]+")
+
+
+def _tokens(s: str) -> Set[str]:
+    if not s:
+        return set()
+    return {t for t in _TOKEN_SPLITTER.split(_norm(s)) if t}
+
+
+def _stem(token: str) -> str:
+    """Cheap pluralization stemmer — handles English -ies/-es/-s endings.
+    Not a real stemmer; just enough to make egg ↔ eggs and tomato ↔
+    tomatoes match.
+
+    Edge cases left alone (over-stemming risk):
+      - 3-char tokens (so "gas" doesn't become "ga")
+      - irregular plurals (mouse/mice, leaf/leaves) — too rare in
+        ingredient names to be worth a lookup table
+    """
+    if len(token) <= 3:
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"          # cherries → cherry
+    if token.endswith("oes") or token.endswith("xes") or token.endswith("ses"):
+        return token[:-2]                # tomatoes → tomato, foxes → fox
+    if token.endswith("es") and len(token) > 4:
+        return token[:-2]                # leaves → leav (acceptable; matches itself)
+    if token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]                # eggs → egg, but not "glass"
+    return token
 
 
 def _names_from_cooking_recipes(uid: str) -> Set[str]:
@@ -79,17 +115,27 @@ def _frequent_catalog_names(uid: str, top_n: int = FREQUENT_CATALOG_TOP_N) -> Se
 
 
 def _matches(needle: str, signals: Iterable[str]) -> bool:
-    """needle (preserve ingredient) matches any signal. Either exact, or
-    bidirectional substring — handles 'santan' vs 'santan (coconut milk)'
-    and 'eggs' vs 'egg'. Avoids regex; preserve-ingredient strings are
-    short curated tokens so substring is safe."""
-    n = _norm(needle)
-    if not n:
+    """needle (preserve ingredient) matches any signal in the pool.
+
+    Token-aware exact match with cheap pluralization stemming. Replaces
+    the prior bidirectional-substring approach that generated false
+    positives like `egg` matching `eggplant`. Two strings match when at
+    least one stemmed token is shared between them.
+
+    Examples:
+      `egg`           vs `eggplant`             → no  (correct fix)
+      `egg`           vs `eggs`                 → yes (plural-tolerant)
+      `santan`        vs `Santan (coconut milk)`→ yes (token boundary)
+      `kicap manis`   vs `kicap`                → yes (partial token match)
+      `tomato`        vs `tomatoes`             → yes (-oes stemmer)
+      `salt`          vs `sea salt`             → yes (token boundary)
+    """
+    n_tokens = {_stem(t) for t in _tokens(needle)}
+    if not n_tokens:
         return False
     for s in signals:
-        if not s:
-            continue
-        if n == s or n in s or s in n:
+        s_tokens = {_stem(t) for t in _tokens(s)}
+        if n_tokens & s_tokens:
             return True
     return False
 

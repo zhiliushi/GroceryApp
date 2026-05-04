@@ -361,11 +361,12 @@ async def on_startup():
     except Exception:
         logger.exception("common_ingredients seed failed (non-fatal)")
 
-    # Common-preserves seed — preppers feature. Same pattern: idempotent
-    # upsert, cheap startup probe, only runs against empty collection.
+    # Common-preserves seed — preppers feature. Re-runs idempotently when
+    # the SEED_VERSION constant is bumped (P13 fix for the silent-stale
+    # bug where P11 ingredient lists never landed on existing deploys).
     try:
         from scripts import seed_common_preserves
-        summary = seed_common_preserves.run_if_empty()
+        summary = seed_common_preserves.run_if_outdated()
         logger.info("common_preserves seed: %s", summary)
     except Exception:
         logger.exception("common_preserves seed failed (non-fatal)")

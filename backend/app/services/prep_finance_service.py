@@ -203,16 +203,25 @@ def estimate_batch_cost(uid: str, batch_id: str) -> Optional[Dict[str, Any]]:
 def compute_active_savings_rollup(uid: str) -> Dict[str, Any]:
     """Aggregate cost + savings across all active batches.
 
-    Walks each active batch, computes its cost via estimate_batch_cost,
-    and rolls up:
-      - total home cost (across all priced batches)
-      - total store cost (across batches with store ref)
-      - total savings (across batches that contribute to BOTH sides)
-      - total servings
-      - per-serving rollups (sums divided by servings)
+    P3 + P5 (transparency + conservative bias): each per-serving average
+    is computed against the SERVINGS of the batches that contributed to
+    that metric — not against the whole stockpile. Mixing denominators
+    (cost from priced batches, divided by servings of all batches)
+    dilutes the average and understates the true per-serving cost.
+
+    Three independent denominators are tracked:
+      - home_priced_servings: servings across batches whose home cost
+        was computable (priced or partially priced)
+      - store_ref_servings: servings across batches with a store ref set
+      - savings_servings: servings across batches contributing to BOTH
+        sides (full-priced AND store-ref'd)
+
+    `total_servings` is still tracked separately as the supply-size
+    signal (matches what the supply-estimate exposes), but it is NOT
+    used as a divisor for cost rollups.
 
     Returns four-state explanation per P7 (no_batches / no_priced /
-    partial_priced / fully_priced).
+    no_savings / has_savings).
     """
     batches = prep_batch_service.list_batches(uid, status_filter="active")
     out: Dict[str, Any] = {
@@ -226,7 +235,14 @@ def compute_active_savings_rollup(uid: str) -> Dict[str, Any]:
         "total_store_cost": 0.0,
         "total_savings": 0.0,
         "total_servings": 0,
+        # Per-metric servings denominators (the bug-1 fix). Exposed so
+        # the UI can render "RM X/serving across N priced servings"
+        # honestly, instead of dividing by total stockpile.
+        "home_priced_servings": 0,
+        "store_ref_servings": 0,
+        "savings_servings": 0,
         "home_cost_per_serving": None,
+        "home_cost_per_serving_partial": False,
         "store_cost_per_serving": None,
         "savings_per_serving": None,
         "batches": [],
@@ -245,7 +261,8 @@ def compute_active_savings_rollup(uid: str) -> Dict[str, Any]:
         if cost is None:
             continue
         out["currency"] = out["currency"] or cost["currency"]
-        out["total_servings"] += int(b.get("servings") or 0)
+        servings = int(b.get("servings") or 0)
+        out["total_servings"] += servings
 
         if cost["home_total_cost"] is not None:
             if cost["partial"]:
@@ -253,18 +270,19 @@ def compute_active_savings_rollup(uid: str) -> Dict[str, Any]:
             else:
                 out["fully_priced_count"] += 1
             out["total_home_cost"] += cost["home_total_cost"]
+            out["home_priced_servings"] += servings
 
         if cost["store_total_for_batch"] is not None:
             out["with_store_reference_count"] += 1
             out["total_store_cost"] += cost["store_total_for_batch"]
+            out["store_ref_servings"] += servings
 
         # Savings — only count batches with savings_per_serving (i.e.,
         # full-priced AND store-ref'd).
         if cost["savings_per_serving"] is not None:
             out["with_savings_count"] += 1
-            out["total_savings"] += cost["savings_per_serving"] * int(
-                b.get("servings") or 0,
-            )
+            out["total_savings"] += cost["savings_per_serving"] * servings
+            out["savings_servings"] += servings
 
         out["batches"].append({
             "id": b["id"],
@@ -277,23 +295,22 @@ def compute_active_savings_rollup(uid: str) -> Dict[str, Any]:
             "partial": cost["partial"],
         })
 
-    if out["total_servings"] > 0 and out["total_home_cost"] > 0:
+    # Per-metric averages: each uses ITS OWN denominator. This is the
+    # bug-1 correctness fix.
+    if out["home_priced_servings"] > 0 and out["total_home_cost"] > 0:
         out["home_cost_per_serving"] = round(
-            out["total_home_cost"] / out["total_servings"], 2,
+            out["total_home_cost"] / out["home_priced_servings"], 2,
         )
-    if out["total_servings"] > 0 and out["total_store_cost"] > 0:
+        out["home_cost_per_serving_partial"] = (
+            out["partially_priced_count"] > 0
+        )
+    if out["store_ref_servings"] > 0 and out["total_store_cost"] > 0:
         out["store_cost_per_serving"] = round(
-            out["total_store_cost"] / out["total_servings"], 2,
+            out["total_store_cost"] / out["store_ref_servings"], 2,
         )
-    if (
-        out["with_savings_count"] > 0
-        and out["total_servings"] > 0
-    ):
-        # Savings-per-serving is averaged across the WHOLE active stockpile
-        # (not just the batches with savings) — that's the user-level
-        # signal: "your stockpile saves you on average X/serving."
+    if out["savings_servings"] > 0:
         out["savings_per_serving"] = round(
-            out["total_savings"] / out["total_servings"], 2,
+            out["total_savings"] / out["savings_servings"], 2,
         )
 
     # P7 — explanation per state.

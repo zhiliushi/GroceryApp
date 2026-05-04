@@ -847,7 +847,15 @@ export interface PrepSavingsRollup {
   total_store_cost: number;
   total_savings: number;
   total_servings: number;
+  /** Per-metric servings denominators — each per-serving average uses
+   *  its own. Avoids dilution when total stockpile != priced subset. */
+  home_priced_servings: number;
+  store_ref_servings: number;
+  savings_servings: number;
   home_cost_per_serving: number | null;
+  /** True when at least one priced batch was partial — UI should mark
+   *  the home-cost average with a "+" suffix to flag underestimate. */
+  home_cost_per_serving_partial: boolean;
   store_cost_per_serving: number | null;
   savings_per_serving: number | null;
   batches: Array<{
