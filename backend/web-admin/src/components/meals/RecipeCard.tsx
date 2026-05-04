@@ -5,10 +5,14 @@ import type { RecipeMatchResult, IngredientMatch } from '@/types/api';
 interface RecipeCardProps {
   recipe: RecipeMatchResult;
   onCook?: () => void;
+  /** "Plan & shop" handler — opens RecipePrepModal so user can review,
+   *  optionally update inventory, and bulk-add missing/short items to
+   *  their shopping list. Distinct from onCook (which is "deduct now"). */
+  onPlanShop?: () => void;
   showMatchDetails?: boolean;
 }
 
-export default function RecipeCard({ recipe, onCook, showMatchDetails = true }: RecipeCardProps) {
+export default function RecipeCard({ recipe, onCook, onPlanShop, showMatchDetails = true }: RecipeCardProps) {
   const allMatched = recipe.matched_count === recipe.total_ingredients;
   const hasExpiring = recipe.expiring_match_count > 0;
   const matchPct = Math.round(recipe.match_score * 100);
@@ -76,7 +80,7 @@ export default function RecipeCard({ recipe, onCook, showMatchDetails = true }: 
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {onCook && recipe.matched_count > 0 && (
           <button onClick={onCook}
             title={
@@ -91,6 +95,15 @@ export default function RecipeCard({ recipe, onCook, showMatchDetails = true }: 
                 : 'bg-ga-accent/20 hover:bg-ga-accent/30 text-ga-accent',
             )}>
             {allMatched ? '🍳 Cook & Mark All Used' : 'Cook with what you have'}
+          </button>
+        )}
+        {onPlanShop && (
+          <button
+            onClick={onPlanShop}
+            title="Plan to cook later. Review what you have, mark anything you've already used, and add missing items to your shopping list in one tap."
+            className="text-xs font-medium rounded-lg px-3 py-1.5 transition-colors border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover"
+          >
+            📝 Plan &amp; shop
           </button>
         )}
         <Link to={`/meals/${recipe.id}/edit`} className="text-xs text-ga-text-secondary hover:text-ga-text-primary">

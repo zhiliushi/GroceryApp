@@ -111,6 +111,7 @@ fetch + cache-invalidate:
 | Target | Helper | Doc |
 |--------|--------|-----|
 | Shopping list (add primary entry) | `addItemToShoppingList(payload)` from `@/api/integrations/addToShoppingList` — also dispatchable as `window.dispatchEvent(new CustomEvent('grocery:add-to-shopping-list', { detail: payload }))` | [pages/shopping-lists.md](.claude/docs/pages/shopping-lists.md) "Cross-page hook" |
+| Recipe Plan & shop (bulk-add missing recipe ingredients) | `<RecipePrepModal />` mounted from `MealsPage` via `setPlanningRecipe` state. Inside, the modal calls `addItemToShoppingList` once per checked row with `source: 'recipe_prep'` and `notes: 'for: {recipe name}'`. Per-row inline inventory actions (used/thrown/given) fire `useChangePurchaseStatus` and slide the row to "Need to buy" with the checkbox pre-checked. | [pages/meals.md](.claude/docs/pages/meals.md) "Plan & shop flow" |
 
 The async function returns the created item; the window event is fire-
 and-forget and toasts on success/error. Both invalidate the relevant

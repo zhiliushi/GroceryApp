@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import RecipeCard from '@/components/meals/RecipeCard';
 import CookConfirmModal from '@/components/meals/CookConfirmModal';
+import RecipePrepModal from '@/components/meals/RecipePrepModal';
 import type { RecipeMatchResult } from '@/types/api';
 
 export default function MealsPage() {
@@ -16,6 +17,7 @@ export default function MealsPage() {
   const deleteMutation = useDeleteRecipe();
   const dialog = useConfirmDialog();
   const [cookingRecipe, setCookingRecipe] = useState<RecipeMatchResult | null>(null);
+  const [planningRecipe, setPlanningRecipe] = useState<RecipeMatchResult | null>(null);
 
   const recipes = recipesData?.recipes ?? [];
   const recipeCount = recipesData?.count ?? 0;
@@ -67,6 +69,14 @@ export default function MealsPage() {
             before confirming.
           </p>
           <p>
+            <span className="text-ga-text-primary font-medium">📝 Plan &amp; shop</span>{' '}
+            — tap when you want to cook a recipe later. The modal shows what you have
+            and what&apos;s missing. You can mark already-used items right there, then
+            bulk-add the missing ingredients to your shopping list with one tap. Each
+            added item carries a <em>for: {`{recipe name}`}</em> note so you remember
+            why it&apos;s on the list.
+          </p>
+          <p>
             <span className="text-ga-text-primary font-medium">My Recipes</span> —
             your saved collection. Free tier holds up to 15. Tap a recipe to edit
             ingredients, prep time, or servings.
@@ -97,6 +107,7 @@ export default function MealsPage() {
                 key={s.id}
                 recipe={s}
                 onCook={() => setCookingRecipe(s)}
+                onPlanShop={() => setPlanningRecipe(s)}
                 showMatchDetails
               />
             ))}
@@ -189,6 +200,12 @@ export default function MealsPage() {
           recipe={cookingRecipe}
           onClose={() => setCookingRecipe(null)}
           onCooked={() => setCookingRecipe(null)}
+        />
+      )}
+      {planningRecipe && (
+        <RecipePrepModal
+          recipe={planningRecipe}
+          onClose={() => setPlanningRecipe(null)}
         />
       )}
       <ConfirmDialog state={dialog.state} onCancel={dialog.close} />

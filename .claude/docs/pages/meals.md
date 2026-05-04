@@ -100,6 +100,91 @@ Used only on this page (grep-confirmed). Visual cues:
   *will deduct from inventory* — the modal lets the user uncheck
   before confirming, but the side-effect is the headline.
 
+## Plan & shop flow (`RecipePrepModal`)
+
+Captured 2026-05-04 from the Mira walkthrough as a "hook feature":
+the existing Cook flow is "deduct now, I'm cooking right now"; users
+also wanted a path for "I plan to cook this Wednesday — what do I
+need to buy first, and can I update inventory while I'm reviewing?".
+
+**Three user moments served:**
+
+1. **Plan-to-cook** — Sunday afternoon, browse a recipe she wants for
+   Wednesday → see what's available and what's missing.
+2. **Update inventory mid-prep** — Wednesday she opens the modal,
+   realises she already used the bok choy → mark it used → row
+   re-categorises to "Need to buy" with the checkbox pre-checked.
+3. **Bulk-add to shopping list** — one tap to add N missing/short
+   ingredients to her shopping list, scoped to a chosen list.
+
+Distinct from `CookConfirmModal`:
+
+| Modal               | Intent                                               | Side effect on submit |
+| ------------------- | ---------------------------------------------------- | --------------------- |
+| `CookConfirmModal`  | "Cooking right now"                                  | Deduct from inventory |
+| `RecipePrepModal`   | "Planning to cook later"                             | Add missing → shopping list |
+
+Both buttons live on `<RecipeCard />`. Users pick by intent. Cook is
+the primary green button; Plan & shop is a secondary outline button
+labelled `📝 Plan & shop`.
+
+### Two sections inside the modal
+
+- **✓ You have (N)** — green-tinted header. Each row shows
+  ingredient name, current inventory qty + location, "Recipe needs:
+  X" line, and three inline action chips: `🍽 Used` / `🗑 Thrown`
+  / `🤝 Given`. Clicking a chip fires `useChangePurchaseStatus`
+  (full-event consume; partial flows live on MyItemsPage detail).
+  On success, the row's `matchedOverride` flips to `false` and the
+  row slides into "Need to buy" with the checkbox pre-checked.
+- **🛒 Need to buy (N)** — orange-tinted header. Each row is a
+  checkbox (default checked). Two display modes:
+  - matched-but-short: "Have X, need Y — short Z"
+  - missing entirely: "Need Y unit"
+
+### Footer
+
+- **Shopping list picker** — dropdown of the user's lists. Default
+  option `Most recent list (auto-pick)` resolves via the integration
+  helper's `'active'` mode (most-recently-updated wins; auto-creates
+  "My Shopping List" if no list exists).
+- **Submit button** — `+ Add N to shopping list`. Disabled when no
+  rows are selected. Fans out parallel calls to
+  `addItemToShoppingList(payload)` with `source: 'recipe_prep'` and
+  a `notes: 'for: {recipe name}'` field. Partial successes survive;
+  cap-hit (409) failures surface as warning toast.
+
+### Empty / all-good state
+
+When `needToBuy.length === 0 && available.length > 0`, the modal
+shows a green confirmation strip: "You have everything for this
+recipe! Ready to cook." User can close and tap Cook.
+
+### Categorisation rules (`isNeedToBuy`)
+
+```
+matched (override-aware) === false           → need to buy
+recipe.quantity > inventory_quantity (both known) → need to buy (short)
+otherwise                                     → have
+```
+
+`shortAmount(row)` returns `recipe.quantity - inventory_quantity`
+when matched-but-short, else the full recipe quantity (or undefined
+if no recipe quantity was set).
+
+### Inventory action mapping
+
+| Chip      | Backend action                                     | Reason       |
+| --------- | -------------------------------------------------- | ------------ |
+| 🍽 Used    | `update_status('used', reason='used_up')`          | `used_up`    |
+| 🗑 Thrown  | `update_status('thrown', reason='expired')`        | `expired` (counts as waste) |
+| 🤝 Given   | `update_status('thrown', reason='gift')`           | `gift` (doesn't count as waste) |
+
+Full-event consume only. The 🤝 Given action uses `status='thrown'`
+with `reason='gift'` because the data model treats give-aways as a
+flavour of "thrown" — see `waste_service.py:308-317` for the
+reason filter. Doesn't count as waste in the dashboard totals.
+
 ## Cook flow (`CookConfirmModal`)
 
 Triggered by setting `cookingRecipe` state from a card's
