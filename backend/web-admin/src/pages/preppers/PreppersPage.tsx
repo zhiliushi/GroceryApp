@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   useCommonPreserves,
+  usePrepBatchCost,
   usePrepBatches,
   usePrepEligibility,
   usePrepRecipes,
   usePreppersHousehold,
   usePreppersRecommendations,
+  usePreppersSavings,
   usePreppersSupply,
   useCreatePrepBatch,
   useSetPrepBatchStatus,
@@ -16,6 +18,7 @@ import {
 } from '@/api/queries/usePreppers';
 import { usePreppers } from '@/hooks/usePreppers';
 import { batchHeadline, PREP_TYPE_ICONS, prepTypeLabel } from '@/utils/prepCountdown';
+import { formatCurrencyWithSymbol } from '@/utils/format';
 import type {
   CommonPreserve,
   PrepBatch,
@@ -24,6 +27,7 @@ import type {
   PrepRecipe,
   PrepRecommendation,
   PrepRecommendationsResponse,
+  PrepSavingsRollup,
   PrepSupplyEstimate,
 } from '@/types/api';
 
@@ -48,6 +52,7 @@ export default function PreppersPage() {
   const { data: household } = usePreppersHousehold(enabled);
   const { data: supply } = usePreppersSupply(enabled);
   const { data: recommendations } = usePreppersRecommendations(enabled);
+  const { data: savings } = usePreppersSavings(enabled);
 
   if (!enabled) {
     return <NotAvailable userEnabled={userEnabled} flagEnabled={flagEnabled} />;
@@ -68,11 +73,17 @@ export default function PreppersPage() {
 
       {supply && <SupplyEstimateCard supply={supply} />}
 
+      {savings && <SavingsRollupCard savings={savings} />}
+
       {household && <HouseholdForm household={household} />}
 
       {eligibility && <EligibilityScore eligibility={eligibility} />}
 
-      <ActiveBatches batches={batches?.batches} loading={batchesLoading} />
+      <ActiveBatches
+        batches={batches?.batches}
+        loading={batchesLoading}
+        savings={savings}
+      />
       {recommendations && <Recommendations data={recommendations} />}
       <MyRecipes recipes={recipes?.recipes} loading={recipesLoading} />
       <CommonPresets preserves={preserves?.items} loading={preservesLoading} />
@@ -203,6 +214,96 @@ function SupplyEstimateCard({ supply }: { supply: PrepSupplyEstimate }) {
           </ul>
         </details>
       )}
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SavingsRollupCard({ savings }: { savings: PrepSavingsRollup }) {
+  const cur = savings.currency || 'SGD';
+  const home = savings.home_cost_per_serving;
+  const store = savings.store_cost_per_serving;
+  const sav = savings.savings_per_serving;
+
+  // Big number selection — savings if available, else home cost, else "—"
+  let bigText: string;
+  let bigTone: string;
+  let caption: string;
+  if (sav != null) {
+    if (sav > 0) {
+      bigText = `+${formatCurrencyWithSymbol(sav, cur)}`;
+      bigTone = 'text-emerald-300';
+      caption = 'saved per serving';
+    } else if (sav < 0) {
+      bigText = `-${formatCurrencyWithSymbol(-sav, cur)}`;
+      bigTone = 'text-red-300';
+      caption = 'home costs more per serving';
+    } else {
+      bigText = formatCurrencyWithSymbol(0, cur);
+      bigTone = 'text-amber-300';
+      caption = 'break-even';
+    }
+  } else if (home != null) {
+    bigText = formatCurrencyWithSymbol(home, cur);
+    bigTone = 'text-ga-text-primary';
+    caption = 'home cost per serving';
+  } else {
+    bigText = '—';
+    bigTone = 'text-ga-text-secondary';
+    caption = 'cost per serving';
+  }
+
+  return (
+    <section className="bg-ga-bg-card border border-ga-border rounded-lg p-5">
+      <header className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold text-ga-text-primary flex items-center gap-2">
+          💰 Cost &amp; savings
+        </h2>
+        <span className="text-[10px] text-ga-text-secondary">
+          {savings.fully_priced_count + savings.partially_priced_count} of{' '}
+          {savings.active_batches_count} priced
+          {savings.with_savings_count > 0 &&
+            ` · ${savings.with_savings_count} with store ref`}
+        </span>
+      </header>
+
+      <div className="flex items-baseline justify-between gap-4 mb-3">
+        <div>
+          <div className={`text-3xl font-bold tabular-nums ${bigTone}`}>
+            {bigText}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-ga-text-secondary mt-0.5">
+            {caption}
+          </div>
+        </div>
+        <div className="text-right text-xs text-ga-text-secondary space-y-0.5">
+          {home != null && (
+            <div className="tabular-nums">
+              home <strong className="text-ga-text-primary">{formatCurrencyWithSymbol(home, cur)}</strong>/serving
+            </div>
+          )}
+          {store != null && (
+            <div className="tabular-nums">
+              store <strong className="text-ga-text-primary">{formatCurrencyWithSymbol(store, cur)}</strong>/serving
+            </div>
+          )}
+          {savings.total_savings !== 0 && savings.total_savings != null && (
+            <div className="tabular-nums">
+              total{' '}
+              <strong className={savings.total_savings > 0 ? 'text-emerald-300' : 'text-red-300'}>
+                {savings.total_savings > 0 ? '+' : ''}
+                {formatCurrencyWithSymbol(savings.total_savings, cur)}
+              </strong>{' '}
+              across {savings.total_servings} servings
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-xs text-ga-text-secondary border-t border-ga-border/40 pt-2">
+        {savings.explanation}
+      </p>
     </section>
   );
 }
@@ -371,10 +472,17 @@ function EligibilityScore({ eligibility }: { eligibility: PrepEligibility }) {
 function ActiveBatches({
   batches,
   loading,
+  savings,
 }: {
   batches?: PrepBatch[];
   loading: boolean;
+  savings?: PrepSavingsRollup;
 }) {
+  const costMap = new Map<string, PrepSavingsRollup['batches'][number]>();
+  if (savings?.batches) {
+    for (const b of savings.batches) costMap.set(b.id, b);
+  }
+  const currency = savings?.currency || 'SGD';
   // Sort by soonest expiry first (FEFO — first-expiry-first-out, the
   // accurate term for what "consume first" means with preserves) and
   // tag the soonest READY batch as the rotation pick. Already-expired
@@ -422,6 +530,8 @@ function ActiveBatches({
               key={b.id}
               batch={b}
               consumeFirst={b.id === consumeFirstId}
+              cost={costMap.get(b.id)}
+              currency={currency}
             />
           ))}
         </ul>
@@ -433,9 +543,13 @@ function ActiveBatches({
 function BatchRow({
   batch,
   consumeFirst,
+  cost,
+  currency,
 }: {
   batch: PrepBatch;
   consumeFirst: boolean;
+  cost?: PrepSavingsRollup['batches'][number];
+  currency: string;
 }) {
   const setStatus = useSetPrepBatchStatus();
   const del = useDeletePrepBatch();
@@ -465,8 +579,26 @@ function BatchRow({
               </span>
             )}
           </div>
-          <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">
-            {prepTypeLabel(batch.prep_type)}
+          <div className="text-[10px] text-ga-text-secondary tracking-wide flex items-center gap-2 flex-wrap">
+            <span className="uppercase">{prepTypeLabel(batch.prep_type)}</span>
+            {cost?.home_cost_per_serving != null && (
+              <span
+                className="text-emerald-300/80 tabular-nums"
+                title={
+                  cost.partial
+                    ? `Partial — only some ingredients matched purchase history. Real cost is at least this much.`
+                    : `Home cost per serving from your purchase history.`
+                }
+              >
+                · {formatCurrencyWithSymbol(cost.home_cost_per_serving, currency)}
+                {cost.partial ? '+' : ''}/serving
+                {cost.savings_per_serving != null && cost.savings_per_serving > 0 && (
+                  <span className="text-emerald-400 ml-1">
+                    (saves {formatCurrencyWithSymbol(cost.savings_per_serving, currency)})
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         </div>
       </div>

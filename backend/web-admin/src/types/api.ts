@@ -759,6 +759,10 @@ export interface PrepRecipe {
   notes: string;
   /** name_norm of the common-preserve this was cloned from, if any. */
   common_preserve_ref?: string | null;
+  /** Optional store-bought reference for cost-savings comparison. */
+  store_reference_price?: number | null;
+  store_reference_servings?: number | null;
+  store_reference_label?: string;
 }
 
 export interface PrepRecipesResponse {
@@ -790,6 +794,73 @@ export interface PrepBatch {
   common_preserve_ref?: string | null;
   ingredients_snapshot: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
   notes: string;
+  /** Per-batch override of the parent recipe's store reference. */
+  store_reference_price?: number | null;
+  store_reference_servings?: number | null;
+  store_reference_label?: string;
+}
+
+/**
+ * Per-recipe / per-batch cost breakdown. Home cost comes from the user's
+ * purchase history (existing F1 finance helper); store reference is
+ * user-entered. Partial flag is critical (per P5 conservative bias) —
+ * UI should mark partial estimates as "RM X+/serving" so users know
+ * the real cost is at least this much.
+ */
+export interface PrepCostBreakdown {
+  currency: string;
+  servings: number;
+  home_total_cost: number | null;
+  home_cost_per_serving: number | null;
+  partial: boolean;
+  priced_count: number;
+  total_count: number;
+  store_reference_price: number | null;
+  store_reference_servings: number | null;
+  store_reference_label: string;
+  store_total_for_batch: number | null;
+  store_cost_per_serving: number | null;
+  savings_per_serving: number | null;
+  lines: Array<{
+    name: string;
+    catalog_name_norm: string | null;
+    common_name_norm: string | null;
+    match_source: string;
+    last_paid: number | null;
+    date_bought: string | null;
+  }>;
+  explanation: string;
+}
+
+/**
+ * Aggregate cost + savings rollup across all active batches. Used by
+ * the "Cost & savings" card on /preppers.
+ */
+export interface PrepSavingsRollup {
+  currency: string | null;
+  active_batches_count: number;
+  fully_priced_count: number;
+  partially_priced_count: number;
+  with_store_reference_count: number;
+  with_savings_count: number;
+  total_home_cost: number;
+  total_store_cost: number;
+  total_savings: number;
+  total_servings: number;
+  home_cost_per_serving: number | null;
+  store_cost_per_serving: number | null;
+  savings_per_serving: number | null;
+  batches: Array<{
+    id: string;
+    name: string;
+    prep_type: PrepType;
+    servings: number;
+    home_cost_per_serving: number | null;
+    store_cost_per_serving: number | null;
+    savings_per_serving: number | null;
+    partial: boolean;
+  }>;
+  explanation: string;
 }
 
 export interface PrepBatchesResponse {

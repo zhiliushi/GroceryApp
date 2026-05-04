@@ -24,6 +24,7 @@ from app.services import (
     common_preserves_service,
     prep_batch_service,
     prep_eligibility_service,
+    prep_finance_service,
     prep_recipe_service,
     prep_recommendation_service,
     prep_supply_service,
@@ -117,6 +118,37 @@ async def get_preppers_recommendations(
     recipes + frequent-buy catalog. Excludes preserves already in an active
     batch."""
     return prep_recommendation_service.compute_recommendations(user.uid, top_k=top_k)
+
+
+# ---------------------------------------------------------------------------
+# Cost-per-serving + savings rollup (P12)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/recipes/{rid}/cost")
+async def get_prep_recipe_cost(rid: str, user: UserInfo = Depends(require_preppers)):
+    """Cost breakdown for one prep recipe. Home cost from the user's
+    purchase history; store reference (if set) drives the savings number."""
+    cost = prep_finance_service.estimate_recipe_cost(user.uid, rid)
+    if cost is None:
+        raise HTTPException(404, "Prep recipe not found")
+    return cost
+
+
+@router.get("/batches/{bid}/cost")
+async def get_prep_batch_cost(bid: str, user: UserInfo = Depends(require_preppers)):
+    """Cost breakdown for one batch. Per-batch store ref overrides recipe
+    ref when set; otherwise falls back to parent recipe."""
+    cost = prep_finance_service.estimate_batch_cost(user.uid, bid)
+    if cost is None:
+        raise HTTPException(404, "Prep batch not found")
+    return cost
+
+
+@router.get("/savings")
+async def get_preppers_savings(user: UserInfo = Depends(require_preppers)):
+    """Aggregate cost + savings rollup across all active batches."""
+    return prep_finance_service.compute_active_savings_rollup(user.uid)
 
 
 # ---------------------------------------------------------------------------

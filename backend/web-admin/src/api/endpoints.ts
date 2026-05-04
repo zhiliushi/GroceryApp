@@ -107,6 +107,9 @@ export const API = {
   PREPPERS_HOUSEHOLD: '/api/preppers/household',
   PREPPERS_SUPPLY_ESTIMATE: '/api/preppers/supply-estimate',
   PREPPERS_RECOMMENDATIONS: '/api/preppers/recommendations',
+  PREPPERS_RECIPE_COST: (rid: string) => `/api/preppers/recipes/${rid}/cost`,
+  PREPPERS_BATCH_COST: (bid: string) => `/api/preppers/batches/${bid}/cost`,
+  PREPPERS_SAVINGS: '/api/preppers/savings',
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',

@@ -1180,6 +1180,30 @@ function Preppers() {
       </p>
 
       <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Cost &amp; savings
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        Below the supply estimate is a <strong>💰 Cost &amp; savings</strong>{' '}
+        card showing your home cost per serving (drawn from your{' '}
+        <em>purchase history</em> — same engine that powers the cooking-recipe
+        cost card on Meals). When you also set a <strong>store reference
+        price</strong> on a prep recipe (Store reference section, optional),
+        the card surfaces savings vs store-bought.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        Each Active batch row shows its per-serving cost inline. A{' '}
+        <strong>+</strong> suffix on the price (e.g. "RM 1.25+/serving") means
+        the estimate is partial — only some ingredients matched your buy
+        history, so the real cost is at least this much. We err on the
+        cautious side rather than under-stating.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        Store reference is per-recipe (and overridable per-batch). Format:
+        price for a known store-bought equivalent + the servings that price
+        covers + an optional label like "Lim Brothers kimchi 500g jar".
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
         "Worth keeping in rotation" recommendations
       </h3>
       <p className="text-xs text-ga-text-secondary">

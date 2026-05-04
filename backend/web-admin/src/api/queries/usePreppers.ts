@@ -6,11 +6,13 @@ import type {
   PrepBatch,
   PrepBatchStatus,
   PrepBatchesResponse,
+  PrepCostBreakdown,
   PrepEligibility,
   PrepHousehold,
   PrepRecipe,
   PrepRecipesResponse,
   PrepRecommendationsResponse,
+  PrepSavingsRollup,
   PrepSupplyEstimate,
 } from '@/types/api';
 
@@ -71,7 +73,12 @@ export function useCreatePrepRecipe() {
       apiClient
         .post<{ success: boolean; recipe: PrepRecipe }>(API.PREPPERS_RECIPES, body)
         .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'recipes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'recipes'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recipe-cost'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'batch-cost'] });
+    },
   });
 }
 
@@ -82,7 +89,12 @@ export function useUpdatePrepRecipe() {
       apiClient
         .put<{ success: boolean; recipe: PrepRecipe }>(API.PREPPERS_RECIPE(rid), body)
         .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'recipes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'recipes'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recipe-cost'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'batch-cost'] });
+    },
   });
 }
 
@@ -91,7 +103,12 @@ export function useDeletePrepRecipe() {
   return useMutation({
     mutationFn: (rid: string) =>
       apiClient.delete(API.PREPPERS_RECIPE(rid)).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'recipes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['preppers', 'recipes'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recipe-cost'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'batch-cost'] });
+    },
   });
 }
 
@@ -106,6 +123,7 @@ export function useCreatePrepBatch() {
       qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
     },
   });
 }
@@ -126,6 +144,7 @@ export function useSetPrepBatchStatus() {
       qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
     },
   });
 }
@@ -139,6 +158,7 @@ export function useDeletePrepBatch() {
       qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
     },
   });
 }
@@ -188,6 +208,7 @@ export function useUpdatePreppersHousehold() {
       qc.invalidateQueries({ queryKey: ['preppers', 'household'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'savings'] });
     },
   });
 }
@@ -224,5 +245,53 @@ export function usePreppersRecommendations(enabled = true) {
         .then((r) => r.data),
     enabled,
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * Cost breakdown for a single prep recipe template. Home cost from
+ * purchase history; savings against store reference (if set).
+ */
+export function usePrepRecipeCost(rid: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'recipe-cost', rid],
+    queryFn: () =>
+      apiClient
+        .get<PrepCostBreakdown>(API.PREPPERS_RECIPE_COST(rid!))
+        .then((r) => r.data),
+    enabled: enabled && !!rid,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Cost breakdown for a single batch. Uses ingredients_snapshot captured
+ * at batch start. Per-batch store ref overrides recipe ref.
+ */
+export function usePrepBatchCost(bid: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'batch-cost', bid],
+    queryFn: () =>
+      apiClient
+        .get<PrepCostBreakdown>(API.PREPPERS_BATCH_COST(bid!))
+        .then((r) => r.data),
+    enabled: enabled && !!bid,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Aggregate cost + savings across all active batches. Powers the
+ * "Cost & savings" card on /preppers.
+ */
+export function usePreppersSavings(enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'savings'],
+    queryFn: () =>
+      apiClient
+        .get<PrepSavingsRollup>(API.PREPPERS_SAVINGS)
+        .then((r) => r.data),
+    enabled,
+    staleTime: 60_000,
   });
 }

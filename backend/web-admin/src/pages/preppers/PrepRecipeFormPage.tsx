@@ -51,6 +51,10 @@ export default function PrepRecipeFormPage() {
   const [servings, setServings] = useState(4);
   const [ingredients, setIngredients] = useState<FormIngredient[]>([]);
   const [notes, setNotes] = useState('');
+  // Store reference for cost-savings comparison. All optional.
+  const [storeRefPrice, setStoreRefPrice] = useState<string>('');
+  const [storeRefServings, setStoreRefServings] = useState<string>('');
+  const [storeRefLabel, setStoreRefLabel] = useState<string>('');
 
   useEffect(() => {
     if (!existing) return;
@@ -60,6 +64,17 @@ export default function PrepRecipeFormPage() {
     setServings(existing.servings || 4);
     setShelfLifeDays(existing.shelf_life_days);
     setNotes(existing.notes || '');
+    setStoreRefPrice(
+      existing.store_reference_price != null
+        ? String(existing.store_reference_price)
+        : '',
+    );
+    setStoreRefServings(
+      existing.store_reference_servings != null
+        ? String(existing.store_reference_servings)
+        : '',
+    );
+    setStoreRefLabel(existing.store_reference_label || '');
     setIngredients(
       (existing.ingredients || []).map((ing) => ({
         _key: ++nextKey,
@@ -109,6 +124,11 @@ export default function PrepRecipeFormPage() {
           unit: i.unit?.trim() || null,
         })),
       notes: notes.trim(),
+      store_reference_price:
+        storeRefPrice.trim() === '' ? null : Number(storeRefPrice),
+      store_reference_servings:
+        storeRefServings.trim() === '' ? null : Number(storeRefServings),
+      store_reference_label: storeRefLabel.trim(),
     };
     if (isEdit) {
       updateMutation.mutate(
@@ -265,6 +285,63 @@ export default function PrepRecipeFormPage() {
             + Add ingredient
           </button>
         </div>
+
+        <details className="bg-ga-bg-hover/30 border border-ga-border/40 rounded-lg group">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/50 rounded-lg">
+            <span>💰 Store reference (optional) — for savings comparison</span>
+            <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+          </summary>
+          <div className="px-3 pb-3 pt-2 space-y-2 border-t border-ga-border/40">
+            <p className="text-[10px] text-ga-text-secondary">
+              If you set a store-bought equivalent price, the page surfaces
+              "saves RM X/serving" once your purchase history covers the
+              recipe's ingredients. All optional — leave blank to track home
+              cost only.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-ga-text-secondary mb-0.5">
+                  Store price
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={storeRefPrice}
+                  onChange={(e) => setStoreRefPrice(e.target.value)}
+                  placeholder="e.g. 12.00"
+                  className="w-full bg-ga-bg-card border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-ga-text-secondary mb-0.5">
+                  Servings (store)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={storeRefServings}
+                  onChange={(e) => setStoreRefServings(e.target.value)}
+                  placeholder={`default: ${servings}`}
+                  className="w-full bg-ga-bg-card border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] text-ga-text-secondary mb-0.5">
+                Label (optional)
+              </label>
+              <input
+                type="text"
+                value={storeRefLabel}
+                onChange={(e) => setStoreRefLabel(e.target.value)}
+                maxLength={120}
+                placeholder='e.g. "Lim Brothers kimchi 500g"'
+                className="w-full bg-ga-bg-card border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary"
+              />
+            </div>
+          </div>
+        </details>
 
         <div>
           <label className="block text-xs text-ga-text-secondary mb-1">Notes (optional)</label>

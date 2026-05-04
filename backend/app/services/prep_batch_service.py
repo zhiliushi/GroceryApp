@@ -133,6 +133,20 @@ def create_batch(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
     servings = max(int(body.get("servings") or 4), 1)
 
+    # Optional per-batch store reference (overrides recipe default for
+    # cost-savings rollup). Default = None; finance service falls back
+    # to the parent recipe's reference when batch.recipe_id is set.
+    store_ref_price = body.get("store_reference_price")
+    if store_ref_price is not None:
+        store_ref_price = float(store_ref_price)
+        if store_ref_price < 0:
+            raise ValueError("store_reference_price must be >= 0")
+    store_ref_servings = body.get("store_reference_servings")
+    if store_ref_servings is not None:
+        store_ref_servings = int(store_ref_servings)
+        if store_ref_servings <= 0:
+            raise ValueError("store_reference_servings must be > 0")
+
     bid = uuid.uuid4().hex[:16]
     now = datetime.now(timezone.utc)
     doc = {
@@ -151,6 +165,9 @@ def create_batch(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
         "common_preserve_ref": body.get("common_preserve_ref") or None,
         "ingredients_snapshot": body.get("ingredients_snapshot") or [],
         "notes": (body.get("notes") or "").strip(),
+        "store_reference_price": store_ref_price,
+        "store_reference_servings": store_ref_servings,
+        "store_reference_label": (body.get("store_reference_label") or "").strip(),
         "created_at": now,
         "updated_at": now,
         "schema_version": SCHEMA_VERSION,

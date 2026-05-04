@@ -102,6 +102,20 @@ def create_recipe(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
     servings = max(int(body.get("servings") or 4), 1)
 
+    # Optional store-bought reference for cost-savings comparison.
+    # P6 (user input authoritative): we don't auto-populate this; user
+    # enters it from their own knowledge of local prices.
+    store_ref_price = body.get("store_reference_price")
+    if store_ref_price is not None:
+        store_ref_price = float(store_ref_price)
+        if store_ref_price < 0:
+            raise ValueError("store_reference_price must be >= 0")
+    store_ref_servings = body.get("store_reference_servings")
+    if store_ref_servings is not None:
+        store_ref_servings = int(store_ref_servings)
+        if store_ref_servings <= 0:
+            raise ValueError("store_reference_servings must be > 0")
+
     rid = uuid.uuid4().hex[:16]
     now = datetime.now(timezone.utc)
     doc = {
@@ -113,6 +127,9 @@ def create_recipe(uid: str, body: Dict[str, Any]) -> Dict[str, Any]:
         "ingredients": _normalize_ingredients(body.get("ingredients")),
         "notes": (body.get("notes") or "").strip(),
         "common_preserve_ref": body.get("common_preserve_ref") or None,
+        "store_reference_price": store_ref_price,
+        "store_reference_servings": store_ref_servings,
+        "store_reference_label": (body.get("store_reference_label") or "").strip(),
         "created_at": now,
         "updated_at": now,
         "schema_version": SCHEMA_VERSION,
@@ -157,6 +174,26 @@ def update_recipe(uid: str, rid: str, body: Dict[str, Any]) -> Optional[Dict[str
         update["ingredients"] = _normalize_ingredients(body["ingredients"])
     if "notes" in body:
         update["notes"] = (body["notes"] or "").strip()
+    if "store_reference_price" in body:
+        v = body["store_reference_price"]
+        if v is None or v == "":
+            update["store_reference_price"] = None
+        else:
+            f = float(v)
+            if f < 0:
+                raise ValueError("store_reference_price must be >= 0")
+            update["store_reference_price"] = f
+    if "store_reference_servings" in body:
+        v = body["store_reference_servings"]
+        if v is None or v == "":
+            update["store_reference_servings"] = None
+        else:
+            n = int(v)
+            if n <= 0:
+                raise ValueError("store_reference_servings must be > 0")
+            update["store_reference_servings"] = n
+    if "store_reference_label" in body:
+        update["store_reference_label"] = (body["store_reference_label"] or "").strip()
     ref.update(update)
     out = ref.get().to_dict() or {}
     out["id"] = rid
