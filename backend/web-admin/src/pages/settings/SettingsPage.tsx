@@ -6,9 +6,10 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import HouseholdSection from '@/components/settings/HouseholdSection';
 import SecuritySection from '@/components/settings/SecuritySection';
 import DisplayCurrencySection from '@/components/settings/DisplayCurrencySection';
-import MergeNudgeWidget from '@/components/settings/MergeNudgeWidget';
 import GrocerySection from '@/components/settings/GrocerySection';
-import MyFeedbackSection from '@/components/settings/MyFeedbackSection';
+// Catalog cleanup + My feedback moved to /help (User Hub) on 2026-05-04.
+// MergeNudgeWidget + MyFeedbackSection are still imported by the User
+// Hub tabs there; we just don't mount them on Settings any more.
 
 const FSM_DATA = [
   {
@@ -64,13 +65,16 @@ export default function SettingsPage() {
               brands you actually pick.
             </p>
             <p>
-              <span className="text-ga-text-primary font-medium">Catalog cleanup</span>{' '}
-              (only appears when there&apos;s something to review) — likely-duplicate items the
-              app spotted, plus an undo log for any merges you ran in the last 7 days.
-            </p>
-            <p>
               <span className="text-ga-text-primary font-medium">Security</span> —
               change your password, link Google sign-in, or delete your account.
+            </p>
+            <p className="pt-1 border-t border-ga-border">
+              <span className="text-ga-text-primary font-medium">Moved to{' '}
+                <Link to="/help" className="text-ga-accent hover:underline">User Hub</Link>:
+              </span>{' '}
+              Catalog cleanup (likely duplicates + 7-day Undo log) and My feedback
+              (your past submissions + admin replies) now live there alongside the
+              manual and What&apos;s new.
             </p>
           </div>
         </details>
@@ -109,11 +113,7 @@ export default function SettingsPage() {
         {/* Shopping-list preferences (v3 beta) */}
         <GrocerySection />
 
-        {/* Catalog cleanup — likely duplicates + transfer audit log (Phase G) */}
-        <MergeNudgeWidget />
-
-        {/* P1.5: user-side feedback list. Auto-hides if user has none. */}
-        <MyFeedbackSection />
+        {/* Catalog cleanup + My feedback moved to /help (User Hub) on 2026-05-04. */}
 
         {/* Security */}
         <SecuritySection />

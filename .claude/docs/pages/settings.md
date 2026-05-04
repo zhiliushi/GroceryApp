@@ -29,12 +29,19 @@ adding a new knob is one card, one file.
 5. `<DisplayCurrencySection />` — preferred currency for display.
 6. `<GrocerySection />` — shopping-list checkout defaults +
    purchase-pattern analytics opt-in (v3 beta).
-7. `<MergeNudgeWidget />` — catalog cleanup. Auto-hides when there's
-   nothing to review and no recent transfers.
-8. `<SecuritySection />` — change password, link Google, delete
+7. `<SecuritySection />` — change password, link Google, delete
    account.
-9. **Application card** — version + platform. Currently hardcoded
+8. **Application card** — version + platform. Currently hardcoded
    to `GroceryApp Web v3.0.0` / `React SPA`.
+
+> **Moved 2026-05-04**: `<MergeNudgeWidget />` (catalog cleanup) and
+> `<MyFeedbackSection />` (the user's feedback list) used to mount
+> here; they now live as tabs on the User Hub at
+> [`/help`](user-hub.md). The components themselves remain at
+> `components/settings/*` and gained an `emptyVariant: 'hide' |
+> 'inline'` prop so the User Hub tabs render an empty state instead
+> of auto-hiding. The page-level helper expandable in `SettingsPage`
+> now points users to User Hub for these.
 10. **Legal** — links to `/privacy` and `/terms` with one-line
     summary text.
 11. **FSM Engine card** — see "Misplaced section" below.

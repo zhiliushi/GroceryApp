@@ -1,21 +1,47 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import PageHeader from '@/components/shared/PageHeader';
+import WhatsNewTab from '@/components/help/WhatsNewTab';
+import MergeNudgeWidget from '@/components/settings/MergeNudgeWidget';
+import MyFeedbackSection from '@/components/settings/MyFeedbackSection';
 import { cn } from '@/utils/cn';
 
 /**
- * User manual — single-source-of-truth user-facing help page.
+ * User Hub — the destination users come back to for help, what's new,
+ * their feedback, and catalog cleanup. Renamed from "User Manual"
+ * 2026-05-04 to reflect its expanded role.
  *
- * The structure mirrors the user's mental model (getting started →
- * adding → tracking → spending/waste → maintenance → tier → FAQ),
- * not the codebase's module structure. When a feature is added or
- * changed, the relevant section here is updated in the same PR — see
- * `.claude/docs/pages/user-manual.md` for the discipline rule.
+ * Tabs:
+ *   - Manual            — the layered help content (formerly the whole page).
+ *   - What's new        — changelog of user-visible ships + admin notices.
+ *   - My feedback       — user's own feedback submissions + admin replies.
+ *   - Catalog cleanup   — likely duplicates + transfer-undo log (was
+ *                         living in Settings; canonical home is now here).
+ *
+ * Filename + route stay (`UserManualPage.tsx`, `/help`) for backward
+ * compat. Sidebar label reads "User Hub". Hash-anchor deep-links into
+ * the manual (e.g. `/help#getting-started`) auto-switch to the Manual
+ * tab so existing in-app links keep working.
+ *
+ * The Manual section structure mirrors the user's mental model
+ * (getting started → adding → tracking → spending/waste → maintenance
+ * → tier → FAQ), not the codebase's module structure. When a feature
+ * is added or changed, the relevant section is updated in the same
+ * PR — see `.claude/docs/pages/user-hub.md` for the discipline rule.
  *
  * Tier badges (Free / Plus / Pro) are derived from the same
  * `_DEFAULT_TIERS` config in `backend/app/services/config_service.py`
  * — keep them in sync if pricing or limits change.
  */
+
+type TabKey = 'manual' | 'whats-new' | 'feedback' | 'cleanup';
+
+const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
+  { key: 'manual', label: 'Manual', icon: '📘' },
+  { key: 'whats-new', label: "What's new", icon: '✨' },
+  { key: 'feedback', label: 'My feedback', icon: '💬' },
+  { key: 'cleanup', label: 'Catalog cleanup', icon: '🧹' },
+];
 
 interface Section {
   id: string;
@@ -38,6 +64,86 @@ const SECTIONS: Section[] = [
 ];
 
 export default function UserManualPage() {
+  const location = useLocation();
+  // Hash anchors (e.g. /help#getting-started) imply Manual tab.
+  const initialTab: TabKey = location.hash ? 'manual' : 'manual';
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+
+  // If a hash anchor lands while Manual is NOT active, switch to it
+  // so the deep-link works.
+  useEffect(() => {
+    if (location.hash && activeTab !== 'manual') {
+      setActiveTab('manual');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.hash]);
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      <PageHeader
+        title="User Hub"
+        subtitle="Help, what's new, your feedback, and catalog cleanup — all in one place."
+      />
+
+      {/* Tab nav — horizontal scroll on narrow viewports. */}
+      <div className="flex gap-1 mb-6 border-b border-ga-border overflow-x-auto -mx-2 px-2">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors',
+              activeTab === tab.key
+                ? 'border-ga-accent text-ga-accent'
+                : 'border-transparent text-ga-text-secondary hover:text-ga-text-primary',
+            )}
+          >
+            <span aria-hidden="true">{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'manual' && <ManualTab />}
+      {activeTab === 'whats-new' && <WhatsNewTab />}
+      {activeTab === 'feedback' && (
+        <section className="space-y-3 max-w-3xl">
+          <header className="space-y-1">
+            <h2 className="text-lg font-semibold text-ga-text-primary">My feedback</h2>
+            <p className="text-xs text-ga-text-secondary leading-snug">
+              Everything you&apos;ve sent admin via the floating 💬 button. Status
+              pills tell you where each one stands; admin replies appear inline.
+            </p>
+          </header>
+          <MyFeedbackSection emptyVariant="inline" />
+        </section>
+      )}
+      {activeTab === 'cleanup' && (
+        <section className="space-y-3 max-w-3xl">
+          <header className="space-y-1">
+            <h2 className="text-lg font-semibold text-ga-text-primary">Catalog cleanup</h2>
+            <p className="text-xs text-ga-text-secondary leading-snug">
+              Likely-duplicate items the app spotted (shared barcode or
+              near-identical name) plus a 7-day Undo log for any merges
+              you&apos;ve run. Reviewing here is non-destructive — the actual
+              merge happens on each item&apos;s catalog page.
+            </p>
+          </header>
+          <MergeNudgeWidget emptyVariant="inline" />
+        </section>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * The Manual tab — preserves the original UserManualPage rendering
+ * with its sticky TOC on desktop and the scroll-spy for the active
+ * section indicator.
+ */
+function ManualTab() {
   const [activeId, setActiveId] = useState<string>(SECTIONS[0].id);
 
   // Active-section indicator on the side TOC: pick whichever heading
@@ -69,60 +175,53 @@ export default function UserManualPage() {
   }, []);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <PageHeader
-        title="User manual"
-        subtitle="How GroceryApp works, in plain language. Bookmark this page."
-      />
-
-      <div className="grid md:grid-cols-[200px,1fr] gap-6">
-        {/* Sticky TOC on desktop. On mobile this becomes a top jump-list. */}
-        <nav className="md:sticky md:top-4 md:self-start text-sm">
-          <div className="bg-ga-bg-card border border-ga-border rounded-lg p-3">
-            <div className="text-[11px] uppercase tracking-wider text-ga-text-secondary mb-2">
-              Contents
-            </div>
-            <ul className="space-y-1">
-              {SECTIONS.map((s) => (
-                <li key={s.id}>
-                  <a
-                    href={`#${s.id}`}
-                    className={cn(
-                      'block px-2 py-1 rounded text-xs hover:bg-ga-bg-hover',
-                      activeId === s.id
-                        ? 'bg-ga-accent/10 text-ga-accent font-medium'
-                        : 'text-ga-text-secondary',
-                    )}
-                  >
-                    {s.title}
-                  </a>
-                </li>
-              ))}
-            </ul>
+    <div className="grid md:grid-cols-[200px,1fr] gap-6">
+      {/* Sticky TOC on desktop. On mobile this becomes a top jump-list. */}
+      <nav className="md:sticky md:top-4 md:self-start text-sm">
+        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-3">
+          <div className="text-[11px] uppercase tracking-wider text-ga-text-secondary mb-2">
+            Contents
           </div>
-        </nav>
+          <ul className="space-y-1">
+            {SECTIONS.map((s) => (
+              <li key={s.id}>
+                <a
+                  href={`#${s.id}`}
+                  className={cn(
+                    'block px-2 py-1 rounded text-xs hover:bg-ga-bg-hover',
+                    activeId === s.id
+                      ? 'bg-ga-accent/10 text-ga-accent font-medium'
+                      : 'text-ga-text-secondary',
+                  )}
+                >
+                  {s.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </nav>
 
-        <article className="space-y-8 text-sm leading-relaxed text-ga-text-primary">
-          <GettingStarted />
-          <AddingItems />
-          <TrackingItems />
-          <UsingItems />
-          <Spending />
-          <Waste />
-          <RemindersInsights />
-          <Catalog />
-          <Tiers />
-          <MealsHomemaker />
-          <Preppers />
-          <Faq />
+      <article className="space-y-8 text-sm leading-relaxed text-ga-text-primary">
+        <GettingStarted />
+        <AddingItems />
+        <TrackingItems />
+        <UsingItems />
+        <Spending />
+        <Waste />
+        <RemindersInsights />
+        <Catalog />
+        <Tiers />
+        <MealsHomemaker />
+        <Preppers />
+        <Faq />
 
-          <footer className="pt-6 border-t border-ga-border text-xs text-ga-text-secondary">
-            Manual last updated alongside the codebase. Found something out of
-            date? Tell the admin — the manual is meant to mirror what the app
-            actually does.
-          </footer>
-        </article>
-      </div>
+        <footer className="pt-6 border-t border-ga-border text-xs text-ga-text-secondary">
+          Manual last updated alongside the codebase. Found something out of
+          date? Tell the admin via the 💬 button — the manual is meant to
+          mirror what the app actually does.
+        </footer>
+      </article>
     </div>
   );
 }

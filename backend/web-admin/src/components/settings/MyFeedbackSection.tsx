@@ -51,12 +51,34 @@ const KIND_LABEL: Record<string, string> = {
   general: '💬 General',
 };
 
-export default function MyFeedbackSection() {
+export default function MyFeedbackSection({
+  emptyVariant = 'hide',
+}: {
+  /**
+   * 'hide' (default) — auto-hide when the user has zero submissions; used
+   * where space is precious. 'inline' — render an empty-state card instead
+   * (used inside the User Hub's My feedback tab).
+   */
+  emptyVariant?: 'hide' | 'inline';
+} = {}) {
   const { data, isLoading } = useMyFeedback();
   const items = data?.items ?? [];
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  if (isLoading || items.length === 0) {
+  if (isLoading) return null;
+  if (items.length === 0) {
+    if (emptyVariant === 'inline') {
+      return (
+        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5 text-sm text-ga-text-secondary">
+          <p>
+            You haven&apos;t sent any feedback yet. Tap the floating{' '}
+            <span aria-hidden="true">💬</span> button in the corner of any page
+            to send a bug report, feature request, or general thought to admin.
+            Replies will appear here.
+          </p>
+        </div>
+      );
+    }
     return null;
   }
 

@@ -99,7 +99,7 @@ Render URL: `https://groceryapp-backend-7af2.onrender.com`
 ### Claude memory
 - `.claude/docs/project_context.md` — project summary for AI context (includes Glossary)
 - `.claude/docs/feature-inventory.md` — **canonical** feature × tier × page × API map. Read BEFORE adding any user-visible feature.
-- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-manual.md`, `storage.md`, `storage-detail.md`, `shopping-lists.md`, `waste.md`, `spending.md`, `spending-history.md`, `health-score.md`, `reminders.md`, `settings.md`, `meals.md`, `meals-form.md`, `catalog.md`, `catalog-entry.md`, `purchase-event-detail.md`, `foodbanks.md`, `about.md`.
+- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-hub.md`, `storage.md`, `storage-detail.md`, `shopping-lists.md`, `waste.md`, `spending.md`, `spending-history.md`, `health-score.md`, `reminders.md`, `settings.md`, `meals.md`, `meals-form.md`, `catalog.md`, `catalog-entry.md`, `purchase-event-detail.md`, `foodbanks.md`, `about.md`.
 - `.claude/memory/MEMORY.md` — project decisions & patterns
 
 ### Cross-page hooks (frontend integrations)
@@ -119,8 +119,13 @@ React Query caches so any open page refreshes.
 
 ## Discipline rules
 
-### Update the user manual when shipping features
-The user manual lives at `/help` (`backend/web-admin/src/pages/help/UserManualPage.tsx`). When a feature lands or changes, update the manual section AND `feature-inventory.md` in the same PR. The manual is one file (10 sections) so the diff is visible in PR review — that's intentional.
+### Update the User Hub when shipping features
+The User Hub lives at `/help` (`backend/web-admin/src/pages/help/UserManualPage.tsx`; renamed visible label only on 2026-05-04 — file path stays for backward compat). When a feature lands or changes, update **both** in the same PR:
+
+1. The relevant Manual-tab section in `UserManualPage.tsx` (12 numbered sections).
+2. `ENTRIES` in `backend/web-admin/src/components/help/WhatsNewTab.tsx` — append a one-liner with kind (feature/improvement/fix/notice), title, description, optional in-app link.
+
+Plus `feature-inventory.md` for the canonical feature → page → tier map. Three doc updates per user-visible change; the diff stays visible in PR review.
 
 ### Read feature-inventory.md BEFORE adding a new feature
 Most "new" surfaces already exist somewhere. The inventory tells you which page already owns the concern, which tier should gate the feature, and which API the backend expects. Adding a sibling page when an existing page should hold the feature is a Mistake (captured 2026-04-28 from a similar case in the Luqman/business sibling-vs-tab incident).

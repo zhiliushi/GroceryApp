@@ -14,8 +14,18 @@ import { cn } from '@/utils/cn';
  *  1. Likely-duplicate catalog pairs the user can review (passive — no
  *     destructive default action, just a deep-link to the catalog row).
  *  2. Recent transfers with a 7d Reverse button while the window is open.
+ *
+ * `emptyVariant` controls behaviour when both lists are empty:
+ *   - 'hide' (default) — return null so the surface auto-hides. Used
+ *     where space is precious (legacy Settings location).
+ *   - 'inline' — render a friendly empty state instead. Used inside
+ *     the User Hub's Catalog cleanup tab so the body is never blank.
  */
-export default function MergeNudgeWidget() {
+export default function MergeNudgeWidget({
+  emptyVariant = 'hide',
+}: {
+  emptyVariant?: 'hide' | 'inline';
+} = {}) {
   const { data: pairs, isLoading: pairsLoading } = useCatalogDuplicates();
   const { data: log, isLoading: logLoading } = useTransferLog();
   const reverseMutation = useTransferReverse();
@@ -23,7 +33,21 @@ export default function MergeNudgeWidget() {
 
   const hasPairs = (pairs?.length ?? 0) > 0;
   const hasLog = (log?.length ?? 0) > 0;
-  if (!hasPairs && !hasLog && !pairsLoading && !logLoading) return null;
+  if (!hasPairs && !hasLog && !pairsLoading && !logLoading) {
+    if (emptyVariant === 'inline') {
+      return (
+        <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5 text-sm text-ga-text-secondary">
+          <p>
+            Nothing to clean up right now. The app flags items here when it
+            spots two catalog rows that might be the same product (shared
+            barcode or near-identical name) and lists merges you ran in the
+            last 7 days while the Undo window is open.
+          </p>
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5 space-y-4">
