@@ -47,6 +47,8 @@ import { toast } from 'sonner';
 import { useAdminFeedback, useUpdateFeedback } from '@/api/queries/useFeedback';
 import BadgeChip from '@/components/feedback/BadgeChip';
 import BadgePicker from '@/components/feedback/BadgePicker';
+import FeedbackStatsCard from '@/components/feedback/FeedbackStatsCard';
+import FeedbackThread from '@/components/feedback/FeedbackThread';
 import { cn } from '@/utils/cn';
 import type { FeedbackEntry, FeedbackStatus } from '@/types/api';
 
@@ -136,14 +138,13 @@ export default function AdminHubPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-ga-text-secondary">
-          {data?.stats && (
-            <span title="Counts across the entire feedback collection (not just this tab)">
-              total {data.stats.total}
-            </span>
-          )}
           {isFetching && <span>refreshing…</span>}
         </div>
       </header>
+
+      {/* Stats dashboard — corpus-wide aggregates, independent of the
+          active tab. Reads the `stats` blob already on the response. */}
+      {data?.stats && <FeedbackStatsCard stats={data.stats} />}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-ga-border">
@@ -220,18 +221,19 @@ function FeedbackCard({
   highlighted: boolean;
 }) {
   const updateMut = useUpdateFeedback();
-  const [replyDraft, setReplyDraft] = useState(entry.admin_response ?? '');
   const [notesDraft, setNotesDraft] = useState(entry.admin_notes ?? '');
   const [editingNotes, setEditingNotes] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState(entry.summary ?? '');
+  const [editingSummary, setEditingSummary] = useState(false);
 
-  // Keep the textarea in sync if the underlying entry is replaced by a
+  // Keep the drafts in sync if the underlying entry is replaced by a
   // refetch (e.g. another admin tab updated the same row).
-  useEffect(() => {
-    setReplyDraft(entry.admin_response ?? '');
-  }, [entry.admin_response]);
   useEffect(() => {
     setNotesDraft(entry.admin_notes ?? '');
   }, [entry.admin_notes]);
+  useEffect(() => {
+    setSummaryDraft(entry.summary ?? '');
+  }, [entry.summary]);
 
   const submit = (
     payload: Parameters<typeof updateMut.mutate>[0]['payload'],
@@ -245,23 +247,18 @@ function FeedbackCard({
     );
   };
 
-  const handleReplySend = () => {
-    const trimmed = replyDraft.trim();
-    if (!trimmed) {
-      toast.error('Reply is empty.');
-      return;
-    }
-    submit({ admin_response: trimmed }, 'Reply sent — user will see it in My feedback.');
-  };
-
-  const handleClearReply = () => {
-    setReplyDraft('');
-    submit({ admin_response: '' }, 'Reply cleared.');
-  };
-
   const handleSaveNotes = () => {
     submit({ admin_notes: notesDraft }, 'Admin notes saved (not visible to user).');
     setEditingNotes(false);
+  };
+
+  const handleSaveSummary = () => {
+    const trimmed = summaryDraft.trim();
+    submit(
+      { summary: trimmed },
+      trimmed ? 'Summary saved — user will see it above the thread.' : 'Summary cleared.',
+    );
+    setEditingSummary(false);
   };
 
   return (
@@ -306,6 +303,64 @@ function FeedbackCard({
         {entry.message}
       </div>
 
+      {/* Summary card (admin → user-visible TL;DR shown above the thread) */}
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-ga-text-secondary mb-1.5 font-medium">
+          Summary card (visible to user as a header above the thread)
+        </div>
+        {editingSummary ? (
+          <div className="space-y-1.5">
+            <textarea
+              autoFocus
+              value={summaryDraft}
+              onChange={(e) => setSummaryDraft(e.target.value)}
+              rows={2}
+              maxLength={280}
+              placeholder={`One-line takeaway. e.g. "Shipped in v0.7 — see What's new" or "Tracked — duplicate of #abc".`}
+              className="w-full bg-ga-bg-primary border border-ga-border rounded-md px-3 py-2 text-xs text-ga-text-primary focus:outline-none focus:border-ga-accent"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveSummary}
+                disabled={updateMut.isPending}
+                className="px-2 py-0.5 text-xs font-medium rounded bg-ga-accent text-white hover:opacity-90"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSummary(false);
+                  setSummaryDraft(entry.summary ?? '');
+                }}
+                className="px-2 py-0.5 text-xs border border-ga-border rounded text-ga-text-secondary hover:bg-ga-bg-hover"
+              >
+                Cancel
+              </button>
+              <span className="ml-auto text-[10px] text-ga-text-secondary tabular-nums">
+                {summaryDraft.length} / 280
+              </span>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditingSummary(true)}
+            className={cn(
+              'w-full text-left text-xs italic transition-colors rounded-md px-3 py-2 border',
+              entry.summary
+                ? 'bg-ga-accent/10 border-ga-accent/40 text-ga-text-primary not-italic font-medium hover:bg-ga-accent/15'
+                : 'border-dashed border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+            )}
+          >
+            {entry.summary
+              ? `📌 ${entry.summary}`
+              : '📌 (click to add a one-line summary the user will see)'}
+          </button>
+        )}
+      </div>
+
       {/* Optional context blob */}
       {entry.context && Object.keys(entry.context).length > 0 && (
         <details className="text-[11px]">
@@ -335,52 +390,21 @@ function FeedbackCard({
         />
       </div>
 
-      {/* Reply box */}
+      {/* Thread (multi-turn). Replaces the single admin_response box.
+          Admin replies here flow through /api/admin/feedback/{id}/messages,
+          which mirrors the latest text into admin_response so legacy
+          surfaces still work. The 24h archive timer reads responded_at,
+          which the message endpoint stamps. */}
       <div>
-        <div className="text-[10px] uppercase tracking-wider text-ga-text-secondary mb-1.5 font-medium">
-          Reply (visible to user)
+        <div className="text-[10px] uppercase tracking-wider text-ga-text-secondary mb-1.5 font-medium flex items-center justify-between gap-2">
+          <span>Conversation (visible to user)</span>
           {entry.responded_at && (
-            <span className="ml-2 normal-case tracking-normal text-ga-text-secondary/70">
-              last reply at {fmtDate(entry.responded_at)}
+            <span className="normal-case tracking-normal text-ga-text-secondary/70">
+              last reply {fmtDate(entry.responded_at)}
             </span>
           )}
         </div>
-        <textarea
-          value={replyDraft}
-          onChange={(e) => setReplyDraft(e.target.value)}
-          rows={3}
-          maxLength={2000}
-          placeholder="Reply text shown to the user under their submission. Setting this stamps responded_at and starts the 24h archive timer."
-          className="w-full bg-ga-bg-primary border border-ga-border rounded-md px-3 py-2 text-xs text-ga-text-primary focus:outline-none focus:border-ga-accent"
-        />
-        <div className="flex items-center gap-2 mt-1.5">
-          <button
-            type="button"
-            onClick={handleReplySend}
-            disabled={updateMut.isPending || !replyDraft.trim()}
-            className={cn(
-              'px-3 py-1 text-xs font-medium rounded',
-              updateMut.isPending || !replyDraft.trim()
-                ? 'bg-ga-bg-hover text-ga-text-secondary cursor-not-allowed'
-                : 'bg-ga-accent text-white hover:opacity-90',
-            )}
-          >
-            {entry.admin_response ? 'Update reply' : 'Send reply'}
-          </button>
-          {entry.admin_response && (
-            <button
-              type="button"
-              onClick={handleClearReply}
-              disabled={updateMut.isPending}
-              className="px-3 py-1 text-xs border border-ga-border rounded text-ga-text-secondary hover:bg-ga-bg-hover"
-            >
-              Clear
-            </button>
-          )}
-          <span className="ml-auto text-[10px] text-ga-text-secondary tabular-nums">
-            {replyDraft.length} / 2000
-          </span>
-        </div>
+        <FeedbackThread feedbackId={entry.id} scope="admin" />
       </div>
 
       {/* Action row: pin + status */}

@@ -93,6 +93,27 @@ threads. Pinned threads bypass archival entirely. Archive logic
 lives in `feedback_service.is_archived` server-side; the SPA
 calls `useMyFeedback('active' | 'archived')` per the toggle.
 
+**Summary card (Sprint 2):** when admin sets a one-line takeaway
+(`summary` field), it renders as a prominent ga-accent-tinted band
+at the top of the row above the kind label
+(`📌 <summary text>`). Distinct from the admin's reply body —
+it's the TL;DR. Empty cases stay hidden.
+
+**Threaded conversation (Sprint 2):** the row body now hosts a
+`<FeedbackThread scope="mine" />` chronological message list +
+reply textarea, replacing the single admin-response block. Behaviour:
+
+- Loads automatically when the row is expanded OR has an admin
+  reply (legacy single reply OR any messages on the subcollection).
+- The user can reply directly in the thread. A user reply re-opens
+  a closed thread (`status ∈ {resolved, wont_fix}` bumps back to
+  `triaged`) so admin sees it again on their Inbox.
+- Right-aligned bubbles for the user's own messages; admin replies
+  show ga-accent-tinted on the left.
+- Legacy single-reply rows (v1/v2 admin_response field) render the
+  prior reply as a "(legacy single reply)" message; the next admin
+  message materializes it as a real message row.
+
 ### 4. Catalog cleanup
 
 Wraps `<MergeNudgeWidget emptyVariant="inline" />`. Likely-duplicate

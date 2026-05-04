@@ -40,12 +40,28 @@ _VALID_STATUSES = {"new", "triaged", "resolved", "wont_fix"}
 # user; `resolved` + `shipped` flag user-visible completion; `parked`
 # is a friendlier wont_fix.
 _VALID_BADGES = {"noted", "on_it", "need_info", "resolved", "shipped", "parked"}
+# Admin-authored one-line summary surfaced as a prominent card above
+# the user's thread. Distinct from `admin_response` (which is the
+# reply text) — the summary is the takeaway / TL;DR a casual reader
+# should see at a glance ("we shipped this in v0.7" / "tracked as
+# duplicate of #abc"). Capped tighter than admin_response since it's
+# meant to be one line.
+_MAX_SUMMARY_LEN = 280
 # Auto-archive window for resolved/wont_fix threads in the user-facing
 # My feedback list. Threads with admin response older than this go off
 # the user's main view (admin sees them in the Archived tab). Pinned
 # threads bypass archival.
 _ARCHIVE_AFTER_HOURS = 24
 _MAX_MESSAGE_LEN = 5000
+# Threading subcollection name. Each feedback doc gets a
+# `messages/{auto_id}` subcollection where every turn (user reply,
+# admin reply) is a doc with {author, text, created_at, author_email}.
+# Legacy docs (schema_version=1 or 2 without any messages) synthesize
+# a virtual admin message from `admin_response` at read time so the
+# v1+v2 corpus renders correctly under the new UI.
+_MESSAGES_SUBCOLLECTION = "messages"
+_VALID_AUTHORS = {"user", "admin"}
+_MAX_THREAD_MESSAGE_LEN = 2000
 
 
 def _db():
@@ -108,6 +124,11 @@ def create_feedback(
         # Admin-set cute badge surfaced to the user (e.g. 'on_it').
         # See _VALID_BADGES. None = no admin signal yet.
         "admin_badge": None,
+        # Admin-authored one-line takeaway (≤_MAX_SUMMARY_LEN chars).
+        # Surfaced as a prominent card above the thread on the user's
+        # My feedback page when set. Distinct from admin_response,
+        # which is the reply body.
+        "summary": None,
         # When True, the thread bypasses the 24h archive sweep and stays
         # visible to the user permanently. Admin sets via the pin action
         # in Admin Hub when a thread is worth keeping (led to a feature,
@@ -204,6 +225,7 @@ def update_feedback(
     admin_response: Optional[str] = None,
     admin_badge: Optional[str] = None,
     pinned: Optional[bool] = None,
+    summary: Optional[str] = None,
 ) -> dict[str, Any]:
     """Admin: update status / notes / reply / badge / pin on a feedback
     entry. Pass only the fields you want to change.
@@ -243,6 +265,10 @@ def update_feedback(
         updates["admin_badge"] = admin_badge or None
     if pinned is not None:
         updates["pinned"] = bool(pinned)
+    if summary is not None:
+        # Empty string clears the summary; trim whitespace; cap length.
+        s = summary.strip()
+        updates["summary"] = s[:_MAX_SUMMARY_LEN] if s else None
     doc_ref.update(updates)
 
     out = snap.to_dict() or {}
@@ -282,17 +308,261 @@ def is_archived(doc: dict[str, Any], *, now_iso: Optional[str] = None) -> bool:
     return age_hours >= _ARCHIVE_AFTER_HOURS
 
 
+# ---------------------------------------------------------------------------
+# Threading — each feedback doc has a `messages/` subcollection.
+# Sprint 2 design (2026-05-04): full multi-turn replies (vs. v1's
+# "latest admin reply wins"). User can reply too, which closes the
+# loop without forcing the user to submit a fresh feedback row.
+# ---------------------------------------------------------------------------
+
+
+def list_messages(feedback_id: str, *, parent: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+    """Return the chronological message list for a feedback thread.
+
+    Read-time fallback: when the doc has no messages subcollection
+    (legacy v1/v2 rows), synthesize a single virtual admin message
+    from `admin_response` so the new threaded UI renders the existing
+    corpus correctly. The synthesized message is NOT written back —
+    it's purely a read-time projection so we don't have to migrate.
+    The first time admin posts a message via post_message() the legacy
+    admin_response is materialized as a real message row so future
+    reads stop synthesizing.
+
+    `parent` (optional) is the parent doc dict if the caller already
+    has it, to avoid a redundant get().
+    """
+    doc_ref = _db().collection(_COLLECTION).document(feedback_id)
+    if parent is None:
+        snap = doc_ref.get()
+        if not snap.exists:
+            raise NotFoundError(f"Feedback {feedback_id} not found")
+        parent = snap.to_dict() or {}
+
+    msgs: list[dict[str, Any]] = []
+    for snap in (
+        doc_ref.collection(_MESSAGES_SUBCOLLECTION)
+        .order_by("created_at")
+        .stream()
+    ):
+        m = snap.to_dict() or {}
+        m["id"] = snap.id
+        msgs.append(m)
+
+    # Legacy projection: if no real messages and admin_response is set,
+    # surface the v1 reply as a virtual admin message. virtual=True flag
+    # lets callers tell the difference (no edit / delete affordances).
+    if not msgs and parent.get("admin_response"):
+        msgs.append(
+            {
+                "id": "__virtual_admin_response__",
+                "author": "admin",
+                "author_email": None,
+                "text": parent["admin_response"],
+                "created_at": parent.get("responded_at") or parent.get("updated_at"),
+                "virtual": True,
+            }
+        )
+    return msgs
+
+
+def post_message(
+    feedback_id: str,
+    *,
+    author: str,
+    text: str,
+    author_email: Optional[str] = None,
+    requesting_user_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Append a message to a feedback thread.
+
+    Args:
+      author              : 'user' | 'admin'
+      text                : reply text (≤_MAX_THREAD_MESSAGE_LEN, trimmed)
+      author_email        : denorm for display (admin's email, etc.)
+      requesting_user_id  : when author='user', enforce that the user
+                            owns the thread. When author='admin', no
+                            ownership check (admin route does the gate).
+
+    Side effects when author='admin':
+      - Stamps `responded_at` on the parent doc → the 24h archive timer
+        starts/resets here.
+      - Mirrors the latest admin message into `admin_response` so legacy
+        UIs (v1 FeedbackTab, the inline My feedback fallback) keep
+        displaying the most recent admin reply without needing to know
+        about the messages subcollection.
+      - On the first admin message in a thread that previously had a
+        legacy `admin_response`, that legacy text is materialized as a
+        real message row first so the chronological order stays correct.
+
+    Side effects when author='user':
+      - Stamps `updated_at`. We deliberately do NOT touch `responded_at`
+        — that field is reserved for admin replies (it gates archival).
+      - If the parent's status is 'resolved' or 'wont_fix', it bumps
+        back to 'triaged' so the user reply visibly re-opens the
+        thread on admin's queue. (Pinned threads stay pinned.)
+
+    Raises:
+      ValidationError on bad author / empty text / overlong text.
+      NotFoundError when feedback_id doesn't exist.
+      ValidationError("not your thread") if user posts to someone else's.
+    """
+    if author not in _VALID_AUTHORS:
+        raise ValidationError(f"author must be one of {sorted(_VALID_AUTHORS)}")
+    body = (text or "").strip()
+    if not body:
+        raise ValidationError("text is required")
+    if len(body) > _MAX_THREAD_MESSAGE_LEN:
+        raise ValidationError(f"text must be ≤ {_MAX_THREAD_MESSAGE_LEN} characters")
+
+    doc_ref = _db().collection(_COLLECTION).document(feedback_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise NotFoundError(f"Feedback {feedback_id} not found")
+    parent = snap.to_dict() or {}
+
+    if author == "user":
+        if requesting_user_id and parent.get("user_id") != requesting_user_id:
+            raise ValidationError("not your thread")
+
+    msgs_ref = doc_ref.collection(_MESSAGES_SUBCOLLECTION)
+
+    # First admin message in a thread that has a legacy admin_response
+    # → materialize the legacy reply as a real message so the order is
+    # right when admin's new turn lands. We only do this when the
+    # subcollection is empty, so this is a one-time cost per thread.
+    if author == "admin" and parent.get("admin_response"):
+        existing = list(msgs_ref.limit(1).stream())
+        if not existing:
+            legacy_id = str(uuid.uuid4())
+            msgs_ref.document(legacy_id).set(
+                {
+                    "id": legacy_id,
+                    "author": "admin",
+                    "author_email": None,
+                    "text": parent["admin_response"],
+                    "created_at": parent.get("responded_at")
+                    or parent.get("updated_at")
+                    or parent.get("created_at"),
+                    "materialized_from_legacy": True,
+                }
+            )
+
+    msg_id = str(uuid.uuid4())
+    msg_doc = {
+        "id": msg_id,
+        "author": author,
+        "author_email": author_email,
+        "text": body,
+        "created_at": _now_iso(),
+    }
+    msgs_ref.document(msg_id).set(msg_doc)
+
+    parent_updates: dict[str, Any] = {"updated_at": _now_iso()}
+    if author == "admin":
+        # Mirror latest admin reply into admin_response so legacy
+        # surfaces (v1 list rendering, my-feedback inline fallback,
+        # archive predicate) keep working without code changes.
+        parent_updates["admin_response"] = body
+        parent_updates["responded_at"] = _now_iso()
+    else:
+        # User reply re-opens a closed thread so admin sees it again.
+        if parent.get("status") in ("resolved", "wont_fix"):
+            parent_updates["status"] = "triaged"
+    doc_ref.update(parent_updates)
+
+    logger.info(
+        "feedback.message id=%s feedback=%s author=%s len=%d",
+        msg_id, feedback_id, author, len(body),
+    )
+    return msg_doc
+
+
 def stats() -> dict[str, Any]:
-    """Quick counts for admin dashboard. Returns counts by status + kind."""
+    """Aggregate counts for the admin stats dashboard.
+
+    At closed-beta scale the whole collection fits in one stream
+    comfortably (≤ a few thousand docs over the lifetime of the beta).
+    If we cross ~10k feedback rows we'd swap this for periodic
+    materialised counters; not worth the complexity yet.
+
+    Returns:
+        total                    — total docs
+        by_status                — { 'new': N, 'triaged': N, ... }
+        by_kind                  — { 'bug': N, 'feature': N, ... }
+        by_badge                 — { 'noted': N, 'on_it': N, ... };
+                                    'none' = no badge set yet
+        active                   — count visible to user (not archived)
+        archived                 — count auto-archived (24h sweep)
+        pinned                   — count admin marked pinned
+        responded                — count with an admin_response set
+        unresponded              — total - responded (admin's queue)
+        median_first_reply_hours — median (created_at -> responded_at)
+                                    over docs with admin_response set;
+                                    None when the corpus is empty
+    """
     all_docs = list(_db().collection(_COLLECTION).stream())
+    now_iso = _now_iso()
+
     by_status: dict[str, int] = {}
     by_kind: dict[str, int] = {}
+    by_badge: dict[str, int] = {}
+    active = 0
+    archived = 0
+    pinned = 0
+    responded = 0
+    first_reply_hours: list[float] = []
+
     for snap in all_docs:
         d = snap.to_dict() or {}
         by_status[d.get("status", "new")] = by_status.get(d.get("status", "new"), 0) + 1
         by_kind[d.get("kind", "general")] = by_kind.get(d.get("kind", "general"), 0) + 1
+        badge = d.get("admin_badge") or "none"
+        by_badge[badge] = by_badge.get(badge, 0) + 1
+
+        if is_archived(d, now_iso=now_iso):
+            archived += 1
+        else:
+            active += 1
+        if d.get("pinned"):
+            pinned += 1
+        if d.get("admin_response"):
+            responded += 1
+            # Time from user submission to first admin reply. Uses
+            # responded_at (latest reply timestamp); good enough for
+            # closed-beta where threads are short. Once threading lands
+            # we'll switch this to the FIRST message author=admin.
+            try:
+                created = d.get("created_at")
+                resp = d.get("responded_at")
+                if created and resp:
+                    cdt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+                    rdt = datetime.fromisoformat(str(resp).replace("Z", "+00:00"))
+                    hrs = (rdt - cdt).total_seconds() / 3600.0
+                    if hrs >= 0:
+                        first_reply_hours.append(hrs)
+            except (ValueError, AttributeError):
+                pass
+
+    median_first_reply: Optional[float] = None
+    if first_reply_hours:
+        first_reply_hours.sort()
+        n = len(first_reply_hours)
+        mid = n // 2
+        median_first_reply = (
+            first_reply_hours[mid]
+            if n % 2 == 1
+            else (first_reply_hours[mid - 1] + first_reply_hours[mid]) / 2.0
+        )
+
     return {
         "total": len(all_docs),
         "by_status": by_status,
         "by_kind": by_kind,
+        "by_badge": by_badge,
+        "active": active,
+        "archived": archived,
+        "pinned": pinned,
+        "responded": responded,
+        "unresponded": len(all_docs) - responded,
+        "median_first_reply_hours": median_first_reply,
     }

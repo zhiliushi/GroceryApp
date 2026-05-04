@@ -35,8 +35,10 @@ export const API = {
   // Feedback (cap-hit auto-prompt + general feedback form + RPi-ready)
   FEEDBACK: '/api/feedback',
   FEEDBACK_MINE: '/api/feedback/mine',
+  FEEDBACK_THREAD: (id: string) => `/api/feedback/${id}/messages`,
   ADMIN_FEEDBACK: '/api/admin/feedback',
   ADMIN_FEEDBACK_ITEM: (id: string) => `/api/admin/feedback/${id}`,
+  ADMIN_FEEDBACK_THREAD: (id: string) => `/api/admin/feedback/${id}/messages`,
 
   // External links (donation / reference / social) surfaced on AboutPage
   EXTERNAL_LINKS: '/api/external-links',

@@ -117,20 +117,121 @@ It now reads the same backend data but carries the lightweight,
 read-mostly v1 UI. Once we're sure no external link (Telegram
 notifications, internal docs) references it, retire it.
 
+## Stats dashboard (Sprint 2)
+
+Mounted at the top of the page, above the tabs. Reads the `stats`
+blob already returned by GET /api/admin/feedback (no extra query).
+Surfaces six headline counters:
+
+- **Total** — corpus size.
+- **Unresponded** — admin's queue: total minus threads with an
+  `admin_response` set. Highlighted amber when >0.
+- **Active** — visible to users (not auto-archived).
+- **Archived** — auto-archived (resolved/wont_fix > 24h).
+- **Pinned** — threads admin marked to bypass the 24h sweep.
+  Highlighted purple when >0.
+- **Median 1st reply** — median time from user submission to first
+  admin reply, across replied threads. Reads from `responded_at`
+  today; will switch to the FIRST message author=admin once the
+  threading subcollection is the source of truth corpus-wide.
+
+Plus two compact rows: **By kind** (bug / feature / cap_request /
+general) and **By badge** (the same emoji set BadgeChip uses).
+
+`feedback_service.stats()` walks the whole collection in one stream
+— fine at closed-beta scale (≤ a few thousand docs over the lifetime
+of the beta). If we cross ~10k feedback rows we'd swap to periodic
+materialised counters; not worth the complexity yet.
+
+## Summary card (Sprint 2)
+
+Each FeedbackCard has a "Summary card" editor between the user
+message and the BadgePicker. Admin types a one-line takeaway (≤280
+chars). When set:
+
+- Rendered prominently at the top of the user's MyFeedback row in a
+  ga-accent-tinted band ("📌 <summary text>"), above the kind label
+  and message preview.
+- Admin sees the same text on the FeedbackCard with a "click to edit"
+  affordance.
+
+Distinct from `admin_response` (the reply body): the summary is the
+TL;DR a casual reader should see at a glance. Examples: `"Shipped
+in v0.7 — see What's new"`, `"Tracked — duplicate of #abc"`,
+`"Working on it; ETA next sprint"`. Empty string clears.
+
+Backend: new `summary: str | null` field on the feedback doc.
+`update_feedback(summary=...)` accepts it; trims + caps at 280 chars;
+`""` clears.
+
+## Threading (Sprint 2)
+
+Full multi-turn threading via a `messages/{id}` subcollection on
+each feedback doc.
+
+- **Storage**: `feedback/{feedback_id}/messages/{msg_id}` with
+  `{author: 'user' | 'admin', text, created_at, author_email,
+  materialized_from_legacy?}`.
+- **Read-time fallback**: legacy v1/v2 docs without any messages but
+  with an `admin_response` field set get a single virtual admin
+  message synthesized at read time (`virtual: true`). The UI renders
+  it with a "(legacy single reply)" hint. The synthesized message is
+  NOT written back — it's purely a read-time projection.
+- **First admin message in a legacy thread**: when admin posts a new
+  message and the thread had a legacy `admin_response` but no real
+  subcollection rows, the legacy reply is materialized as a real
+  message row first (with `materialized_from_legacy: true`) so the
+  chronological order stays correct.
+- **admin_response mirror**: every admin message also writes the
+  latest text into the parent's `admin_response` field. This keeps
+  legacy single-reply UIs (the v1 FeedbackTab in Admin Settings,
+  the my-feedback inline fallback) showing the most recent admin
+  reply without needing to know about the messages subcollection.
+- **`responded_at`**: stamped on every admin message. The 24h
+  archive timer reads from this field.
+- **User reply re-opens**: when a user posts a reply on a thread
+  with `status ∈ {resolved, wont_fix}`, the parent's status bumps
+  back to `triaged`. Pinned/badge/summary stay untouched. The
+  thread re-appears on admin's Inbox tab.
+
+### Endpoints
+
+- User-side (ownership enforced server-side):
+  - `GET /api/feedback/{id}/messages` — read own thread
+  - `POST /api/feedback/{id}/messages` `{ text }` — reply on own thread
+- Admin-side (admin gate):
+  - `GET /api/admin/feedback/{id}/messages` — read any thread
+  - `POST /api/admin/feedback/{id}/messages` `{ text }` — reply on any thread
+
+### Frontend
+
+- `<FeedbackThread feedbackId scope />` — shared component used by
+  both the admin-side FeedbackCard and the user-side MyFeedback row.
+  `scope='admin'` reads/writes through admin endpoints; `scope='mine'`
+  through user endpoints.
+- Cache key: `['feedback', 'thread', id, scope]`. Posting a message
+  invalidates BOTH scopes for the thread plus the parent lists
+  (`['admin', 'feedback']` and `['feedback', 'mine']`) so admin and
+  user see each other's reply on next refetch.
+- Render: chronological list with right-align for the viewer's own
+  messages (admin sees their own replies right-aligned; user sees
+  their own replies right-aligned). Admin messages are
+  ga-accent-tinted; user messages are plain bg.
+
+The single-reply textarea on the admin side has been replaced by the
+threaded view; the admin notes (private) editor is preserved.
+
 ## Future work (not in this slice)
 
-- **User-reply threading** — full multi-turn threading with a
-  `messages` subcollection. Today's design = "latest admin reply
-  wins". Sprint 2.
-- **Save / summarise into a card** — admin extracts a one-liner
-  summary from a thread for the public-facing What's new feed. Today
-  the badge `🚀 Shipped` is the only signal that bridges feedback →
-  release notes.
-- **Stats dashboard** — by-status / by-kind / median time-to-first-
-  reply. Backend `feedback_service.stats()` already returns the
-  aggregates; just needs a card.
-- **Telegram badge-change notify** — currently we only notify on new
-  submission, not on subsequent badge / reply changes.
+- **Telegram badge-change / reply notify** — currently we only
+  notify on new submission, not on subsequent badge / reply changes
+  or user replies. User replies in particular re-open closed threads
+  and admin should know.
+- **Thread-edit / delete** — today messages are append-only. Edit
+  affordance for typo-fix is the obvious next ask.
+- **AI-summarise** — populate the summary card from an LLM that
+  reads the whole thread + the user's submission. Today admin types
+  it manually.
 
 ## Backend touchpoints
 

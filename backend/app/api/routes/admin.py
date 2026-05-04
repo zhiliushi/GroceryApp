@@ -1819,7 +1819,8 @@ async def update_feedback(
     admin: UserInfo = Depends(require_admin),
 ):
     """Admin: update status / admin_notes / admin_response / admin_badge /
-    pinned on a feedback entry. Pass only the fields you want to change.
+    pinned / summary on a feedback entry. Pass only the fields you
+    want to change.
 
     Body shape (any subset):
       {
@@ -1828,6 +1829,7 @@ async def update_feedback(
         "admin_response": str,        // user-visible reply
         "admin_badge": "noted" | "on_it" | "need_info" | "resolved" | "shipped" | "parked" | "",
         "pinned": bool,
+        "summary": str,                // user-visible one-line takeaway; "" clears
       }
     """
     from app.services import feedback_service
@@ -1839,4 +1841,64 @@ async def update_feedback(
         admin_response=body.get("admin_response"),
         admin_badge=body.get("admin_badge"),
         pinned=body.get("pinned"),
+        summary=body.get("summary"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Threading — admin endpoints. Mirror the user-side endpoints in
+# feedback.py but no ownership check (admin can read/post on any
+# thread). Posting a message stamps responded_at on the parent and
+# mirrors the latest text into admin_response so legacy surfaces
+# (v1 FeedbackTab, my-feedback inline fallback) keep working.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/feedback/{feedback_id}/messages")
+async def admin_list_thread(
+    feedback_id: str,
+    admin: UserInfo = Depends(require_admin),
+):
+    """Return the chronological message list for any feedback thread.
+    Read-time fallback synthesizes a virtual admin message from the
+    legacy `admin_response` field when no real messages exist yet.
+    """
+    from app.services import feedback_service
+    from app.core.exceptions import NotFoundError
+    try:
+        messages = feedback_service.list_messages(feedback_id)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return {"feedback_id": feedback_id, "messages": messages, "count": len(messages)}
+
+
+@router.post("/feedback/{feedback_id}/messages", status_code=201)
+async def admin_post_reply(
+    feedback_id: str,
+    body: dict = None,  # type: ignore[assignment]
+    admin: UserInfo = Depends(require_admin),
+):
+    """Post an admin reply to a feedback thread. Stamps responded_at
+    on the parent (kicks the 24h archive timer) and mirrors the latest
+    text into admin_response so legacy single-reply UIs keep showing
+    the most recent reply.
+
+    Body: { "text": str (1..2000) }
+    """
+    from app.services import feedback_service
+    from app.core.exceptions import NotFoundError, ValidationError
+    body = body or {}
+    text = body.get("text")
+    if not text or not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="text is required")
+    try:
+        return feedback_service.post_message(
+            feedback_id,
+            author="admin",
+            text=text,
+            author_email=admin.email,
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

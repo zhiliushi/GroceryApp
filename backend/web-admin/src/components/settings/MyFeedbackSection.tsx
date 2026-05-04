@@ -22,6 +22,7 @@
 import { useState } from 'react';
 import { useMyFeedback } from '@/api/queries/useFeedback';
 import BadgeChip from '@/components/feedback/BadgeChip';
+import FeedbackThread from '@/components/feedback/FeedbackThread';
 import { cn } from '@/utils/cn';
 import type { FeedbackEntry, FeedbackStatus } from '@/types/api';
 
@@ -160,6 +161,7 @@ function FeedbackRow({
   const hasReply = !!entry.admin_response;
   const hasBadge = !!entry.admin_badge;
   const isPinned = !!entry.pinned;
+  const hasSummary = !!entry.summary;
   const previewLen = 90;
   const needsTruncate = entry.message.length > previewLen;
   const preview = needsTruncate ? entry.message.slice(0, previewLen) + '…' : entry.message;
@@ -175,6 +177,14 @@ function FeedbackRow({
         isPinned ? 'border-purple-500/40 bg-purple-500/5' : 'border-ga-border',
       )}
     >
+      {hasSummary && (
+        <div
+          className="px-3 py-2 bg-ga-accent/10 border-b border-ga-accent/30 text-xs text-ga-text-primary font-medium leading-snug"
+          title="Admin's summary of where this thread stands."
+        >
+          <span aria-hidden="true">📌</span> {entry.summary}
+        </div>
+      )}
       <button
         type="button"
         onClick={onToggle}
@@ -227,14 +237,15 @@ function FeedbackRow({
         </div>
       </button>
 
-      {hasReply && (
-        <div className="px-3 py-2 bg-ga-accent/5 border-t border-ga-border text-xs leading-snug">
-          <div className="text-[10px] uppercase tracking-wider text-ga-accent mb-1 font-medium">
-            Admin response
-          </div>
-          <p className="text-ga-text-primary whitespace-pre-wrap">
-            {entry.admin_response}
-          </p>
+      {/* Thread (multi-turn). Shown when the row is expanded OR when
+          there's already at least one admin reply (legacy
+          admin_response or any messages on the subcollection). The
+          thread component owns its own loading state + reply box;
+          the user can reply here and it re-opens the thread on
+          admin's queue if it was closed. */}
+      {(expanded || hasReply) && (
+        <div className="px-3 py-2 bg-ga-accent/5 border-t border-ga-border">
+          <FeedbackThread feedbackId={entry.id} scope="mine" />
         </div>
       )}
     </div>

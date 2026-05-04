@@ -96,6 +96,10 @@ export interface FeedbackEntry {
   admin_badge?: FeedbackBadge | null;
   /** True = bypass the 24h archive sweep; thread stays visible to user. */
   pinned?: boolean;
+  /** Admin-authored one-line takeaway shown above the thread on the
+   *  user's My feedback view. Distinct from `admin_response` (the
+   *  reply body). Capped at 280 chars server-side. */
+  summary?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,14 +109,55 @@ export interface MyFeedbackResponse {
   count: number;
 }
 
+/** A single message within a feedback thread. */
+export interface FeedbackMessage {
+  id: string;
+  author: 'user' | 'admin';
+  /** Display denorm — admin email for admin replies; user email for
+   *  user replies (when known). May be null for synthesized legacy
+   *  rows or older messages. */
+  author_email?: string | null;
+  text: string;
+  /** ISO timestamp. May be null on legacy synthesized messages where
+   *  the original timestamp is unrecoverable. */
+  created_at?: string | null;
+  /** True when the message is a read-time projection from the legacy
+   *  `admin_response` field (no real subcollection row yet). The UI
+   *  hides edit/delete affordances on virtual messages. */
+  virtual?: boolean;
+  materialized_from_legacy?: boolean;
+}
+
+export interface ThreadResponse {
+  feedback_id: string;
+  messages: FeedbackMessage[];
+  count: number;
+}
+
+export interface FeedbackStats {
+  total: number;
+  by_status: Record<string, number>;
+  by_kind: Record<string, number>;
+  /** Breakdown by admin_badge; `none` = no badge set yet. */
+  by_badge?: Record<string, number>;
+  /** Visible to users (not archived). */
+  active?: number;
+  /** Auto-archived (24h sweep, resolved/wont_fix > 24h). */
+  archived?: number;
+  pinned?: number;
+  /** Threads with an admin_response set. */
+  responded?: number;
+  /** total - responded. The admin's working queue. */
+  unresponded?: number;
+  /** Median hours from user submission to first admin reply.
+   *  Null when no thread has been replied to yet. */
+  median_first_reply_hours?: number | null;
+}
+
 export interface AdminFeedbackResponse {
   items: FeedbackEntry[];
   count: number;
-  stats: {
-    total: number;
-    by_status: Record<string, number>;
-    by_kind: Record<string, number>;
-  };
+  stats: FeedbackStats;
 }
 
 // === Dashboard ===

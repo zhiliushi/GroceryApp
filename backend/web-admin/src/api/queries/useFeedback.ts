@@ -6,7 +6,9 @@ import type {
   AdminFeedbackResponse,
   FeedbackBadge,
   FeedbackEntry,
+  FeedbackMessage,
   MyFeedbackResponse,
+  ThreadResponse,
 } from '@/types/api';
 
 /**
@@ -73,6 +75,8 @@ export interface UpdateFeedbackPayload {
   admin_response?: string;
   admin_badge?: FeedbackBadge | '' | null;
   pinned?: boolean;
+  /** One-line takeaway shown to the user above the thread. Empty string clears. */
+  summary?: string;
 }
 
 /**
@@ -95,6 +99,70 @@ export function useUpdateFeedback() {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data
         ?.detail;
       toast.error(msg || 'Failed to update feedback');
+    },
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// Threading — chronological message subcollection per feedback doc.
+// User-side hooks hit /api/feedback/{id}/messages (ownership enforced
+// server-side); admin-side hooks hit /api/admin/feedback/{id}/messages
+// (admin gate). Cache key shape matches the pattern used elsewhere:
+// ['feedback', 'thread', id, 'mine' | 'admin'] so user + admin views
+// of the same thread invalidate together.
+// ---------------------------------------------------------------------------
+
+function isAdminEndpoint(scope: 'mine' | 'admin'): boolean {
+  return scope === 'admin';
+}
+
+export function useFeedbackThread(
+  id: string | null | undefined,
+  scope: 'mine' | 'admin',
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ['feedback', 'thread', id, scope],
+    enabled: enabled && !!id,
+    queryFn: () =>
+      apiClient
+        .get<ThreadResponse>(
+          isAdminEndpoint(scope)
+            ? API.ADMIN_FEEDBACK_THREAD(id!)
+            : API.FEEDBACK_THREAD(id!),
+        )
+        .then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+
+export function usePostThreadMessage(scope: 'mine' | 'admin') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, text }: { id: string; text: string }) =>
+      apiClient
+        .post<FeedbackMessage>(
+          isAdminEndpoint(scope)
+            ? API.ADMIN_FEEDBACK_THREAD(id)
+            : API.FEEDBACK_THREAD(id),
+          { text },
+        )
+        .then((r) => r.data),
+    onSuccess: (_msg, { id }) => {
+      // Invalidate BOTH scopes for this thread so admin and user see
+      // each other's reply, plus the parent lists (admin queue + user
+      // My feedback) since admin replies stamp responded_at + a user
+      // reply may re-open a closed thread.
+      qc.invalidateQueries({ queryKey: ['feedback', 'thread', id, 'mine'] });
+      qc.invalidateQueries({ queryKey: ['feedback', 'thread', id, 'admin'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'feedback'] });
+      qc.invalidateQueries({ queryKey: ['feedback', 'mine'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data
+        ?.detail;
+      toast.error(msg || 'Failed to post reply');
     },
   });
 }

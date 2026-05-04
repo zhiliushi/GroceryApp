@@ -1,0 +1,1 @@
+import{t as e}from"./useQuery-B6q5LbPF.js";import{t}from"./client-CwsjyUfB.js";import{t as n}from"./endpoints-DSkNHkIz.js";import{n as r}from"./index-DunbQfkm.js";function i(){return e({queryKey:r.me,queryFn:()=>t.get(n.ME).then(e=>e.data)})}export{i as t};
