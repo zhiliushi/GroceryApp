@@ -136,6 +136,23 @@ async def approve_user(uid: str, admin: UserInfo = Depends(require_admin)):
     return {"success": True, "message": f"User {uid} approved"}
 
 
+@router.post("/users/{uid}/reject")
+async def reject_user(uid: str, body: dict, admin: UserInfo = Depends(require_admin)):
+    """Reject a pending user (Onboarding v2 — Phase 5).
+
+    Flips status to disabled with `disabled_reason` set to the supplied value
+    (defaults to "rejected") so the admin pending-queue UI can distinguish
+    rejected (admin action on a never-active user) from disabled (admin action
+    on a previously-active user). Also revokes the user's refresh tokens so
+    they're logged out on next request.
+    """
+    reason = (body or {}).get("reason", "rejected")
+    success = user_service.reject_user(uid, admin.uid, reason)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"success": True, "message": f"User {uid} rejected"}
+
+
 @router.delete("/users/{uid}")
 async def delete_user(uid: str, admin: UserInfo = Depends(require_admin)):
     """Delete a user completely (Firestore + Firebase Auth)."""
@@ -1649,3 +1666,56 @@ async def clear_test_data(admin: UserInfo = Depends(require_admin)):
         deleted += 1
 
     return {"success": True, "deleted": deleted, "uid": admin.uid}
+
+
+# ---------------------------------------------------------------------------
+# Catalog orphan cleanup (admin-triggered; per Shahir 2026-05-04 directive)
+# ---------------------------------------------------------------------------
+
+@router.post("/catalog/cleanup-orphans")
+async def cleanup_catalog_orphans(
+    body: dict = None,  # type: ignore[assignment]
+    admin: UserInfo = Depends(require_admin),
+):
+    """Admin-triggered batch GC of orphan user_custom catalog rows.
+
+    Body (all optional):
+      dry_run  : bool — default TRUE. When True, returns candidates without
+                 deleting. Flip to False to actually delete.
+      user_id  : str  — scope to a single user (e.g. troubleshooting).
+
+    Eligibility (matches eager GC at delete time):
+      - catalog_mode == 'user_custom'
+      - active_purchases == 0
+      - transit_ref_count <= 0  (no shopping-list refs)
+
+    Returns:
+      {
+        dry_run, candidates_count, deleted_count,
+        sample: [{name_norm, display_name, last_purchased_at}, ...] (max 50),
+      }
+
+    Use case: clean up rows that didn't get GC'd via the eager-on-delete
+    path (race conditions, manual Firestore edits, pre-v3 leftovers).
+    Default dry_run=true so admin can preview before committing.
+    """
+    from app.services import catalog_service
+
+    body = body or {}
+    dry_run = body.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="dry_run must be boolean")
+    user_id = body.get("user_id")
+    if user_id is not None and not isinstance(user_id, str):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="user_id must be a string if provided")
+
+    result = catalog_service.admin_cleanup_orphans(dry_run=dry_run, user_id=user_id)
+    logger.info(
+        "admin.cleanup_orphans actor=%s dry_run=%s user_scope=%s candidates=%d deleted=%d",
+        admin.uid, dry_run, user_id or "all",
+        result.get("candidates_count", 0),
+        result.get("deleted_count", 0),
+    )
+    return result

@@ -428,6 +428,13 @@ def add_item(uid: str, list_id: str, payload: Dict[str, Any], *, source: str = "
     # Bump denormalized counter on the list doc for cheap reads.
     batch.update(list_ref, {"item_count": used + 1, "updated_at": now})
     batch.commit()
+
+    # P1 + B (ref counting): bump transit_ref_count on the catalog row so
+    # eager GC at delete time can short-circuit the cross-collection scan.
+    if cleaned.get("source_catalog_name_norm"):
+        from app.services import catalog_service
+        catalog_service.increment_transit_ref(uid, cleaned["source_catalog_name_norm"], 1)
+
     return {"id": doc.id, **item_payload}
 
 
@@ -463,6 +470,14 @@ def delete_item(uid: str, list_id: str, item_id: str) -> None:
     if not snap.exists:
         raise NotFoundError(f"Item {item_id} not found")
 
+    item_data = snap.to_dict() or {}
+    primary_ref = item_data.get("source_catalog_name_norm")
+    alt_refs = [
+        a.get("source_catalog_name_norm")
+        for a in (item_data.get("prices") or [])
+        if a.get("source_catalog_name_norm")
+    ]
+
     batch = db.batch()
     batch.delete(item_ref)
     # Decrement counter; floor at 0.
@@ -470,6 +485,21 @@ def delete_item(uid: str, list_id: str, item_id: str) -> None:
     cur = (list_snap.to_dict() or {}).get("item_count", 0)
     batch.update(list_ref, {"item_count": max(0, cur - 1), "updated_at": _now_iso()})
     batch.commit()
+
+    # B + eager GC: decrement transit_ref_count for every catalog ref this
+    # item carried (primary + each alternative), then probe each unique
+    # name_norm for orphan-eligibility. dedup so promote-inherited cases
+    # only check the catalog row once.
+    from app.services import catalog_service
+    all_refs: List[str] = ([primary_ref] if primary_ref else []) + list(alt_refs)
+    seen: set[str] = set()
+    for ref in all_refs:
+        catalog_service.decrement_transit_ref(uid, ref, 1)
+    for ref in all_refs:
+        if ref in seen:
+            continue
+        seen.add(ref)
+        catalog_service.gc_if_orphan(uid, ref)
 
 
 # ---------------------------------------------------------------------------
@@ -654,6 +684,16 @@ def add_price(
     }
     prices.append(entry)
     item_ref.update({"prices": prices, "updated_at": _now_iso()})
+
+    # B: bump transit_ref_count for the alt's catalog ref. The promote
+    # helper inherits the primary's source_catalog_name_norm, so this
+    # increments TWICE for the same name_norm (primary + alt) — that's
+    # correct: when both are deleted, both decrements bring the counter
+    # back to zero and GC kicks in.
+    if cleaned.get("source_catalog_name_norm"):
+        from app.services import catalog_service
+        catalog_service.increment_transit_ref(uid, cleaned["source_catalog_name_norm"], 1)
+
     return entry
 
 
@@ -895,10 +935,18 @@ def delete_price(uid: str, list_id: str, item_id: str, price_id: str) -> None:
 
     data = snap.to_dict() or {}
     prices: List[Dict[str, Any]] = list(data.get("prices") or [])
+    removed = next((p for p in prices if p.get("id") == price_id), None)
     new_prices = [p for p in prices if p.get("id") != price_id]
-    if len(new_prices) == len(prices):
+    if removed is None:
         raise NotFoundError(f"Price entry {price_id} not found")
     item_ref.update({"prices": new_prices, "updated_at": _now_iso()})
+
+    # B + eager GC: decrement counter on the alt's catalog ref + probe.
+    removed_ref = removed.get("source_catalog_name_norm")
+    if removed_ref:
+        from app.services import catalog_service
+        catalog_service.decrement_transit_ref(uid, removed_ref, 1)
+        catalog_service.gc_if_orphan(uid, removed_ref)
 
 
 # ---------------------------------------------------------------------------
@@ -919,11 +967,15 @@ def sweep_expired_items(now: Optional[datetime] = None) -> Dict[str, int]:
     db = _get_db()
     deleted_items = 0
     affected_lists = 0
+    gc_attempted = 0
+    gc_deleted = 0
     list_decrements: Dict[str, int] = {}
+    # Per-user accumulator of (name_norm, count) pairs to dec + GC after the
+    # main delete batch commits. Done out-of-batch because gc_if_orphan
+    # reads-then-deletes (not batch-friendly).
+    catalog_ref_decs: Dict[str, Dict[str, int]] = {}  # uid → {name_norm: count}
 
     try:
-        # Use collection_group to scan items across all users in one query.
-        # Filter: added_at < cutoff. Field index required if dataset is large.
         items = db.collection_group("items").where(
             "added_at", "<", cutoff_iso
         ).stream()
@@ -931,11 +983,25 @@ def sweep_expired_items(now: Optional[datetime] = None) -> Dict[str, int]:
         batch = db.batch()
         n = 0
         for snap in items:
-            # Filter to ONLY shopping-list items (collection_group is unscoped):
-            # parent path is users/{uid}/shopping_lists/{listId}/items/{itemId}.
             parent = snap.reference.parent.parent  # the list doc
             if parent is None or "shopping_lists" not in parent.path:
                 continue
+            # Walk up to the user doc: users/{uid}/shopping_lists/{listId}
+            user_ref = parent.parent.parent
+            uid = user_ref.id if user_ref else None
+
+            # Collect catalog refs from this item before deleting it
+            data = snap.to_dict() or {}
+            primary_ref = data.get("source_catalog_name_norm")
+            if uid:
+                user_bucket = catalog_ref_decs.setdefault(uid, {})
+                if primary_ref:
+                    user_bucket[primary_ref] = user_bucket.get(primary_ref, 0) + 1
+                for alt in (data.get("prices") or []):
+                    alt_ref = alt.get("source_catalog_name_norm")
+                    if alt_ref:
+                        user_bucket[alt_ref] = user_bucket.get(alt_ref, 0) + 1
+
             batch.delete(snap.reference)
             list_decrements[parent.path] = list_decrements.get(parent.path, 0) + 1
             deleted_items += 1
@@ -944,7 +1010,6 @@ def sweep_expired_items(now: Optional[datetime] = None) -> Dict[str, int]:
                 batch.commit()
                 batch = db.batch()
 
-        # Apply decrements to list counters in a second batch.
         for list_path, dec in list_decrements.items():
             list_ref = db.document(list_path)
             list_snap = list_ref.get()
@@ -960,12 +1025,36 @@ def sweep_expired_items(now: Optional[datetime] = None) -> Dict[str, int]:
                 batch = db.batch()
 
         batch.commit()
+
+        # Eager catalog GC for orphan rows freed by the sweep. Runs after
+        # the delete batch so transit_ref_count reads see the post-delete
+        # world. Defensive: each call is wrapped — a single failure
+        # doesn't stop the sweep.
+        from app.services import catalog_service
+        for uid, ref_counts in catalog_ref_decs.items():
+            for name_norm, count in ref_counts.items():
+                try:
+                    catalog_service.decrement_transit_ref(uid, name_norm, count)
+                except Exception as exc:
+                    logger.warning("ttl_sweep: dec_ref failed user=%s name=%s: %s", uid, name_norm, exc)
+                gc_attempted += 1
+                try:
+                    if catalog_service.gc_if_orphan(uid, name_norm):
+                        gc_deleted += 1
+                except Exception as exc:
+                    logger.warning("ttl_sweep: gc_if_orphan failed user=%s name=%s: %s", uid, name_norm, exc)
+
     except Exception as e:
         logger.exception("sweep_expired_items failed: %s", e)
         return {"deleted_items": deleted_items, "affected_lists": affected_lists, "error": str(e)}
 
     logger.info(
-        "shopping_list TTL sweep: deleted %d items across %d lists (cutoff=%s)",
-        deleted_items, affected_lists, cutoff_iso,
+        "shopping_list TTL sweep: items=%d lists=%d gc_attempted=%d gc_deleted=%d (cutoff=%s)",
+        deleted_items, affected_lists, gc_attempted, gc_deleted, cutoff_iso,
     )
-    return {"deleted_items": deleted_items, "affected_lists": affected_lists}
+    return {
+        "deleted_items": deleted_items,
+        "affected_lists": affected_lists,
+        "catalog_gc_attempted": gc_attempted,
+        "catalog_gc_deleted": gc_deleted,
+    }

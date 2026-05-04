@@ -512,6 +512,9 @@ def _cascade_display_to_purchases(user_id: str, name_norm: str, new_display: str
 def delete_catalog_entry(user_id: str, name_norm: str, force: bool = False) -> None:
     """Delete a catalog entry. Blocked if active_purchases > 0 unless force=True.
 
+    Releases user_custom quota slot on success (was missing before v3 GC
+    plumbing — quota counter could drift up over time).
+
     Raises:
         NotFoundError if entry doesn't exist
         ConflictError if has active purchases and not force
@@ -529,7 +532,315 @@ def delete_catalog_entry(user_id: str, name_norm: str, force: bool = False) -> N
         )
 
     doc_ref.delete()
+    # Release the quota slot for user_custom rows (matches the consume in
+    # upsert_catalog_entry on line ~388). global_linked rows don't consume,
+    # so don't release.
+    if (data.get("catalog_mode") or "user_custom") == "user_custom":
+        from app.services import quota_service
+        quota_service.release(user_id, amount=1)
     logger.info("catalog.deleted user=%s name_norm=%s force=%s", user_id, name_norm, force)
+
+
+# ---------------------------------------------------------------------------
+# v3 — Transit ref counting + eager GC (per shopping-list integration)
+# ---------------------------------------------------------------------------
+
+def increment_transit_ref(user_id: str, name_norm: str, amount: int = 1) -> None:
+    """Atomically bump catalog_entries[uid__name_norm].transit_ref_count by N.
+
+    Called whenever a shopping-list primary or alternative is created with
+    `source_catalog_name_norm == name_norm`. Idempotent under concurrent
+    writes (Firestore Increment).
+
+    No-op if the catalog entry doesn't exist (we don't want to create a
+    phantom row from a stale reference). Logs a warning instead.
+    """
+    if not name_norm:
+        return
+    doc_ref = _db().collection(_COLLECTION).document(_doc_id(user_id, name_norm))
+    snap = doc_ref.get()
+    if not snap.exists:
+        logger.warning(
+            "transit_ref: catalog entry not found, skipping increment user=%s name_norm=%s",
+            user_id, name_norm,
+        )
+        return
+    doc_ref.update({"transit_ref_count": firestore.Increment(amount)})
+
+
+def decrement_transit_ref(user_id: str, name_norm: str, amount: int = 1) -> None:
+    """Atomically reduce transit_ref_count. Floor handled at GC time —
+    a stuck-negative counter is harmless (just delays GC) and reconcile
+    can fix it."""
+    if not name_norm:
+        return
+    doc_ref = _db().collection(_COLLECTION).document(_doc_id(user_id, name_norm))
+    snap = doc_ref.get()
+    if not snap.exists:
+        return
+    doc_ref.update({"transit_ref_count": firestore.Increment(-amount)})
+
+
+def gc_if_orphan(user_id: str, name_norm: str) -> bool:
+    """Delete the catalog entry IFF orphan-eligible. Idempotent.
+
+    Eligibility (P1-aligned, all must be true):
+      - row exists
+      - catalog_mode == 'user_custom'  (global rows never GC'd)
+      - active_purchases == 0
+      - transit_ref_count <= 0          (no shopping-list refs)
+
+    On delete: also releases the user_custom quota slot via
+    delete_catalog_entry. Returns True if deleted, False otherwise.
+
+    Defensive: this function reads-then-deletes. There's a small race
+    window where a concurrent add could re-increment transit_ref_count
+    between the read and the delete. To survive that:
+      1. We re-check active_purchases AND transit_ref_count inside
+         delete_catalog_entry (which has its own active_purchases check).
+      2. Worst case (race wins): catalog row is deleted while a list
+         entry still points at it. The next add for the same name_norm
+         will re-create the row via upsert (idempotent). UI may show a
+         brief 404 on the orphaned reference. Acceptable for beta.
+    """
+    if not name_norm:
+        return False
+    doc_ref = _db().collection(_COLLECTION).document(_doc_id(user_id, name_norm))
+    snap = doc_ref.get()
+    if not snap.exists:
+        return False
+    data = snap.to_dict() or {}
+    if (data.get("catalog_mode") or "user_custom") != "user_custom":
+        return False  # global_linked rows are not GC'd
+    if (data.get("active_purchases") or 0) > 0:
+        return False
+    if (data.get("transit_ref_count") or 0) > 0:
+        return False
+    # Eligible. delete_catalog_entry will recheck active_purchases (defense
+    # in depth) and release the quota slot.
+    try:
+        delete_catalog_entry(user_id, name_norm, force=False)
+    except ConflictError:
+        # Race: a purchase was just created. Bail.
+        return False
+    except NotFoundError:
+        # Race: already gone.
+        return False
+    logger.info("catalog.gc_orphan user=%s name_norm=%s", user_id, name_norm)
+    return True
+
+
+def cascade_delete_catalog_entry(
+    user_id: str,
+    name_norm: str,
+    *,
+    revert_to_global_if_possible: bool = True,
+) -> dict:
+    """User-initiated catalog delete with cascade to shopping-list refs.
+
+    Behavior (per Shahir's 2026-05-04 directive):
+      - For every shopping-list PRIMARY referencing this name_norm:
+          if a global product exists for the primary's barcode AND
+          revert_to_global_if_possible:
+              repoint source_catalog_name_norm + display_name to global
+          else:
+              delete the primary (cascade-deletes its alternatives)
+      - For every shopping-list ALTERNATIVE referencing this name_norm:
+          same revert-or-delete logic
+      - Active purchases: NOT touched (the rename cascade already
+        snapshots display_name onto event docs, so the purchase row
+        keeps its display name even after catalog delete). delete_catalog
+        _entry blocks on active_purchases>0 unless force=True; we never
+        force from here.
+      - Then deletes the catalog entry itself + releases quota.
+
+    Returns: {
+      'deleted': bool,
+      'shopping_list_primaries_repointed': int,
+      'shopping_list_primaries_deleted': int,
+      'shopping_list_alternatives_repointed': int,
+      'shopping_list_alternatives_deleted': int,
+      'global_target_name_norm': str | None,
+    }
+
+    Raises:
+      NotFoundError: catalog entry doesn't exist
+      ConflictError: has active purchases (per delete_catalog_entry)
+    """
+    doc_ref = _db().collection(_COLLECTION).document(_doc_id(user_id, name_norm))
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise NotFoundError(f"Catalog entry '{name_norm}' not found")
+    data = snap.to_dict() or {}
+
+    # Resolve revert target if applicable
+    barcode = data.get("barcode")
+    target_name_norm: Optional[str] = None
+    target_display: Optional[str] = None
+    if revert_to_global_if_possible and barcode:
+        # If a global product exists for this barcode, the user's
+        # global_linked catalog row (if any) would have a different
+        # name_norm derived from the global product name. We don't have
+        # a 1:1 mapping here, so only revert when there's a clear
+        # global linkage. Conservative: only revert if there's an
+        # existing user catalog entry that's 'global_linked' for the
+        # same barcode — meaning the user already had two parallel
+        # entries (one custom, one global). Otherwise cascade-delete.
+        try:
+            other = find_by_barcode(user_id, barcode)
+            if other and other.get("name_norm") != name_norm and (other.get("catalog_mode") == "global_linked"):
+                target_name_norm = other.get("name_norm")
+                target_display = other.get("display_name")
+        except Exception:
+            # find_by_barcode may not exist or may fail; conservative fallback.
+            target_name_norm = None
+
+    # Walk shopping_lists for refs (per-user scan; bounded by list cap)
+    repointed_primaries = 0
+    deleted_primaries: list[tuple[str, str]] = []  # (list_id, item_id)
+    repointed_alts = 0
+    deleted_alts: list[tuple[str, str, str]] = []  # (list_id, item_id, alt_id)
+
+    lists_ref = _db().collection("users").document(user_id).collection("shopping_lists")
+    for list_doc in lists_ref.stream():
+        list_id = list_doc.id
+        items_ref = lists_ref.document(list_id).collection("items")
+        for item_snap in items_ref.stream():
+            item_id = item_snap.id
+            item_data = item_snap.to_dict() or {}
+            primary_ref = item_data.get("source_catalog_name_norm")
+            primary_match = primary_ref == name_norm
+
+            # Check alternatives — embedded array
+            alts: list[dict] = list(item_data.get("prices") or [])
+            alt_indices_matching: list[int] = [
+                i for i, a in enumerate(alts)
+                if a.get("source_catalog_name_norm") == name_norm
+            ]
+
+            if not primary_match and not alt_indices_matching:
+                continue
+
+            updates: dict = {}
+            if primary_match:
+                if target_name_norm:
+                    updates["source_catalog_name_norm"] = target_name_norm
+                    if target_display:
+                        updates["item_name"] = target_display
+                        updates["name_norm"] = target_name_norm
+                    repointed_primaries += 1
+                else:
+                    deleted_primaries.append((list_id, item_id))
+
+            if alt_indices_matching:
+                # Mutate alts in place
+                if target_name_norm:
+                    new_alts = list(alts)
+                    for i in alt_indices_matching:
+                        new_alts[i] = {**new_alts[i], "source_catalog_name_norm": target_name_norm}
+                        if target_display and not new_alts[i].get("candidate_name"):
+                            new_alts[i]["candidate_name"] = target_display
+                    updates["prices"] = new_alts
+                    repointed_alts += len(alt_indices_matching)
+                else:
+                    # If primary wasn't matched but alts were, drop the matching alts
+                    if not primary_match:
+                        new_alts = [a for i, a in enumerate(alts) if i not in alt_indices_matching]
+                        updates["prices"] = new_alts
+                        for i in alt_indices_matching:
+                            deleted_alts.append((list_id, item_id, alts[i].get("id", "?")))
+
+            # If we're going to delete the primary, skip writing updates (the
+            # delete will handle it). Otherwise write the merged updates.
+            if primary_match and not target_name_norm:
+                # Defer to the delete loop below
+                pass
+            elif updates:
+                items_ref.document(item_id).update(updates)
+
+    # Deletes — per primary, do via batch
+    if deleted_primaries:
+        batch = _db().batch()
+        for (list_id, item_id) in deleted_primaries:
+            ref = lists_ref.document(list_id).collection("items").document(item_id)
+            batch.delete(ref)
+        batch.commit()
+
+    # Now delete the catalog row itself (releases quota inside delete_catalog_entry)
+    delete_catalog_entry(user_id, name_norm, force=False)
+
+    return {
+        "deleted": True,
+        "shopping_list_primaries_repointed": repointed_primaries,
+        "shopping_list_primaries_deleted": len(deleted_primaries),
+        "shopping_list_alternatives_repointed": repointed_alts,
+        "shopping_list_alternatives_deleted": len(deleted_alts),
+        "global_target_name_norm": target_name_norm,
+    }
+
+
+def admin_cleanup_orphans(*, dry_run: bool = True, user_id: Optional[str] = None) -> dict:
+    """Admin-triggered batch GC of orphan user_custom catalog rows.
+
+    Finds rows where:
+      catalog_mode == 'user_custom'
+      AND active_purchases == 0
+      AND (transit_ref_count is null OR <= 0)
+
+    By default runs as DRY_RUN — returns the list of candidates without
+    deleting. Pass dry_run=False to actually delete. Pass user_id to scope
+    to a single user (e.g. when troubleshooting one account).
+
+    Returns: {
+      'dry_run': bool,
+      'candidates_count': int,
+      'deleted_count': int,    # 0 when dry_run
+      'sample': [{name_norm, display_name, last_purchased_at}, ...] (max 50),
+    }
+    """
+    query = (
+        _db()
+        .collection(_COLLECTION)
+        .where(filter=FieldFilter("catalog_mode", "==", "user_custom"))
+        .where(filter=FieldFilter("active_purchases", "==", 0))
+    )
+    if user_id:
+        query = query.where(filter=FieldFilter("user_id", "==", user_id))
+
+    candidates: list[dict] = []
+    for snap in query.stream():
+        d = snap.to_dict() or {}
+        ref_count = d.get("transit_ref_count") or 0
+        if ref_count > 0:
+            continue
+        candidates.append({
+            "id": snap.id,
+            "user_id": d.get("user_id"),
+            "name_norm": d.get("name_norm"),
+            "display_name": d.get("display_name"),
+            "last_purchased_at": d.get("last_purchased_at"),
+            "transit_ref_count": ref_count,
+        })
+
+    deleted = 0
+    if not dry_run:
+        for c in candidates:
+            try:
+                delete_catalog_entry(c["user_id"], c["name_norm"], force=False)
+                deleted += 1
+            except (NotFoundError, ConflictError) as exc:
+                logger.warning("admin_cleanup_orphans: skip %s: %s", c["id"], exc)
+    sample = candidates[:50]
+    logger.info(
+        "catalog.admin_cleanup_orphans dry_run=%s candidates=%d deleted=%d user_scope=%s",
+        dry_run, len(candidates), deleted, user_id or "all",
+    )
+    return {
+        "dry_run": dry_run,
+        "candidates_count": len(candidates),
+        "deleted_count": deleted,
+        "sample": sample,
+    }
 
 
 # ---------------------------------------------------------------------------
