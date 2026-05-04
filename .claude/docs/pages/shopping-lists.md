@@ -203,6 +203,72 @@ review to next session.
   needs to actually do something. Currently a no-op stub. Wire it to
   add-item-by-barcode against the active list (read from URL).
 
+### Cross-page hook (`@/api/integrations/addToShoppingList`)
+
+> **Use this when adding entries to a shopping list from any page or
+> agent-driven flow.** Avoid duplicating the POST + cache-invalidate
+> logic in each caller.
+
+Two surfaces, both backed by the same code path:
+
+**1. Async function** (preferred for handlers + flows that need the
+result):
+
+```ts
+import { addItemToShoppingList } from '@/api/integrations/addToShoppingList';
+
+const created = await addItemToShoppingList({
+  item_name: 'Eggs',
+  quantity: 12,
+  source: 'catalog',           // optional audit tag; defaults to 'cross_page'
+  // listId: 'active',         // (default) → most-recent list, or auto-create
+  // listId: '<specific-id>',  // pin to a known list
+  // source_catalog_name_norm: 'eggs',  // skip catalog quota fallback if pre-resolved
+});
+// → ShoppingListItem with id, item_name, quantity, etc.
+```
+
+**2. Window CustomEvent** (fire-and-forget; matches the existing
+`grocery:scan-add-to-shopping-list` pattern). Listener is registered
+once at app load in `App.tsx`:
+
+```ts
+window.dispatchEvent(
+  new CustomEvent('grocery:add-to-shopping-list', {
+    detail: { item_name: 'Eggs', quantity: 12 },
+  }),
+);
+```
+
+Toasts on success/error. To know the result programmatically, use the
+async function instead.
+
+**What it does:**
+- Resolves the target list: explicit `listId` if given, else the user's
+  most-recently-updated list, else creates `"My Shopping List"`.
+- POSTs to `/api/shopping-lists/{listId}/items`.
+- Invalidates `qk.shoppingLists.mine` and
+  `qk.shoppingLists.mineDetail(listId)` — any open shopping list view
+  refreshes automatically.
+- Re-throws server errors (e.g. 409 on the 15-primary cap). Direct
+  callers should toast or surface a custom UI; the existing
+  `useAddShoppingListItem` mutation (used by the shopping list page
+  itself) still handles the cap-hit prompt — this helper does NOT, so
+  cross-page callers stay simple.
+
+**When NOT to use this:**
+- From inside the shopping list page's own add-row UI — that already
+  uses `useAddShoppingListItem`, which gets cap-hit prompt routing for
+  free.
+- For adding alternatives (price comparison entries) — alternatives
+  are scoped to a specific primary, which doesn't fit the "from
+  anywhere" pattern. Use `useAddShoppingListPrice` directly from a
+  context that knows the primary.
+
+**For agents working in this repo:** when the user says "add an entry
+to the shopping list from page X", reach for this helper — don't
+hand-roll a fetch + invalidate.
+
 ## API endpoints to add
 
 | Method | Path | Purpose |

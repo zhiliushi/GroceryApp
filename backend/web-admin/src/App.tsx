@@ -1,21 +1,16 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { router } from './router';
+import { queryClient } from '@/api/queryClient';
+import { registerShoppingListIntegrationListener } from '@/api/integrations/addToShoppingList';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 30_000,
-      refetchOnWindowFocus: true,
-    },
-    mutations: {
-      retry: 0,
-    },
-  },
-});
+// Cross-page integration: any page can dispatch
+// `new CustomEvent('grocery:add-to-shopping-list', { detail: {...} })`
+// to add an entry to the user's active shopping list. Registered once
+// at app load. See docs/pages/shopping-lists.md "Cross-page hook".
+registerShoppingListIntegrationListener();
 
 export default function App() {
   return (

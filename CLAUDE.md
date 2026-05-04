@@ -99,8 +99,22 @@ Render URL: `https://groceryapp-backend-7af2.onrender.com`
 ### Claude memory
 - `.claude/docs/project_context.md` — project summary for AI context (includes Glossary)
 - `.claude/docs/feature-inventory.md` — **canonical** feature × tier × page × API map. Read BEFORE adding any user-visible feature.
-- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-manual.md`, `storage.md`, `storage-detail.md`, `shopping-lists.md`, `waste.md`, `spending.md`, `spending-history.md`, `health-score.md`, `reminders.md`, `settings.md`, `meals.md`, `meals-form.md`, `catalog.md`.
+- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-manual.md`, `storage.md`, `storage-detail.md`, `shopping-lists.md`, `waste.md`, `spending.md`, `spending-history.md`, `health-score.md`, `reminders.md`, `settings.md`, `meals.md`, `meals-form.md`, `catalog.md`, `catalog-entry.md`, `purchase-event-detail.md`, `foodbanks.md`.
 - `.claude/memory/MEMORY.md` — project decisions & patterns
+
+### Cross-page hooks (frontend integrations)
+
+When adding entries to features from another page or via an agent-driven
+flow, **use the existing integration helper** instead of hand-rolling a
+fetch + cache-invalidate:
+
+| Target | Helper | Doc |
+|--------|--------|-----|
+| Shopping list (add primary entry) | `addItemToShoppingList(payload)` from `@/api/integrations/addToShoppingList` — also dispatchable as `window.dispatchEvent(new CustomEvent('grocery:add-to-shopping-list', { detail: payload }))` | [pages/shopping-lists.md](.claude/docs/pages/shopping-lists.md) "Cross-page hook" |
+
+The async function returns the created item; the window event is fire-
+and-forget and toasts on success/error. Both invalidate the relevant
+React Query caches so any open page refreshes.
 
 ## Discipline rules
 
