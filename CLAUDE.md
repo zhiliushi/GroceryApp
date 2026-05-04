@@ -132,15 +132,27 @@ Changing `_DEFAULT_TIERS` in `config_service.py` requires:
 
 ### Read preppers_principles.md BEFORE editing the preppers feature
 The preppers tier is positioned for **archetype B (hobbyist-preserver /
-smart-pantry rotation)** — NOT survival prep. Authoritative external
-references are NCHFP, Ball Blue Book, and Sandor Katz's *Art of
-Fermentation*. The prioritized gap list, Malaysian-context shifts, and
-deferred decisions live in [`.claude/docs/preppers_principles.md`](.claude/docs/preppers_principles.md).
-Read it before changing prep_*_service.py, common_preserves_service.py,
-PreppersPage.tsx, PrepRecipeFormPage.tsx, the admin toggles, the seed,
-or the user-manual section 11. When seeding new presets or adjusting
-default ready_after / shelf_life values, cite which reference (NCHFP /
-Ball / Katz) you got the figure from.
+smart-pantry rotation)** — NOT survival prep. The full design framework
+lives in [`.claude/docs/preppers_principles.md`](.claude/docs/preppers_principles.md), which has four operational layers:
+
+1. **Positioning + canonical references** (NCHFP, Ball Blue Book,
+   Sandor Katz, USDA) — what archetype we're building for and what
+   sources defaults trace to.
+2. **Design principles P1–P8** — durable house rules for edge-case
+   judgment. Read them first; the reasoning paragraphs matter more
+   than the rule statements.
+3. **Workflow conventions** — synchronized changes for adding a
+   prep_type, seeding a new preserve, changing defaults, evolving
+   the recommendation algorithm.
+4. **Code-review checklist** — 10-item gate for any preppers PR.
+
+Read this before changing `prep_*_service.py`,
+`common_preserves_service.py`, `PreppersPage.tsx`,
+`PrepRecipeFormPage.tsx`, the admin toggles, the seed, or User Manual
+section 11. When seeding new presets or adjusting default ready_after /
+shelf_life values, cite which canonical reference (NCHFP / Ball /
+Katz / USDA) you got the figure from in the seed entry's `description`
+or the PR body.
 
 ### UI labels must be static (data-model leak prevention)
 Column headers, section titles, and form field labels MUST be static strings — never composed from runtime data-model values like `pack_label`, `unit_type`, `name_norm`. The classic leak: `<label># {packLabel}</label>` rendered as "# LOOSE" when `pack_label="loose"`. Discipline + risky-name list in `.claude/docs/project_context.md` "UI label discipline". Quick post-build check: `cd backend/web-admin && npm run check:label-leaks` (also runs as part of `npm run build`).
