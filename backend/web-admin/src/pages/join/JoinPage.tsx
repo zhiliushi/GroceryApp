@@ -3,6 +3,7 @@ import { Navigate, useParams, useNavigate, Link } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { useJoinHousehold } from '@/api/mutations/useHouseholdMutations';
+import { useHousehold } from '@/api/queries/useHousehold';
 import { setPendingInvite, useAuthStore } from '@/stores/authStore';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 
@@ -19,6 +20,10 @@ export default function JoinPage() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuthStore();
   const joinMutation = useJoinHousehold();
+  // MH-1: surface the user's current household (if any) so we can tell them
+  // they'll keep that membership when they accept this invite, instead of
+  // throwing the legacy "leave first" error that no longer applies.
+  const { data: currentHousehold } = useHousehold();
 
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +104,13 @@ export default function JoinPage() {
     );
   }
 
+  // MH-1: detect the multi-household case — user is already in a household
+  // *different* from the invitation's. Under the corrected asymmetric model,
+  // they can join the new one as a member without leaving the existing one.
+  const existingHousehold = currentHousehold?.household ?? null;
+  const isJoiningAdditionalHousehold =
+    existingHousehold !== null && existingHousehold.id !== info.household_id;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-ga-bg-primary p-4">
       <div className="bg-ga-bg-card border border-ga-border rounded-xl p-8 max-w-sm text-center">
@@ -115,6 +127,19 @@ export default function JoinPage() {
           </p>
         )}
 
+        {/* MH-1: clarifying line for users already in another household.
+            Replaces the legacy "leave first" error path — multi-membership
+            is now allowed for member role. */}
+        {isJoiningAdditionalHousehold && (
+          <div className="bg-ga-accent/10 border border-ga-accent/30 rounded-lg px-3 py-2 text-xs text-ga-text-primary mb-4 text-left leading-snug">
+            <p className="font-medium mb-1">You&apos;re already in {existingHousehold.name}.</p>
+            <p className="text-ga-text-secondary">
+              Joining {info.household_name} keeps that membership — you&apos;ll be able
+              to switch between them using the household pill in the top bar.
+            </p>
+          </div>
+        )}
+
         {joinMutation.error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400 mb-4">
             {joinMutation.error.message}
@@ -123,7 +148,11 @@ export default function JoinPage() {
 
         <div className="flex gap-3 justify-center">
           <button onClick={handleJoin} disabled={joinMutation.isPending}
-            title="Accept the invitation and start sharing inventory with the household."
+            title={
+              isJoiningAdditionalHousehold
+                ? `Join ${info.household_name} as a member while staying in ${existingHousehold.name}.`
+                : 'Accept the invitation and start sharing inventory with the household.'
+            }
             className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-6 py-2.5">
             {joinMutation.isPending ? 'Joining...' : 'Join Household'}
           </button>
