@@ -39,6 +39,68 @@ cd backend && pip install -r requirements.txt && uvicorn main:app --reload --por
 5. **Waste-focused dashboard** — health bar (green/yellow/red) + expiring items, not inventory count
 6. **Hide OCR via feature flag** — admin toggle; not deleted
 
+## Architectural Principles (canonical — refer when designing)
+
+These three principles govern any feature that touches items, money, or
+inventory state. Captured 2026-05-04 from Shahir's checkout_flow design
+discussion. Violating them causes data drift, currency math errors, or
+state-machine confusion.
+
+### P1 — Catalog is the source of truth; values change over time
+
+The catalog (`catalog_entries/{uid}__{name_norm}`) is canonical for
+*identity* — what the named item is. Weight, volume, count, and price
+are **not** canonical there; they vary per purchase / candidate / time.
+
+- Each purchase event carries its own `quantity`, `pack_size`, `price`,
+  `expiry_date` — a snapshot at purchase time.
+- Each shopping-list alternative carries its own `pack_count × pack_size`,
+  `weight_value`, `volume_value`, `price` — a snapshot at the time of
+  comparison.
+- The catalog row holds: `display_name`, `name_norm`, `barcode` (when
+  applicable), `default_location`, `unit_type`, aggregated counters.
+- **Do NOT** put "current price" or "current weight" on the catalog row.
+  Aggregations like `avg_price`, `last_purchased_at` are derived stats,
+  fine to denormalize for reads but never the *source* of value.
+
+### P2 — Currency value is UI-only; paid value is what remains
+
+Money is stored exactly as it was paid: `(amount, currency)` pair, e.g.
+`(12.50, "SGD")`. Database persists that pair forever. Never store
+converted values.
+
+- Display-time conversion using current FX (via `fx_rate_service`) is a
+  view-layer concern. Render as: `MYR 38.40 ≈ SGD 11.32` — the original
+  is the truth, the conversion is an estimate of present worth.
+- A purchase made for `MYR 50` ten years ago stays `MYR 50` in DB
+  forever. Showing it in SGD next year uses today's FX, which differs
+  from yesterday's — but the DB value never moves.
+- Implication: aggregate spending across currencies in the UI layer (or
+  with a clearly-labeled "as-of" timestamp); do NOT pre-aggregate to a
+  single currency in DB.
+
+### P3 — Item state machine: transit → storage → past
+
+Every item the user interacts with is in one of three conceptual states:
+
+| State | Meaning | Storage | Value handling |
+|---|---|---|---|
+| **transit** | planned to have, not yet owned | shopping list (primary + alternatives) | no real value; can be lost without loss; intent only |
+| **storage** | physically owned; needs management | `purchase_events.status='active'` | real value; managed (use, move, throw, donate) |
+| **past** | once existed, no longer | `purchase_events.status in {consumed, expired, transferred, discarded}` | historical; measurable for analytics; immutable |
+
+Transitions:
+- **transit → storage**: shopping-list checkout (alts ticked → purchases created); cascade-deletes the parent primary + sibling alts.
+- **storage → past**: Use / Throw / GiveAway action on a purchase event; status transitions one-way per `purchase_event_service.validate_status_transition`.
+- **transit → gone (no past record)**: shopping-list TTL sweep (30d) or manual delete; nothing kept in `past` because it never reached `storage`.
+
+Implications:
+- Don't track waste/spending on transit items — they had no real value.
+- Don't allow "ungrade" transitions (past → storage). One-way only.
+- When designing a new feature that involves items, first ask: *which
+  state(s) does it operate on?* That answer constrains where the data
+  lives and what mutations are valid.
+
 ## Data Model (refactored)
 
 - `catalog_entries/{user_id}__{name_norm}` — global collection, per-user name catalog (doc ID = composite key)

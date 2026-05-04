@@ -370,13 +370,15 @@ def add_item(uid: str, list_id: str, payload: Dict[str, Any], *, source: str = "
     `source` distinguishes entry points for analytics: 'manual' | 'catalog' |
     'scan' | 'receipt' | 'cross_page'. Persisted as `source` on the item doc.
 
-    Catalog quota: per the v3 spec ("shopping list = sub-process of catalog
-    data population"), every primary add SHOULD route through the catalog
-    flow so user_custom rows consume catalog_quota. v3-beta defers the
-    actual catalog write — primaries carry `source_catalog_name_norm` when
-    the caller already matched/created a catalog entry. The frontend's
-    Add flow (CatalogAutocomplete + scan) ensures a catalog ref is set
-    before this is called.
+    Catalog quota (P1 — catalog is source of truth for IDENTITY):
+    every primary references a catalog entry. If the caller didn't supply
+    `source_catalog_name_norm`, this routes through `catalog_service.
+    upsert_catalog_entry`, which fires the standard quota check (free-tier
+    50 user_custom rows; QuotaExceededError on cap hit). Existing matches
+    consume zero quota; new free-text custom names consume 1 slot.
+    Frontend's CatalogAutocomplete + scan path normally pre-resolves
+    `source_catalog_name_norm`, so this fallback only fires when the
+    caller skipped catalog matching.
     """
     get_list_or_404(uid, list_id)
     cleaned = _validate_item_payload(payload)
@@ -391,6 +393,20 @@ def add_item(uid: str, list_id: str, payload: Dict[str, Any], *, source: str = "
                 "scope": "shopping_list_primaries",
             },
         )
+
+    # P1 enforcement: route through catalog flow when no ref provided.
+    # `upsert_catalog_entry` raises QuotaExceededError if the user hits
+    # their catalog cap. We let it bubble up to the route layer.
+    if not cleaned.get("source_catalog_name_norm"):
+        from app.services import catalog_service
+        catalog_entry = catalog_service.upsert_catalog_entry(
+            user_id=uid,
+            display_name=cleaned["item_name"],
+            barcode=cleaned.get("barcode"),
+            source=f"shopping_list_v3:{source}",
+            actor_uid=uid,
+        )
+        cleaned["source_catalog_name_norm"] = catalog_entry["name_norm"]
 
     db = _get_db()
     list_ref = db.collection("users").document(uid).collection("shopping_lists").document(list_id)
@@ -604,6 +620,29 @@ def add_price(
                 "scope": "shopping_list_alternatives",
             },
         )
+
+    # P1 enforcement: when an alternative carries a custom candidate_name
+    # or a barcode that hasn't yet been resolved to a catalog entry, route
+    # through the catalog flow so user_custom rows consume catalog quota.
+    # Promote-to-alternative skips this (auto_promoted=True) because it
+    # inherits the primary's already-resolved catalog ref.
+    if (
+        not auto_promoted
+        and not cleaned.get("source_catalog_name_norm")
+        and (cleaned.get("candidate_name") or cleaned.get("barcode"))
+    ):
+        from app.services import catalog_service
+        # Fall back to primary's name when alternative carries only barcode
+        display_name = cleaned.get("candidate_name") or data.get("item_name")
+        if display_name:
+            catalog_entry = catalog_service.upsert_catalog_entry(
+                user_id=uid,
+                display_name=display_name,
+                barcode=cleaned.get("barcode"),
+                source="shopping_list_v3:alt",
+                actor_uid=uid,
+            )
+            cleaned["source_catalog_name_norm"] = catalog_entry["name_norm"]
 
     entry = {
         "id": str(uuid.uuid4()),

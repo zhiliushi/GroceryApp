@@ -10,6 +10,34 @@
 > shipped 2026-05-03. v3 builds on v2's frontend; per-item Buy button
 > removed in favor of the tick-then-confirm checkout flow.
 
+## How this page maps to the architectural principles
+
+(See `.claude/docs/project_context.md` "Architectural Principles" for the
+canonical statement.)
+
+- **P1 (Catalog = source of truth)**: Every primary references a catalog
+  entry via `source_catalog_name_norm`. Adding a primary with a custom
+  free-text name routes through `catalog_service.upsert_catalog_entry`,
+  which fires the standard quota check (free-tier 50 cap on user_custom
+  rows). Alternatives carrying a custom `candidate_name` or new barcode
+  do the same. Existing-name picks (autocomplete match) consume zero
+  quota. Per-instance values (price, qty, weight, volume) live ON the
+  shopping-list item / alternative, NEVER on the catalog row.
+- **P2 (Currency = UI-only)**: Each alternative stores its `(price,
+  currency)` pair as entered by the user. The CheckoutFooter displays
+  totals in the user's `currency_preference` with FX estimates for
+  off-currency lines, but does NOT persist converted amounts. A
+  purchase event created at checkout carries the price exactly as the
+  alternative listed it.
+- **P3 (State machine)**: Shopping-list items are TRANSIT.
+  - `transit → storage`: confirm_checkout creates `purchase_events`
+    (status=active) and cascade-deletes the source primaries + sibling
+    alternatives. Single direction.
+  - `transit → gone`: TTL sweep (30d) or manual delete. No record kept;
+    transit items had no real value to track.
+  - The page never operates on STORAGE or PAST states — those are
+    handled by My Items / Storage / catalog detail.
+
 Routes:
 - `/shopping-lists` — list of shopping lists for the current user
 - `/shopping-lists/:listId` — detail view (line items + price comparisons)
