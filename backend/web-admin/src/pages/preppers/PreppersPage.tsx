@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   useCommonPreserves,
   usePrepBatches,
+  usePrepEligibility,
   usePrepRecipes,
   useCreatePrepBatch,
   useSetPrepBatchStatus,
@@ -11,7 +12,7 @@ import {
 } from '@/api/queries/usePreppers';
 import { usePreppers } from '@/hooks/usePreppers';
 import { batchHeadline, PREP_TYPE_ICONS, prepTypeLabel } from '@/utils/prepCountdown';
-import type { CommonPreserve, PrepBatch, PrepRecipe } from '@/types/api';
+import type { CommonPreserve, PrepBatch, PrepEligibility, PrepRecipe } from '@/types/api';
 
 /**
  * Preppers landing page — beta cut.
@@ -30,6 +31,7 @@ export default function PreppersPage() {
   const { data: batches, isLoading: batchesLoading } = usePrepBatches('active', enabled);
   const { data: recipes, isLoading: recipesLoading } = usePrepRecipes(enabled);
   const { data: preserves, isLoading: preservesLoading } = useCommonPreserves(enabled);
+  const { data: eligibility } = usePrepEligibility(enabled);
 
   if (!enabled) {
     return <NotAvailable userEnabled={userEnabled} flagEnabled={flagEnabled} />;
@@ -47,6 +49,8 @@ export default function PreppersPage() {
       </header>
 
       <BetaBanner />
+
+      {eligibility && <EligibilityScore eligibility={eligibility} />}
 
       <ActiveBatches batches={batches?.batches} loading={batchesLoading} />
       <MyRecipes recipes={recipes?.recipes} loading={recipesLoading} />
@@ -95,6 +99,62 @@ function BetaBanner() {
         </p>
       </div>
     </details>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EligibilityScore({ eligibility }: { eligibility: PrepEligibility }) {
+  const pct = Math.round(eligibility.score * 100);
+  const barColor = eligibility.eligible
+    ? 'bg-emerald-500'
+    : pct >= 50
+    ? 'bg-amber-500'
+    : 'bg-blue-500';
+  const labelColor = eligibility.eligible
+    ? 'text-emerald-300'
+    : pct >= 50
+    ? 'text-amber-300'
+    : 'text-blue-300';
+
+  return (
+    <section className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+      <header className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold text-ga-text-primary flex items-center gap-2">
+          📊 Data readiness
+          <span className="text-[10px] uppercase tracking-wider text-ga-text-secondary">
+            informational
+          </span>
+        </h2>
+        <span className={`text-sm tabular-nums font-medium ${labelColor}`}>
+          {eligibility.eligible ? 'Ready ✓' : `${pct}%`}
+        </span>
+      </header>
+
+      <div className="h-2 bg-ga-bg-hover rounded-full overflow-hidden mb-2">
+        <div
+          className={`h-full ${barColor} transition-all duration-500`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] text-ga-text-secondary mb-2">
+        <span>
+          {eligibility.days_active} / {eligibility.days_required} days
+        </span>
+        <span>
+          {eligibility.total_purchases} / {eligibility.min_purchases} purchases
+        </span>
+      </div>
+
+      <p className="text-xs text-ga-text-secondary">{eligibility.explanation}</p>
+
+      <p className="text-[10px] text-ga-text-secondary mt-2 italic">
+        Beta: this score is informational only — all preppers features are
+        unlocked. Once analytics ship, the score will gate the
+        recommendation layer (basic batch tracking stays open regardless).
+      </p>
+    </section>
   );
 }
 

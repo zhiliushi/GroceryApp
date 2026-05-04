@@ -23,6 +23,7 @@ from app.core import feature_flags
 from app.services import (
     common_preserves_service,
     prep_batch_service,
+    prep_eligibility_service,
     prep_recipe_service,
     user_service,
 )
@@ -48,6 +49,22 @@ def require_preppers(user: UserInfo = Depends(get_current_user)) -> UserInfo:
     if not profile.get("preppers_enabled", False):
         raise HTTPException(status_code=404, detail="Feature not available")
     return user
+
+
+# ---------------------------------------------------------------------------
+# Eligibility (data-readiness score — informational during beta)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/eligibility")
+async def get_preppers_eligibility(user: UserInfo = Depends(require_preppers)):
+    """Data-readiness report.
+
+    Beta: this is INFORMATIONAL ONLY — the rest of the preppers routes
+    don't gate on it. Shown to the user so they understand why analytics
+    improve over time.
+    """
+    return prep_eligibility_service.compute_eligibility(user.uid)
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import type {
   PrepBatch,
   PrepBatchStatus,
   PrepBatchesResponse,
+  PrepEligibility,
   PrepRecipe,
   PrepRecipesResponse,
 } from '@/types/api';
@@ -124,5 +125,22 @@ export function useDeletePrepBatch() {
     mutationFn: (bid: string) =>
       apiClient.delete(API.PREPPERS_BATCH(bid)).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['preppers', 'batches'] }),
+  });
+}
+
+/**
+ * Data-readiness score (informational during beta). Cached longer than
+ * batches/recipes since it changes slowly (one new purchase moves the
+ * needle by ~1/min_purchases).
+ */
+export function usePrepEligibility(enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'eligibility'],
+    queryFn: () =>
+      apiClient
+        .get<PrepEligibility>(API.PREPPERS_ELIGIBILITY)
+        .then((r) => r.data),
+    enabled,
+    staleTime: 5 * 60_000, // 5 min
   });
 }

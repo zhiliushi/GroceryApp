@@ -97,6 +97,7 @@ export const API = {
   PREPPERS_BATCHES: '/api/preppers/batches',
   PREPPERS_BATCH: (bid: string) => `/api/preppers/batches/${bid}`,
   PREPPERS_BATCH_STATUS: (bid: string) => `/api/preppers/batches/${bid}/status`,
+  PREPPERS_ELIGIBILITY: '/api/preppers/eligibility',
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',

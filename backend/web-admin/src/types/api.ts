@@ -793,6 +793,23 @@ export interface PrepBatchesResponse {
   count: number;
 }
 
+/**
+ * Data-readiness check for the preppers feature. Informational during
+ * beta — not gated. Shows the user how close they are to having enough
+ * data for the analytics layer to be useful.
+ */
+export interface PrepEligibility {
+  eligible: boolean;
+  /** 0..1 — average of days_signal and purchases_signal. */
+  score: number;
+  days_active: number;
+  days_required: number;
+  first_active_at: string | null;
+  total_purchases: number;
+  min_purchases: number;
+  explanation: string;
+}
+
 export interface Recipe {
   id: string;
   name: string;

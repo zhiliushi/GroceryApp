@@ -1092,8 +1092,23 @@ function Preppers() {
       <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-xs">
         <strong className="text-amber-300">Beta:</strong> the feature is open
         to enrolled users. Pricing for the long-term niche tier is still TBD.
-        An <em>eligibility score meter</em> (data-readiness check) is coming
-        soon — for now, all enrolled users have full access.
+      </div>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Data readiness score
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        At the top of the page is a <strong>data readiness</strong> bar that
+        shows how close your account is to having enough history for the
+        analytics layer (recommendations, predictions, frequent-meal
+        reorder). Threshold: <strong>30 days of activity + 10 purchases
+        logged</strong>.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        During beta the score is <strong>informational only</strong> — all
+        preppers features are unlocked regardless. Once analytics ship,
+        the score will gate the recommendation layer; the basic batch
+        tracker stays open even at 0%.
       </p>
 
       <h3 className="text-sm font-semibold text-emerald-400 mt-4">
