@@ -55,15 +55,19 @@ export default function FeedbackButton() {
         title="Send feedback to the admin. Bug reports include the page you’re on + last 5 routes for triage."
         aria-label="Send feedback"
         className={cn(
-          // Mobile: bottom-right FAB, stacked above the primary FAB
+          // Bottom-right on every breakpoint. Earlier desktop position
+          // at top-4 right-[200px] overlapped the Scan + HouseholdSwitcher
+          // pills (visible in the 2026-05-04 walkthrough screenshot).
+          // Moved out of the top-row safe-zone entirely. On mobile we
+          // sit at bottom-24 to stack above PrimaryActionFab; on desktop
+          // there's no primary FAB so we anchor at bottom-4.
           'fixed bottom-24 right-4 z-30 w-12 h-12 rounded-full shadow-lg flex items-center justify-center',
-          // Desktop: top-right pill, fixed in the floating safe-zone
-          'md:bottom-auto md:right-[200px] md:top-4 md:w-auto md:h-auto md:rounded-full md:px-3 md:py-1.5',
+          'md:bottom-4 md:right-4 md:w-auto md:h-auto md:rounded-full md:px-3.5 md:py-2',
           'bg-ga-bg-card border border-ga-border text-ga-text-primary hover:bg-ga-bg-hover',
         )}
       >
         <span className="text-base md:hidden" aria-hidden="true">💬</span>
-        <span className="hidden md:inline-flex md:items-center md:gap-1.5 md:text-xs">
+        <span className="hidden md:inline-flex md:items-center md:gap-1.5 md:text-sm md:font-medium">
           <span aria-hidden="true">💬</span>
           <span>Feedback</span>
         </span>

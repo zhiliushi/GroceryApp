@@ -69,10 +69,29 @@ etc.) without a deploy.
 ### 3. My feedback
 
 Wraps `<MyFeedbackSection emptyVariant="inline" />` (the same
-component formerly mounted on Settings). When the user has
-submissions, lists them with status pills (`new` / `triaged` /
-`resolved` / `wont_fix`); when admin has replied, the response
+component formerly mounted on Settings). Lists the user's
+submissions newest-first; when admin has replied, the response
 renders inline. Empty state explains the floating 💬 button.
+
+Each row shows (top-right priority, in order):
+1. **Cute badge** when admin set one (`👀 Noted` / `🔧 We're on it`
+   / `💬 Need more info` / `✅ Resolved` / `🚀 Shipped` /
+   `🌱 Parked`). Badges live in `<BadgeChip />` and are admin's
+   user-friendly take on where the thread stands.
+2. **Status pill** as fallback (`new` / `triaged` / `resolved` /
+   `wont_fix`) when no badge is set yet.
+
+Pinned threads (admin marked "keep visible") get a purple ring +
+`📌 pinned` indicator and survive the auto-archive sweep.
+
+**24h archive sweep:** threads that admin marked `resolved` or
+`wont_fix` auto-hide from the main view 24 hours after the last
+admin reply (`responded_at`, falling back to `updated_at`). When
+the user has any archived rows, a "Show archived (N)" toggle
+appears in the section header so they can re-open the past
+threads. Pinned threads bypass archival entirely. Archive logic
+lives in `feedback_service.is_archived` server-side; the SPA
+calls `useMyFeedback('active' | 'archived')` per the toggle.
 
 ### 4. Catalog cleanup
 

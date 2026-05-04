@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 _COLLECTION = "feedback"
 _VALID_KINDS = {"cap_request", "bug", "feature", "general"}
 _VALID_STATUSES = {"new", "triaged", "resolved", "wont_fix"}
+# Admin-set "cute" badges visible to the user. Distinct from internal
+# `status` (which gates archival logic). `noted` is the soft acknowledgement;
+# `on_it` signals active work; `need_info` parks the thread waiting for the
+# user; `resolved` + `shipped` flag user-visible completion; `parked`
+# is a friendlier wont_fix.
+_VALID_BADGES = {"noted", "on_it", "need_info", "resolved", "shipped", "parked"}
+# Auto-archive window for resolved/wont_fix threads in the user-facing
+# My feedback list. Threads with admin response older than this go off
+# the user's main view (admin sees them in the Archived tab). Pinned
+# threads bypass archival.
+_ARCHIVE_AFTER_HOURS = 24
 _MAX_MESSAGE_LEN = 5000
 
 
@@ -94,9 +105,17 @@ def create_feedback(
         "admin_notes": None,
         "admin_response": None,
         "responded_at": None,
+        # Admin-set cute badge surfaced to the user (e.g. 'on_it').
+        # See _VALID_BADGES. None = no admin signal yet.
+        "admin_badge": None,
+        # When True, the thread bypasses the 24h archive sweep and stays
+        # visible to the user permanently. Admin sets via the pin action
+        # in Admin Hub when a thread is worth keeping (led to a feature,
+        # is a recurring concern, etc.).
+        "pinned": False,
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
-        "schema_version": 1,
+        "schema_version": 2,
     }
     _db().collection(_COLLECTION).document(doc["id"]).set(doc)
     logger.info(
@@ -124,6 +143,7 @@ def list_feedback(
     status: Optional[str] = None,
     user_id: Optional[str] = None,
     limit: int = 100,
+    archive_view: str = "active",
 ) -> list[dict[str, Any]]:
     """Admin: browse feedback. Filter by kind/status/user (all optional).
 
@@ -162,6 +182,17 @@ def list_feedback(
     if user_id:
         out.sort(key=lambda r: r.get("created_at", ""), reverse=True)
 
+    # Archive filter (24h sweep + pin override). `archive_view`:
+    #   - 'active'  (default) — exclude archived rows. Pinned bypass.
+    #   - 'archived'          — only archived rows.
+    #   - 'all'               — no filter.
+    if archive_view != "all":
+        now_iso = _now_iso()
+        if archive_view == "archived":
+            out = [r for r in out if is_archived(r, now_iso=now_iso)]
+        else:  # 'active' or anything else → behave as active
+            out = [r for r in out if not is_archived(r, now_iso=now_iso)]
+
     return out
 
 
@@ -170,11 +201,26 @@ def update_feedback(
     *,
     status: Optional[str] = None,
     admin_notes: Optional[str] = None,
+    admin_response: Optional[str] = None,
+    admin_badge: Optional[str] = None,
+    pinned: Optional[bool] = None,
 ) -> dict[str, Any]:
-    """Admin: update status / notes on a feedback entry. Pass only fields
-    you want to change."""
+    """Admin: update status / notes / reply / badge / pin on a feedback
+    entry. Pass only the fields you want to change.
+
+    `admin_badge`: must be one of `_VALID_BADGES` or None to clear.
+    `pinned`: True keeps the thread out of the auto-archive sweep. False
+              re-includes it (and it may immediately archive if it
+              already crossed the 24h window).
+    `admin_response`: setting this also stamps `responded_at` so the
+                      24h archive timer starts from the latest reply
+                      (not the first triage touch). Empty string
+                      clears the field but leaves responded_at as-is.
+    """
     if status is not None and status not in _VALID_STATUSES:
         raise ValidationError(f"status must be one of {sorted(_VALID_STATUSES)}")
+    if admin_badge is not None and admin_badge != "" and admin_badge not in _VALID_BADGES:
+        raise ValidationError(f"admin_badge must be one of {sorted(_VALID_BADGES)} or empty")
 
     doc_ref = _db().collection(_COLLECTION).document(feedback_id)
     snap = doc_ref.get()
@@ -186,12 +232,54 @@ def update_feedback(
         updates["status"] = status
     if admin_notes is not None:
         updates["admin_notes"] = admin_notes[:2000]
+    if admin_response is not None:
+        updates["admin_response"] = admin_response[:2000]
+        # Stamp the response time only when we have actual reply text;
+        # an empty-string clear keeps the previous timestamp so the
+        # 24h archive window doesn't reset.
+        if admin_response.strip():
+            updates["responded_at"] = _now_iso()
+    if admin_badge is not None:
+        updates["admin_badge"] = admin_badge or None
+    if pinned is not None:
+        updates["pinned"] = bool(pinned)
     doc_ref.update(updates)
 
     out = snap.to_dict() or {}
     out.update(updates)
     out["id"] = feedback_id
     return out
+
+
+def is_archived(doc: dict[str, Any], *, now_iso: Optional[str] = None) -> bool:
+    """Return True when a feedback row should be hidden from the user's
+    main My feedback view (auto-archived).
+
+    Rules:
+      - Pinned threads never archive (admin's explicit save).
+      - Threads still active (not resolved/wont_fix) never archive.
+      - Otherwise: archive once `responded_at` is older than
+        `_ARCHIVE_AFTER_HOURS`. If responded_at is missing, fall back
+        to updated_at (admin can resolve without typing a reply).
+    """
+    if doc.get("pinned"):
+        return False
+    if doc.get("status") not in ("resolved", "wont_fix"):
+        return False
+    stamp = doc.get("responded_at") or doc.get("updated_at") or doc.get("created_at")
+    if not stamp:
+        return False
+    try:
+        stamp_dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return False
+    if stamp_dt.tzinfo is None:
+        stamp_dt = stamp_dt.replace(tzinfo=timezone.utc)
+    cutoff_dt = datetime.fromisoformat((now_iso or _now_iso()).replace("Z", "+00:00"))
+    if cutoff_dt.tzinfo is None:
+        cutoff_dt = cutoff_dt.replace(tzinfo=timezone.utc)
+    age_hours = (cutoff_dt - stamp_dt).total_seconds() / 3600.0
+    return age_hours >= _ARCHIVE_AFTER_HOURS
 
 
 def stats() -> dict[str, Any]:

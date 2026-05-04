@@ -57,6 +57,7 @@ const adminNav: NavItem[] = [
   { path: '/price-records', label: 'Price Records', icon: '💰' },
   { path: '/map', label: 'Map (Stores)', icon: '🗺️' },
   { path: '/admin/experimental', label: 'Experimental', icon: '🧪', requiresFlag: 'ocr_enabled' },
+  { path: '/admin-hub', label: 'Admin Hub', icon: '🛡️' },
   { path: '/admin-settings', label: 'Admin Settings', icon: '🔧' },
 ];
 

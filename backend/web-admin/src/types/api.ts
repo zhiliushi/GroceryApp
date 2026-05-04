@@ -65,8 +65,19 @@ export interface AuthUser {
 
 // === Feedback ===
 // P1.5 — admin notifications + my-feedback view (2026-05-04).
+// Extended 2026-05-04 with admin badge + pin + 24h archive sweep.
 export type FeedbackKind = 'cap_request' | 'bug' | 'feature' | 'general';
 export type FeedbackStatus = 'new' | 'triaged' | 'resolved' | 'wont_fix';
+/** Admin-set "cute" badge surfaced to the user in My feedback. Distinct
+ *  from internal `status` (which gates archival). Latest set value wins —
+ *  full threading with multiple turns is deferred. */
+export type FeedbackBadge =
+  | 'noted'
+  | 'on_it'
+  | 'need_info'
+  | 'resolved'
+  | 'shipped'
+  | 'parked';
 
 export interface FeedbackEntry {
   id: string;
@@ -78,10 +89,13 @@ export interface FeedbackEntry {
   context?: Record<string, unknown>;
   status: FeedbackStatus;
   admin_notes?: string | null;
-  /** Set when admin types a reply on FeedbackTab. Surfaces to the user
-   *  in MyFeedbackSection + as an in-app notification (P6). */
+  /** Admin's user-visible reply text. */
   admin_response?: string | null;
   responded_at?: string | null;
+  /** Admin's chosen badge — friendlier than the internal status. */
+  admin_badge?: FeedbackBadge | null;
+  /** True = bypass the 24h archive sweep; thread stays visible to user. */
+  pinned?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +103,16 @@ export interface FeedbackEntry {
 export interface MyFeedbackResponse {
   items: FeedbackEntry[];
   count: number;
+}
+
+export interface AdminFeedbackResponse {
+  items: FeedbackEntry[];
+  count: number;
+  stats: {
+    total: number;
+    by_status: Record<string, number>;
+    by_kind: Record<string, number>;
+  };
 }
 
 // === Dashboard ===

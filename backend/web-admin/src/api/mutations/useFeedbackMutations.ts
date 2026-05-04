@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
@@ -28,11 +28,18 @@ export interface SubmitFeedbackPayload {
 }
 
 export function useSubmitFeedback() {
+  // Invalidate the user's "my feedback" list so the just-submitted row
+  // shows up immediately in the User Hub. Also invalidate the admin
+  // listing so the Admin Hub picks up new submissions without a manual
+  // reload (admin browsing while a user submits).
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: SubmitFeedbackPayload) =>
       apiClient.post(API.FEEDBACK, payload).then((r) => r.data),
     onSuccess: () => {
       toast.success('Thanks — feedback received.');
+      qc.invalidateQueries({ queryKey: ['feedback', 'mine'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'feedback'] });
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;

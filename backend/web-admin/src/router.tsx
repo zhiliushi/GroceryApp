@@ -62,6 +62,7 @@ const AdminMigrationPage = lazy(() => import('@/pages/admin/AdminMigrationPage')
 const ExperimentalPage = lazy(() => import('@/pages/admin/ExperimentalPage'));
 const UserManualPage = lazy(() => import('@/pages/help/UserManualPage'));
 const StorageDetailPage = lazy(() => import('@/pages/storage/StorageDetailPage'));
+const AdminHubPage = lazy(() => import('@/pages/admin-hub/AdminHubPage'));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -257,6 +258,7 @@ export const router = createBrowserRouter([
           { path: 'needs-review', element: <SuspenseWrapper><NeedsReviewPage /></SuspenseWrapper> },
           { path: 'price-records', element: <SuspenseWrapper><PriceRecordsPage /></SuspenseWrapper> },
           { path: 'admin-settings', element: <SuspenseWrapper><AdminSettingsPage /></SuspenseWrapper> },
+          { path: 'admin-hub', element: <SuspenseWrapper><AdminHubPage /></SuspenseWrapper> },
           { path: 'admin/catalog-analysis', element: <SuspenseWrapper><CatalogAnalysisPage /></SuspenseWrapper> },
           { path: 'admin/catalog-counters', element: <SuspenseWrapper><CatalogCountersDiagnosticPage /></SuspenseWrapper> },
           { path: 'admin/migration-dry-run', element: <SuspenseWrapper><MigrationDryRunPage /></SuspenseWrapper> },

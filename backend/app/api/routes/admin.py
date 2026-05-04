@@ -1791,13 +1791,23 @@ async def list_feedback(
     status: Optional[str] = None,
     user_id: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
+    archive_view: str = "all",
+    pinned_only: bool = False,
     admin: UserInfo = Depends(require_admin),
 ):
-    """Admin: browse feedback. All filters optional."""
+    """Admin: browse feedback. All filters optional.
+
+    `archive_view`: 'active' | 'archived' | 'all' (default 'all').
+                    Drives the Inbox / Archived / All tabs in Admin Hub.
+    `pinned_only`: True returns only rows with pinned=True (Pinned tab).
+    """
     from app.services import feedback_service
     items = feedback_service.list_feedback(
         kind=kind, status=status, user_id=user_id, limit=limit,
+        archive_view=archive_view,
     )
+    if pinned_only:
+        items = [it for it in items if it.get("pinned")]
     stats = feedback_service.stats()
     return {"items": items, "count": len(items), "stats": stats}
 
@@ -1808,11 +1818,25 @@ async def update_feedback(
     body: dict = None,  # type: ignore[assignment]
     admin: UserInfo = Depends(require_admin),
 ):
-    """Admin: update status / admin_notes on a feedback entry."""
+    """Admin: update status / admin_notes / admin_response / admin_badge /
+    pinned on a feedback entry. Pass only the fields you want to change.
+
+    Body shape (any subset):
+      {
+        "status": "new" | "triaged" | "resolved" | "wont_fix",
+        "admin_notes": str,
+        "admin_response": str,        // user-visible reply
+        "admin_badge": "noted" | "on_it" | "need_info" | "resolved" | "shipped" | "parked" | "",
+        "pinned": bool,
+      }
+    """
     from app.services import feedback_service
     body = body or {}
     return feedback_service.update_feedback(
         feedback_id,
         status=body.get("status"),
         admin_notes=body.get("admin_notes"),
+        admin_response=body.get("admin_response"),
+        admin_badge=body.get("admin_badge"),
+        pinned=body.get("pinned"),
     )
