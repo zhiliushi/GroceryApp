@@ -370,6 +370,31 @@ function ActiveBatches({
   batches?: PrepBatch[];
   loading: boolean;
 }) {
+  // Sort by soonest expiry first (FEFO — first-expiry-first-out, the
+  // accurate term for what "consume first" means with preserves) and
+  // tag the soonest READY batch as the rotation pick. Already-expired
+  // batches go to the top regardless but don't get the chip — they need
+  // a different action (consume now or discard).
+  const { sorted, consumeFirstId } = (() => {
+    if (!batches || batches.length === 0) {
+      return { sorted: [] as PrepBatch[], consumeFirstId: null as string | null };
+    }
+    const arr = [...batches].sort(
+      (a, b) =>
+        new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime(),
+    );
+    let firstReadyId: string | null = null;
+    if (arr.length >= 2) {
+      for (const b of arr) {
+        if (batchPhase(b) === 'ready') {
+          firstReadyId = b.id;
+          break;
+        }
+      }
+    }
+    return { sorted: arr, consumeFirstId: firstReadyId };
+  })();
+
   return (
     <section className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
       <h2 className="text-sm font-semibold text-orange-400 uppercase tracking-wide mb-3 flex items-center gap-2">
@@ -377,7 +402,7 @@ function ActiveBatches({
       </h2>
       {loading ? (
         <p className="text-xs text-ga-text-secondary">Loading…</p>
-      ) : !batches || batches.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="text-center py-6 text-sm text-ga-text-secondary">
           No active batches.{' '}
           <Link to="/preppers/new" className="text-ga-accent hover:underline">
@@ -387,8 +412,12 @@ function ActiveBatches({
         </div>
       ) : (
         <ul className="space-y-2">
-          {batches.map((b) => (
-            <BatchRow key={b.id} batch={b} />
+          {sorted.map((b) => (
+            <BatchRow
+              key={b.id}
+              batch={b}
+              consumeFirst={b.id === consumeFirstId}
+            />
           ))}
         </ul>
       )}
@@ -396,7 +425,13 @@ function ActiveBatches({
   );
 }
 
-function BatchRow({ batch }: { batch: PrepBatch }) {
+function BatchRow({
+  batch,
+  consumeFirst,
+}: {
+  batch: PrepBatch;
+  consumeFirst: boolean;
+}) {
   const setStatus = useSetPrepBatchStatus();
   const del = useDeletePrepBatch();
   const headline = batchHeadline(batch);
@@ -405,12 +440,26 @@ function BatchRow({ batch }: { batch: PrepBatch }) {
     : headline.phase === 'ready' ? (headline.urgent ? 'text-red-300' : 'text-green-300')
     : 'text-red-400';
 
+  const rowClass = consumeFirst
+    ? 'flex items-center justify-between gap-3 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-md'
+    : 'flex items-center justify-between gap-3 px-3 py-2 bg-ga-bg-hover/40 rounded-md';
+
   return (
-    <li className="flex items-center justify-between gap-3 px-3 py-2 bg-ga-bg-hover/40 rounded-md">
+    <li className={rowClass}>
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <span className="text-2xl flex-shrink-0">{PREP_TYPE_ICONS[batch.prep_type] || '🥫'}</span>
         <div className="min-w-0 flex-1">
-          <div className="text-sm text-ga-text-primary truncate">{batch.name}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-ga-text-primary truncate">{batch.name}</div>
+            {consumeFirst && (
+              <span
+                className="text-[10px] uppercase tracking-wider bg-amber-500/30 text-amber-200 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                title="Soonest to expire of your ready batches — use this one first to keep the rotation flowing."
+              >
+                🔝 use first
+              </span>
+            )}
+          </div>
           <div className="text-[10px] text-ga-text-secondary uppercase tracking-wide">
             {prepTypeLabel(batch.prep_type)}
           </div>

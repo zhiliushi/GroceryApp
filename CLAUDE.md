@@ -130,6 +130,18 @@ Changing `_DEFAULT_TIERS` in `config_service.py` requires:
 2. Updating the tier matrix in `feature-inventory.md`.
 3. Verifying `useVisibility()` consumers still work (TierRoute gated pages, `canUseTool` for tools).
 
+### Read preppers_principles.md BEFORE editing the preppers feature
+The preppers tier is positioned for **archetype B (hobbyist-preserver /
+smart-pantry rotation)** — NOT survival prep. Authoritative external
+references are NCHFP, Ball Blue Book, and Sandor Katz's *Art of
+Fermentation*. The prioritized gap list, Malaysian-context shifts, and
+deferred decisions live in [`.claude/docs/preppers_principles.md`](.claude/docs/preppers_principles.md).
+Read it before changing prep_*_service.py, common_preserves_service.py,
+PreppersPage.tsx, PrepRecipeFormPage.tsx, the admin toggles, the seed,
+or the user-manual section 11. When seeding new presets or adjusting
+default ready_after / shelf_life values, cite which reference (NCHFP /
+Ball / Katz) you got the figure from.
+
 ### UI labels must be static (data-model leak prevention)
 Column headers, section titles, and form field labels MUST be static strings — never composed from runtime data-model values like `pack_label`, `unit_type`, `name_norm`. The classic leak: `<label># {packLabel}</label>` rendered as "# LOOSE" when `pack_label="loose"`. Discipline + risky-name list in `.claude/docs/project_context.md` "UI label discipline". Quick post-build check: `cd backend/web-admin && npm run check:label-leaks` (also runs as part of `npm run build`).
 

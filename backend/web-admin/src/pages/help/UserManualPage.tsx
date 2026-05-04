@@ -1180,6 +1180,17 @@ function Preppers() {
       </p>
 
       <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        "Use first" rotation
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        Active batches are sorted by soonest expiry first, and the
+        ready-to-eat batch closest to expiring gets a small
+        <strong> 🔝 use first</strong> chip. Standard preserves practice —
+        rotate by expiry, not by start date — keeps the back of the
+        fridge from becoming an archaeological dig.
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
         Data readiness score
       </h3>
       <p className="text-xs text-ga-text-secondary">
