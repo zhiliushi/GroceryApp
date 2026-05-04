@@ -34,6 +34,7 @@ from app.api.routes import (
     barcode,
     catalog,
     countries,
+    external_links,
     feedback,
     foodbank,
     household,
@@ -255,6 +256,8 @@ _ROUTERS: list[tuple] = [
     (shopping_lists.router, "/shopping-lists", ["shopping-lists"], None),
     (stores.router, "/stores", ["stores"], None),
     (feedback.router, "/feedback", ["feedback"], None),
+    (external_links.router, "/external-links", ["external-links"], None),
+    (external_links.admin_router, "/admin/external-links", ["external-links-admin"], None),
 ]
 for _router, _suffix, _tags, _deps in _ROUTERS:
     _kwargs = {"tags": _tags}

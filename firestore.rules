@@ -15,12 +15,31 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Check if requesting user is in the same household as the document owner.
+    // MH-3d: returns true if the requester is a member of `householdId` —
+    // either via the canonical memberships subcollection (post-MH-3b
+    // backfill, or written by MH-3c on every join) OR via the legacy
+    // single-valued users/{uid}.household_id field (pre-backfill state).
+    //
+    // The two-path check is the migration-window safety net: rules keep
+    // allowing access for users whose memberships subcollection hasn't been
+    // backfilled yet. Once backfill runs against all users we can drop the
+    // legacy branch.
+    function isMemberOf(householdId) {
+      return isAuthenticated()
+          && householdId != null
+          && (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid)/memberships/$(householdId))
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.household_id == householdId
+          );
+    }
+
+    // Check if requesting user shares a household with the document owner.
+    // MH-3d: now built on isMemberOf — checks whether the requester has any
+    // membership matching the owner's active scope. Multi-household users
+    // are correctly allowed when their scopes overlap.
     function isHouseholdMember(userId) {
-      let requesterProfile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
       let ownerProfile = get(/databases/$(database)/documents/users/$(userId)).data;
-      return requesterProfile.household_id != null
-          && requesterProfile.household_id == ownerProfile.household_id;
+      return isMemberOf(ownerProfile.household_id);
     }
 
     // Owner OR household member
@@ -110,6 +129,15 @@ service cloud.firestore {
       match /sync_meta/{docId} {
         allow read, write: if isOwner(userId);
       }
+
+      // MH-3d: memberships subcollection. Owner-only read so the SPA's
+      // active-household switcher can list "your households". All writes go
+      // through backend services (create_household / accept_invite /
+      // remove_member) which use the Admin SDK and bypass these rules.
+      match /memberships/{householdId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
     }
 
     // Households — members can read, backend manages writes
@@ -182,12 +210,27 @@ service cloud.firestore {
     }
 
     // Purchase events — subcollection under users/{uid}/purchases
+    //
+    // MH-3d: read/update permission uses the event's own household_id
+    // rather than the owner's current active scope. This way, when a
+    // household member switches their active household, their events stay
+    // visible to other members of the household those events were tagged
+    // with. resource.data.household_id may be null on legacy/local-only
+    // events; in that case fall back to the canAccess path.
     match /users/{userId}/purchases/{eventId} {
-      allow read: if canAccess(userId);
+      allow read: if isOwner(userId)
+                  || (resource.data.household_id != null
+                      && isMemberOf(resource.data.household_id))
+                  || (resource.data.household_id == null && canAccess(userId));
       allow create: if isOwner(userId)
                     && request.resource.data.catalog_name_norm is string
                     && request.resource.data.status in ['active', 'used', 'thrown', 'transferred'];
-      allow update: if canAccess(userId)
+      allow update: if (
+                      isOwner(userId)
+                      || (resource.data.household_id != null
+                          && isMemberOf(resource.data.household_id))
+                      || (resource.data.household_id == null && canAccess(userId))
+                    )
                     && (!('status' in request.resource.data)
                         || request.resource.data.status in ['active', 'used', 'thrown', 'transferred']);
       allow delete: if isOwner(userId);

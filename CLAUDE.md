@@ -99,7 +99,7 @@ Render URL: `https://groceryapp-backend-7af2.onrender.com`
 ### Claude memory
 - `.claude/docs/project_context.md` — project summary for AI context (includes Glossary)
 - `.claude/docs/feature-inventory.md` — **canonical** feature × tier × page × API map. Read BEFORE adding any user-visible feature.
-- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-manual.md`, `storage.md`, `storage-detail.md`, `shopping-lists.md`, `waste.md`, `spending.md`, `spending-history.md`, `health-score.md`, `reminders.md`, `settings.md`, `meals.md`, `meals-form.md`, `catalog.md`, `catalog-entry.md`, `purchase-event-detail.md`, `foodbanks.md`.
+- `.claude/docs/pages/*` — per-page documentation. `dashboard.md`, `my-items.md`, `quickadd.md`, `insights.md`, `catalog-analysis.md`, `feature-flags.md`, `user-manual.md`, `storage.md`, `storage-detail.md`, `shopping-lists.md`, `waste.md`, `spending.md`, `spending-history.md`, `health-score.md`, `reminders.md`, `settings.md`, `meals.md`, `meals-form.md`, `catalog.md`, `catalog-entry.md`, `purchase-event-detail.md`, `foodbanks.md`, `about.md`.
 - `.claude/memory/MEMORY.md` — project decisions & patterns
 
 ### Cross-page hooks (frontend integrations)

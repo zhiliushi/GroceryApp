@@ -10,6 +10,7 @@ import FeatureFlagsTab from './FeatureFlagsTab';
 import NudgesTab from './NudgesTab';
 import CatalogMaintenanceTab from './CatalogMaintenanceTab';
 import FeedbackTab from './FeedbackTab';
+import ExternalLinksTab from './ExternalLinksTab';
 
 const TABS = [
   { key: 'features', label: 'Feature Flags', icon: '🎚️' },
@@ -21,6 +22,7 @@ const TABS = [
   { key: 'system', label: 'System', icon: '🖥️' },
   { key: 'catalog', label: 'Catalog Maintenance', icon: '🧹' },
   { key: 'feedback', label: 'Feedback', icon: '📨' },
+  { key: 'external_links', label: 'External Links', icon: '🔗' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -59,6 +61,7 @@ export default function AdminSettingsPage() {
       {activeTab === 'system' && <SystemSettingsTab />}
       {activeTab === 'catalog' && <CatalogMaintenanceTab />}
       {activeTab === 'feedback' && <FeedbackTab />}
+      {activeTab === 'external_links' && <ExternalLinksTab />}
     </div>
   );
 }

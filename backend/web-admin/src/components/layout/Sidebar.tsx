@@ -33,6 +33,7 @@ const secondaryNav: NavItem[] = [
   { path: '/insights', label: 'Insights', icon: '✨', requiresFlag: 'insights' },
   { path: '/settings', label: 'Settings', icon: '⚙️' },
   { path: '/help', label: 'User Manual', icon: '📘' },
+  { path: '/about', label: 'About', icon: 'ℹ️' },
 ];
 
 const adminNav: NavItem[] = [

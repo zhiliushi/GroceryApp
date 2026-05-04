@@ -72,6 +72,10 @@ export default function LegalLayout({ title, lastUpdated, children }: LegalLayou
               Terms of Service
             </Link>
             {' · '}
+            <Link to="/about" className="text-ga-accent hover:underline">
+              About
+            </Link>
+            {' · '}
             <Link to="/dashboard" className="text-ga-accent hover:underline">
               App
             </Link>

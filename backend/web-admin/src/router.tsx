@@ -47,6 +47,7 @@ const SpendingPage = lazy(() => import('@/pages/spending/SpendingPage'));
 const SpendingHistoryPage = lazy(() => import('@/pages/spending/SpendingHistoryPage'));
 const PrivacyPage = lazy(() => import('@/pages/legal/PrivacyPage'));
 const TermsPage = lazy(() => import('@/pages/legal/TermsPage'));
+const AboutPage = lazy(() => import('@/pages/about/AboutPage'));
 const MyItemsPage = lazy(() => import('@/pages/my-items/MyItemsPage'));
 const PurchaseEventDetailPage = lazy(() => import('@/pages/my-items/PurchaseEventDetailPage'));
 const CatalogListPage = lazy(() => import('@/pages/catalog/CatalogListPage'));
@@ -171,6 +172,14 @@ export const router = createBrowserRouter([
     element: (
       <SuspenseWrapper>
         <TermsPage />
+      </SuspenseWrapper>
+    ),
+  },
+  {
+    path: '/about',
+    element: (
+      <SuspenseWrapper>
+        <AboutPage />
       </SuspenseWrapper>
     ),
   },
