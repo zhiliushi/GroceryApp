@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import type {
+  CommonIngredientsResponse,
   RecipeCostEstimate,
   RecipesResponse,
   RevisionsListResponse,
@@ -57,5 +58,24 @@ export function useRecipeCost(recipeId: string | undefined, enabled = true) {
         .then((r) => r.data),
     enabled: enabled && !!recipeId,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Curated common-ingredients catalog (~134 entries). Fetched once per
+ * session and cached aggressively — backend exposes a flat read of the
+ * top-level Firestore collection. Powers the IngredientAutocomplete
+ * dropdown alongside the user's personal catalog.
+ */
+export function useCommonIngredients(enabled = true) {
+  return useQuery({
+    queryKey: ['meals', 'common-ingredients'],
+    queryFn: () =>
+      apiClient
+        .get<CommonIngredientsResponse>(API.MEALS_COMMON_INGREDIENTS)
+        .then((r) => r.data),
+    enabled,
+    staleTime: 30 * 60_000, // 30 min — seed is curated, rarely changes
+    gcTime: 60 * 60_000,
   });
 }

@@ -7,10 +7,11 @@ import { cn } from '@/utils/cn';
  * Available to ALL users. Renders in edit mode of RecipeFormPage; in create
  * mode the recipe has no id yet so we don't render at all.
  *
- * Lines fall into three states:
- *   priced     — has a `last_paid` from buy history → show the price
- *   no_history — has a catalog link but user never bought it → "—"
- *   unlinked   — free-text or common-only ingredient → "no link"
+ * Lines fall into four states:
+ *   priced       — catalog link + `last_paid` from buy history → show the price
+ *   no_history   — catalog link but user never bought it → "no purchase yet"
+ *   common_only  — matched to common-ingredients reference (no priced product) → "common: egg"
+ *   unlinked     — free text only → "free text"
  *
  * The card stays compact so it doesn't dominate the recipe form. Homemaker
  * (later) can replace this with a richer per-version snapshot view that
@@ -57,7 +58,8 @@ export default function RecipeCostCard({ recipeId }: { recipeId: string | undefi
 
       <ul className="space-y-1">
         {lines.map((line, i) => {
-          const linked = !!line.catalog_name_norm;
+          const linkedToCatalog = !!line.catalog_name_norm;
+          const linkedToCommon = !!line.common_name_norm;
           const priced = line.last_paid != null;
           return (
             <li
@@ -79,10 +81,23 @@ export default function RecipeCostCard({ recipeId }: { recipeId: string | undefi
                       </span>
                     )}
                   </>
-                ) : linked ? (
-                  <span className="text-[10px] text-ga-text-secondary italic">no history</span>
+                ) : linkedToCatalog ? (
+                  <span
+                    className="text-[10px] text-ga-text-secondary italic"
+                    title="Linked to your catalog, but you haven't logged a purchase price yet."
+                  >no purchase yet</span>
+                ) : linkedToCommon ? (
+                  <span
+                    className="text-[10px] text-ga-text-secondary italic"
+                    title="Matched to the shared common-ingredients list (no priced product). Add to your catalog to start tracking your own price."
+                  >
+                    common: {line.common_name_norm}
+                  </span>
                 ) : (
-                  <span className="text-[10px] text-ga-text-secondary italic">no link</span>
+                  <span
+                    className="text-[10px] text-ga-text-secondary italic"
+                    title="Couldn't match this name to anything. Edit the ingredient to use one from your catalog or the common list."
+                  >free text</span>
                 )}
               </span>
             </li>

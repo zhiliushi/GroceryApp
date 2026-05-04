@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 
 from app.core.auth import UserInfo, get_current_user
-from app.services import recipe_service, recipe_finance_service
+from app.services import recipe_service, recipe_finance_service, common_ingredients_service
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +255,25 @@ async def get_recipe_cost(
     if estimate is None:
         raise HTTPException(404, "Recipe not found")
     return estimate
+
+
+# ---------------------------------------------------------------------------
+# Common ingredients catalog (read-only for clients)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/common-ingredients")
+async def list_common_ingredients(_: UserInfo = Depends(get_current_user)):
+    """All curated common-ingredient entries (~134). Cheap full-list dump —
+    intended to be fetched once per client session and cached for the
+    type-ahead on the recipe form.
+
+    Auth required so we don't expose the seed publicly, but the data is
+    not user-specific. Sorted by display_name for stable rendering.
+    """
+    items = common_ingredients_service.list_all()
+    items.sort(key=lambda x: (x.get("display_name") or "").lower())
+    return {"items": items, "count": len(items)}
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import { useHomemaker } from '@/hooks/useHomemaker';
 import RecipeHistoryModal from '@/components/meals/RecipeHistoryModal';
 import RecipeCostCard from '@/components/meals/RecipeCostCard';
 import IngredientSocialRow from '@/components/meals/IngredientSocialRow';
+import IngredientAutocomplete from '@/components/meals/IngredientAutocomplete';
 import type { Recipe, RecipeIngredient } from '@/types/api';
 
 interface FormIngredient extends RecipeIngredient {
@@ -170,11 +171,51 @@ export default function RecipeFormPage() {
         </div>
       )}
 
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group mb-4">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ How does the recipe form work?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">Photo scan</span>{' '}
+            (when available) reads a recipe photo and pre-fills the name, ingredients
+            and steps. Always review before saving — OCR isn&apos;t perfect.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Ingredient names</span>{' '}
+            try to auto-link to either your personal catalog (so the cost estimate uses
+            your last-paid prices) or the common-ingredient list (egg, santan, kicap manis,
+            etc.). The match status appears below each ingredient as you type.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Quantity + unit</span>{' '}
+            are optional but useful — they let the cook flow on the Meals page do partial
+            splits (e.g. recipe needs 2 eggs out of a 12-pack) instead of consuming the
+            whole purchase.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Cost estimate</span>{' '}
+            appears below the form once the recipe is saved (edit mode only). Each line
+            shows the last-paid price from your buy history; missing-history items are
+            marked clearly so the total can be read as a partial estimate.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Tags</span> help group
+            recipes for later (e.g. <em>breakfast</em>, <em>30-min</em>). Press Enter
+            to add. Click <em>×</em> to remove.
+          </p>
+        </div>
+      </details>
+
       <div className="bg-ga-bg-card border border-ga-border rounded-lg p-6 space-y-4">
         {/* Scan button — hidden when recipe_ocr flag is off */}
         {!isEdit && recipeOcrEnabled && (
           <div className="flex items-center gap-2">
-            <label className="bg-ga-accent/20 hover:bg-ga-accent/30 text-ga-accent text-sm font-medium rounded-lg px-4 py-2 cursor-pointer transition-colors">
+            <label
+              className="bg-ga-accent/20 hover:bg-ga-accent/30 text-ga-accent text-sm font-medium rounded-lg px-4 py-2 cursor-pointer transition-colors"
+              title="Upload a JPG or PNG photo of a recipe. The app extracts the name, ingredients, and steps for you to review."
+            >
               📷 Scan Recipe Photo
               <input type="file" accept="image/jpeg,image/png" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleScan(f); }} />
@@ -200,12 +241,18 @@ export default function RecipeFormPage() {
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-ga-text-secondary mb-1">Servings</label>
+            <label
+              className="block text-xs text-ga-text-secondary mb-1"
+              title="How many people this recipe feeds. Shown on the recipe card."
+            >Servings</label>
             <input type="number" min={1} max={50} value={servings} onChange={(e) => setServings(parseInt(e.target.value) || 1)}
               className="w-full bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary" />
           </div>
           <div>
-            <label className="block text-xs text-ga-text-secondary mb-1">Prep Time (min)</label>
+            <label
+              className="block text-xs text-ga-text-secondary mb-1"
+              title="Total time including chopping. Shown on the recipe card and used to filter quick recipes."
+            >Prep Time (min)</label>
             <input type="number" min={0} max={999} value={prepTime} onChange={(e) => setPrepTime(parseInt(e.target.value) || 0)}
               className="w-full bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary" />
           </div>
@@ -213,19 +260,27 @@ export default function RecipeFormPage() {
 
         {/* Ingredients */}
         <div>
-          <label className="block text-xs text-ga-text-secondary mb-1">Ingredients *</label>
+          <label
+            className="block text-xs text-ga-text-secondary mb-1"
+            title="At least one ingredient is required. Names auto-link to your catalog or to the common-ingredients list."
+          >Ingredients *</label>
           <div className="space-y-1.5">
             {sortedIngredients.map(({ ing, originalIdx }) => (
               <div key={ing._key}>
-                <div className="flex items-center gap-2">
-                  <input value={ing.name} onChange={(e) => updateIngredient(ing._key, 'name', e.target.value)}
-                    placeholder="Ingredient name"
-                    className="flex-1 bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-1.5 text-sm text-ga-text-primary" />
+                <div className="flex items-start gap-2">
+                  <IngredientAutocomplete
+                    value={ing.name}
+                    onChange={(newName) => updateIngredient(ing._key, 'name', newName)}
+                  />
                   <input type="number" value={ing.quantity ?? ''} onChange={(e) => updateIngredient(ing._key, 'quantity', e.target.value ? parseFloat(e.target.value) : null)}
-                    placeholder="Qty" className="w-16 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary text-center" />
+                    placeholder="Qty"
+                    title="Optional. Lets the cook flow do partial-pack splits."
+                    className="w-16 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary text-center" />
                   <input value={ing.unit ?? ''} onChange={(e) => updateIngredient(ing._key, 'unit', e.target.value || null)}
-                    placeholder="Unit" className="w-20 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary" />
-                  <button onClick={() => removeIngredient(ing._key)} className="text-red-400 hover:text-red-300 text-xs">🗑</button>
+                    placeholder="Unit"
+                    title="Optional. e.g. g, ml, tsp, slice."
+                    className="w-20 bg-ga-bg-hover border border-ga-border rounded-lg px-2 py-1.5 text-sm text-ga-text-primary" />
+                  <button onClick={() => removeIngredient(ing._key)} title="Remove this ingredient" className="text-red-400 hover:text-red-300 text-xs">🗑</button>
                 </div>
                 {isEdit && id && homemaker.social && (
                   <IngredientSocialRow
@@ -259,18 +314,23 @@ export default function RecipeFormPage() {
 
         {/* Tags */}
         <div>
-          <label className="block text-xs text-ga-text-secondary mb-1">Tags</label>
+          <label
+            className="block text-xs text-ga-text-secondary mb-1"
+            title="Free-form labels to group recipes — e.g. breakfast, 30-min, kid-friendly. Press Enter to add."
+          >Tags</label>
           <div className="flex items-center gap-2 flex-wrap">
             {tags.map((tag) => (
               <span key={tag} className="text-xs bg-ga-bg-hover border border-ga-border rounded-full px-2.5 py-0.5 text-ga-text-primary flex items-center gap-1">
                 {tag}
-                <button onClick={() => setTags((prev) => prev.filter((t) => t !== tag))} className="text-red-400 hover:text-red-300">×</button>
+                <button onClick={() => setTags((prev) => prev.filter((t) => t !== tag))} title="Remove tag" className="text-red-400 hover:text-red-300">×</button>
               </span>
             ))}
             <div className="flex items-center gap-1">
               <input value={tagInput} onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-                placeholder="Add tag" className="w-24 bg-ga-bg-hover border border-ga-border rounded px-2 py-0.5 text-xs text-ga-text-primary" />
+                placeholder="Add tag"
+                title="Type a tag and press Enter."
+                className="w-24 bg-ga-bg-hover border border-ga-border rounded px-2 py-0.5 text-xs text-ga-text-primary" />
             </div>
           </div>
         </div>
