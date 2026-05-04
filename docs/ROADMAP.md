@@ -104,13 +104,13 @@ Finite scope — each is a plan item I explicitly deferred or noted as incomplet
 - New mutation `useMarkShoppingListItemBought`
 - Estimate: 0.5 day
 
-### C2. GlobalSearchBar
+### ~~C2. GlobalSearchBar~~ ✅ shipped (verified 2026-05-04)
 
-- Fuzzy search across user's catalog + active purchases + recipes
-- Keyboard shortcut: `Cmd/Ctrl+K`
-- Placement: sticky top of `AppLayout`
-- `components/search/GlobalSearchBar.tsx` + `hooks/useGlobalSearch.ts`
-- Estimate: 0.5 day
+- ~~Fuzzy search across user's catalog + active purchases + recipes~~
+- ~~Keyboard shortcut: `Cmd/Ctrl+K`~~
+- ~~Placement: sticky top of `AppLayout`~~
+- ~~`components/search/GlobalSearchBar.tsx` + `hooks/useGlobalSearch.ts`~~
+- File present at `backend/web-admin/src/components/search/GlobalSearchBar.tsx`; mounted in `AppLayout.tsx`
 
 ### C3. Bulk "Add expiry to all" on UntrackedAgeBuckets
 
@@ -126,12 +126,11 @@ Finite scope — each is a plan item I explicitly deferred or noted as incomplet
 - Add conditional styling: `critical` (score <50) tints the whole dashboard red; `empty` collapses cards and shows hero CTA only
 - Estimate: 0.5 day
 
-### C5. Replace legacy AnalyticsPage
+### ~~C5. Replace legacy AnalyticsPage~~ ✅ resolved via redirect (verified 2026-05-04)
 
-- `/analytics` still renders legacy inventory-based charts using `useInventory` (legacy endpoint)
-- Decide: delete the route, or rebuild against new model (catalog + purchases aggregations)
-- Simplest: delete `/analytics` from router + sidebar; `/insights` + `/waste` + `/spending` already cover the analytics use cases
-- Estimate: 15 minutes (delete) OR 1 day (rebuild)
+- ~~`/analytics` still renders legacy inventory-based charts using `useInventory` (legacy endpoint)~~
+- ~~Decide: delete the route, or rebuild against new model~~
+- Picked the simplest path: `router.tsx:215` now reads `{ path: 'analytics', element: <Navigate to="/insights" replace /> }`. Old bookmarks land on `/insights`; legacy AnalyticsPage component no longer mounted.
 
 ### C6. Admin-level merge duplicates on CatalogAnalysisPage
 
@@ -165,12 +164,12 @@ Finite scope — each is a plan item I explicitly deferred or noted as incomplet
 - Wired: MyItemsPage (6 rows), CatalogListPage (8 rows), RemindersPage (4 rows)
 - LoadingSpinner still used for blocking writes (saving, deleting)
 
-### C11. Health score trend chart (plan's HealthScorePage spec)
+### ~~C11. Health score trend chart~~ ✅ shipped (verified 2026-05-04)
 
-- `/health-score` currently shows score + JSON dump
-- Add 30-day sparkline/line chart from cached health history (requires storing daily snapshots — new `users/{uid}/cache/health_history/{YYYY-MM-DD}` docs written by scheduler)
-- Optional: expose `/api/waste/health-score/history?days=30` endpoint
-- Estimate: 1 day
+- ~~`/health-score` currently shows score + JSON dump~~
+- ~~Add 30-day sparkline/line chart from cached health history~~
+- ~~Optional: expose `/api/waste/health-score/history?days=30` endpoint~~
+- `<HealthTrendChart />` at `backend/web-admin/src/components/waste/HealthTrendChart.tsx`, wired into `HealthScorePage.tsx:107`. Daily snapshots written by scheduler at 23:30 UTC; gap-fill carries last value forward across missing days.
 
 ### C12. Settings page refactor (plan: "TelegramLinkCard, notification prefs")
 
@@ -193,7 +192,7 @@ Finite scope — each is a plan item I explicitly deferred or noted as incomplet
 - `QuickAddModal` mounted once in `AppLayout` (reads store) — no more per-page modal instances needed
 - Paired with `FloatingScanButton` (bottom-right) so add + scan are both always reachable
 
-**Phase C total: ~8.5 days.**
+**Phase C total: ~5.5 days remaining** (after C2/C5/C11 verified shipped, ~3 days off the original 8.5).
 
 ---
 
@@ -219,9 +218,11 @@ See [`docs/FUTURE_MOBILE_REFACTOR.md`](FUTURE_MOBILE_REFACTOR.md). React Native 
 
 See [`docs/FUTURE_AI_CATALOG_DEDUP.md`](FUTURE_AI_CATALOG_DEDUP.md). Uses `catalog_entry.needs_review=true` flag (set by stage-3 reminder scan). Batch job sends flagged entries to LLM for duplicate detection suggestions → admin approves → merges happen via existing `merge_catalog`.
 
-### D4. Scan-to-move-location — **3-5 days**
+### D4. Scan-to-move-location — **partial / verify before scoping**
 
-See [`docs/FUTURE_ITEM_MOVEMENT.md`](FUTURE_ITEM_MOVEMENT.md). Add `context='my-items'` scanner action for "Move location" — scan barcode → find the single matching active event → dropdown → PATCH location. Partial support exists (ContextualScannerModal has route context plumbing).
+See [`docs/FUTURE_ITEM_MOVEMENT.md`](FUTURE_ITEM_MOVEMENT.md). Original plan: add `context='my-items'` scanner action for "Move location" — scan barcode → find the single matching active event → dropdown → PATCH location.
+
+**Verification 2026-05-04:** `backend/web-admin/src/components/barcode/ContextualScannerModal.tsx` now has a `moveStep` state (lines 286, 380, 385, 393) — the move-via-scan branch is at least partially wired. Walk through the actual UX before declaring fully shipped or estimating residual work.
 
 ### D5. Household catalog merging — **1-2 weeks**
 
