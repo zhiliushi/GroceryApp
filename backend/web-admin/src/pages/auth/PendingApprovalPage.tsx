@@ -84,6 +84,7 @@ export default function PendingApprovalPage() {
               type="button"
               onClick={handleManualRefresh}
               disabled={refreshing}
+              title="The page auto-checks every 30 seconds for the first 30 minutes. After that, tap here to check again."
               className="w-full bg-ga-accent hover:bg-ga-accent-hover disabled:opacity-50 text-white font-medium rounded-md px-3 py-2 text-sm transition-colors"
             >
               {refreshing ? 'Checking...' : 'Check approval status'}
@@ -95,6 +96,10 @@ export default function PendingApprovalPage() {
               Auto-checks paused. Use the button above to check again.
             </div>
           )}
+
+          <p className="mt-3 text-[11px] text-ga-text-secondary text-center leading-snug">
+            Have an invite link? Open it instead — invited accounts skip this queue.
+          </p>
 
           <div className="mt-6 pt-4 border-t border-ga-border text-center">
             <button

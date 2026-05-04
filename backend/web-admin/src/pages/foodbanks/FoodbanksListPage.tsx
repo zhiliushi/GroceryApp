@@ -116,6 +116,32 @@ export default function FoodbanksListPage() {
         }
       />
 
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group mb-4">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ What is this directory for?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">A foodbank</span> is a
+            place that accepts unopened food donations and redistributes them to people
+            who need them. Use this directory when you have items you won&apos;t finish in
+            time but they are still in good condition — better than throwing them out.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Filter by country</span>{' '}
+            to narrow the list. Tap <em>View on Map</em> on a card to open the location
+            in your maps app.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Don&apos;t see your local
+            foodbank?</span>{' '}
+            Ask an admin to add it. The directory grows as users surface real-world
+            options.
+          </p>
+        </div>
+      </details>
+
       <FilterBar onApply={applyFilter} className="mb-4">
         <FilterBar.Dropdown
           label="Country"
@@ -219,7 +245,10 @@ export default function FoodbanksListPage() {
               )}
 
               {fb.location_address && (
-                <p className="text-xs text-ga-text-secondary mb-1">
+                <p
+                  className="text-xs text-ga-text-secondary mb-1"
+                  title={fb.location_address}
+                >
                   📍 {truncateText(fb.location_address, 60)}
                 </p>
               )}
@@ -229,6 +258,7 @@ export default function FoodbanksListPage() {
                   href={fb.location_link}
                   target="_blank"
                   rel="noopener noreferrer"
+                  title="Opens in your maps app — get directions to drop off donations."
                   className="text-ga-accent hover:underline text-xs"
                 >
                   View on Map

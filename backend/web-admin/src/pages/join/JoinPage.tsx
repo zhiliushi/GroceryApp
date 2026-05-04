@@ -64,6 +64,7 @@ export default function JoinPage() {
           </p>
           <button
             onClick={handleSignInToJoin}
+            title="Sign in (or create an account) to accept this invitation. Invited accounts skip the admin approval queue."
             className="bg-ga-accent hover:bg-ga-accent/90 text-white text-sm font-medium rounded-lg px-6 py-2.5"
           >
             Sign in to join
@@ -122,10 +123,12 @@ export default function JoinPage() {
 
         <div className="flex gap-3 justify-center">
           <button onClick={handleJoin} disabled={joinMutation.isPending}
+            title="Accept the invitation and start sharing inventory with the household."
             className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg px-6 py-2.5">
             {joinMutation.isPending ? 'Joining...' : 'Join Household'}
           </button>
           <Link to="/dashboard"
+            title="Decline for now. The invitation stays valid until it expires; you can come back to this link anytime."
             className="border border-ga-border text-ga-text-secondary text-sm rounded-lg px-6 py-2.5 hover:text-ga-text-primary">
             Cancel
           </Link>

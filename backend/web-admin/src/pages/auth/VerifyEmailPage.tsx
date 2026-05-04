@@ -77,6 +77,7 @@ export default function VerifyEmailPage() {
               type="button"
               onClick={handleRefresh}
               disabled={refreshing}
+              title="Tap after you click the link in your inbox. We re-check your verification status and let you in."
               className="w-full bg-ga-accent hover:bg-ga-accent-hover disabled:opacity-50 text-white font-medium rounded-md px-3 py-2 text-sm transition-colors"
             >
               {refreshing ? 'Checking...' : "I've verified — refresh"}
@@ -86,6 +87,7 @@ export default function VerifyEmailPage() {
               type="button"
               onClick={handleResend}
               disabled={sending || (sentAt !== null && Date.now() - sentAt < 60_000)}
+              title="If the email didn't arrive, send another. There's a 60-second cooldown to prevent spam."
               className="w-full border border-ga-border hover:bg-ga-bg-hover disabled:opacity-50 text-ga-text-primary text-sm font-medium rounded-md px-3 py-2 transition-colors"
             >
               {sending
@@ -97,6 +99,11 @@ export default function VerifyEmailPage() {
                 : 'Resend verification email'}
             </button>
           </div>
+
+          <p className="mt-4 text-[11px] text-ga-text-secondary text-center leading-snug">
+            Didn&apos;t get it? Check spam, or use <em>Resend</em>. The verification link is sent
+            by Firebase, not from a person — replies bounce.
+          </p>
 
           {error && (
             <div className="mt-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-md px-3 py-2 text-sm">

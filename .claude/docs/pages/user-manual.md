@@ -21,9 +21,20 @@ a family pantry; copy is plain-language, no engineering jargon.
   the article via `IntersectionObserver` substitute (raf-throttled
   scroll listener picking the topmost heading within 120px of viewport
   top).
-- **Article body** (right column) — 10 numbered sections rendered as
+- **Article body** (right column) — 11 numbered sections rendered as
   separate React subcomponents in the same file. Co-locating keeps the
   manual diff visible to anyone editing a feature.
+
+  Section 1 (`GettingStarted`) carries an H3 subsection
+  **"Signing in for the first time"** that documents the five auth-state
+  screens (verify-email / pending-approval / registration-form /
+  registration-closed / disabled). Per update discipline, the four small
+  auth-state pages
+  (`backend/web-admin/src/pages/auth/{VerifyEmail,PendingApproval,Disabled,RegistrationClosed}Page.tsx`
+  + `backend/web-admin/src/pages/register/RegistrationFormPage.tsx`) do
+  NOT get separate `.claude/docs/pages/*.md` files — they're documented
+  here in the user manual instead, since each page is a one-decision
+  full-screen flow with little surface area.
 - **Tier badges** (`<Tier level="free|plus|pro|always-free|admin" />`)
   inline-tag features that aren't universal. Source of truth for tier
   copy is `backend/app/services/config_service.py` `_DEFAULT_TIERS` —

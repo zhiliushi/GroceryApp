@@ -105,7 +105,10 @@ export default function RegistrationFormPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-ga-text-secondary mb-1.5">
+              <label
+                className="block text-xs font-medium text-ga-text-secondary mb-1.5"
+                title="The name household members and shopping-list collaborators will see next to your actions. Editable later in Settings."
+              >
                 Display name
               </label>
               <input
@@ -121,7 +124,10 @@ export default function RegistrationFormPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-ga-text-secondary mb-1.5">
+              <label
+                className="block text-xs font-medium text-ga-text-secondary mb-1.5"
+                title="Used to suggest local foodbanks and pick a default currency. Pre-filled from your browser locale."
+              >
                 Country
               </label>
               <select
@@ -139,7 +145,10 @@ export default function RegistrationFormPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-ga-text-secondary mb-1.5">
+              <label
+                className="block text-xs font-medium text-ga-text-secondary mb-1.5"
+                title="The currency every spending and waste total is shown in. Past prices keep their original FX rate; only future entries use the new setting."
+              >
                 Currency
               </label>
               <select
@@ -162,6 +171,7 @@ export default function RegistrationFormPage() {
             <button
               type="submit"
               disabled={!valid || submitting}
+              title="Save your profile and go to the dashboard. If you arrived via an invite link, you'll be added to that household automatically."
               className="w-full bg-ga-accent hover:bg-ga-accent-hover text-white font-medium rounded-md px-3 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Saving...' : 'Continue'}

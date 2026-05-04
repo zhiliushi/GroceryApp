@@ -28,14 +28,18 @@ export default function DisabledPage() {
             )}
           </div>
 
-          <div className="text-xs text-ga-text-secondary text-center">
+          <div className="text-xs text-ga-text-secondary text-center space-y-1">
             <p>Contact the admin if you believe this is a mistake.</p>
+            <p className="text-[11px]">
+              Signing out and back in will not restore access — re-enabling has to come from the admin side.
+            </p>
           </div>
 
           <div className="mt-6 pt-4 border-t border-ga-border text-center">
             <button
               type="button"
               onClick={signOut}
+              title="Clears your local session. The account stays disabled on the server until an admin re-enables it."
               className="text-xs text-ga-text-secondary hover:text-ga-text-primary"
             >
               Sign out

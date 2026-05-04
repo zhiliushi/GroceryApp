@@ -35,6 +35,7 @@ export default function RegistrationClosedPage() {
             <button
               type="button"
               onClick={signOut}
+              title="Sign out and try again later. Your sign-in record was cleared because there was no slot available."
               className="text-xs text-ga-text-secondary hover:text-ga-text-primary"
             >
               Sign out

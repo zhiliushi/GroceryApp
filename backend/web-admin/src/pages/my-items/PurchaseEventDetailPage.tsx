@@ -152,6 +152,41 @@ export default function PurchaseEventDetailPage() {
         ← My Items
       </Link>
 
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ What can I do here?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">This page</span> is one
+            specific batch of an item — bought on one day, in one location. Different
+            from <em>My Catalog</em> which groups every batch under one item name.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Tap a field with ✎</span>{' '}
+            (Location, Expiry) to edit it inline. Other fields are read-only.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Action buttons</span>{' '}
+            change based on state — an active item shows <em>Used / Thrown / Give away</em>;
+            a thrown item shows <em>Restore to active</em>. The chip at the top tells you
+            which state you&apos;re in.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Use / Throw / Give away</span>{' '}
+            each open a small modal where you can dial down to a partial amount (e.g.
+            "used 2 of 12") before confirming. The original event splits in two — the
+            consumed portion gets the new status, the rest stays active.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Multi-pack</span> means
+            this batch is part of a sibling group bought together (a 6-pack of the same
+            yogurt). Sibling packs share a multi-pack id; mark each one as you finish it.
+          </p>
+        </div>
+      </details>
+
       <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5 space-y-4">
         <div className="flex items-start justify-between">
           <div>
@@ -169,27 +204,28 @@ export default function PurchaseEventDetailPage() {
         </div>
 
         <dl className="grid grid-cols-2 gap-y-2 text-sm">
-          <Row label="Bought">
+          <Row label="Bought" hint="When you logged this purchase.">
             {event.date_bought ? new Date(event.date_bought).toLocaleDateString() : '—'}
           </Row>
-          <Row label="Location">
+          <Row label="Location" hint="Where this batch sits. Click to move it.">
             <span
               className="cursor-pointer hover:underline"
               onClick={() => setMoveOpen(true)}
+              title="Open the move modal — change location and optionally split into a partial move."
             >
               📍 {event.location || '(none)'} ✎
             </span>
           </Row>
-          <Row label="Barcode">{event.barcode ?? '—'}</Row>
-          <Row label="Price">
+          <Row label="Barcode" hint="The barcode on the package, if scanned.">{event.barcode ?? '—'}</Row>
+          <Row label="Price" hint="Original currency on top, your display currency below if different, then per-unit price.">
             <PriceCell event={event} />
           </Row>
-          <Row label="Pack size">
+          <Row label="Pack size" hint="How many units came in this purchase (e.g. 12 eggs in a carton, 6 bottles in a multi-pack).">
             {event.pack_size && event.pack_size > 1
               ? `${event.pack_size} ${event.base_unit_label || 'unit'}${event.pack_size === 1 ? '' : 's'} / pack`
               : `1 ${event.base_unit_label || 'unit'}`}
           </Row>
-          <Row label="Store">
+          <Row label="Store" hint="The shop you bought this at — used for cross-store price comparison on the catalog page.">
             {event.store_id
               ? event.store_id === 'unknown'
                 ? <span className="text-ga-text-secondary">Unknown / Other</span>
@@ -197,12 +233,12 @@ export default function PurchaseEventDetailPage() {
               : '—'}
           </Row>
           {event.multi_pack_parent_id && (
-            <Row label="Multi-pack">
+            <Row label="Multi-pack" hint="Sibling packs bought together share this id, so you can track them as a group.">
               <span className="font-mono text-xs">{event.multi_pack_parent_id.slice(0, 8)}…</span>{' '}
               <span className="text-xs text-ga-text-secondary">(sibling packs share this id)</span>
             </Row>
           )}
-          <Row label="Expiry">
+          <Row label="Expiry" hint="Best-before date. Click to edit — accepts natural language like 'tomorrow' or 'next Friday'.">
             {editingExpiry ? (
               <div className="col-span-2 space-y-2">
                 <ExpiryInput value={expiryRaw} onChange={setExpiryRaw} />
@@ -228,19 +264,20 @@ export default function PurchaseEventDetailPage() {
                   setEditingExpiry(true);
                   setExpiryRaw(event.expiry_raw || '');
                 }}
+                title="Click to edit. You can type 'tomorrow', 'next Friday', or an ISO date."
               >
                 {event.expiry_date ? new Date(event.expiry_date).toLocaleDateString() : '—'} ✎
               </span>
             )}
           </Row>
-          <Row label="Status">{event.status}</Row>
+          <Row label="Status" hint="Raw state — also shown as the colored chip at the top.">{event.status}</Row>
           {event.consumed_date && (
-            <Row label="Consumed">
+            <Row label="Consumed" hint="When and why this batch left active stock.">
               {new Date(event.consumed_date).toLocaleDateString()}
               {event.consumed_reason ? ` (${event.consumed_reason})` : ''}
             </Row>
           )}
-          {event.transferred_to && <Row label="Given to">{event.transferred_to}</Row>}
+          {event.transferred_to && <Row label="Given to" hint="Who you gave this to. Doesn't count as waste.">{event.transferred_to}</Row>}
         </dl>
 
         {catalogEntry && (
@@ -295,17 +332,20 @@ export default function PurchaseEventDetailPage() {
               </button>
             )}
           </div>
-          <p className="text-xs text-ga-text-secondary mt-2">State: {state}</p>
+          <p
+            className="text-xs text-ga-text-secondary mt-2"
+            title="Diagnostic state from the action resolver. Decides which buttons appear above."
+          >State: {state}</p>
         </div>
       </div>
     </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <>
-      <dt className="text-ga-text-secondary">{label}</dt>
+      <dt className="text-ga-text-secondary" title={hint}>{label}</dt>
       <dd className="text-ga-text-primary">{children}</dd>
     </>
   );

@@ -183,6 +183,44 @@ export default function CatalogEntryPage() {
         ← My Catalog
       </Link>
 
+      <details className="bg-ga-bg-card border border-ga-border rounded-lg group">
+        <summary className="cursor-pointer list-none px-4 py-2 text-xs text-ga-text-secondary flex items-center justify-between hover:bg-ga-bg-hover/40 rounded-lg">
+          <span>ⓘ What&apos;s on this page?</span>
+          <span className="text-[10px] group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="px-4 pb-3 pt-1 text-xs text-ga-text-secondary space-y-1.5 border-t border-ga-border">
+          <p>
+            <span className="text-ga-text-primary font-medium">Top banner</span>{' '}
+            picks the most-pressing thing about this item right now (expired, expiring,
+            restock due, almost out, or all-fresh) and offers <em>+ Buy more</em> /
+            <em> Use…</em> as the obvious next action.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Four stat tiles</span>{' '}
+            summarise the lifetime of this item: how often you buy, what&apos;s open right
+            now, total units on hand, and the last buy date.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Currently stored</span>{' '}
+            shows where you have packs right now, with the soonest expiry per spot and
+            inline Use / Move buttons. <span className="text-ga-text-primary font-medium">Your
+            patterns</span> learns from history (cadence, waste rate, predicted next buy).
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Where you&apos;ve bought it</span>{' '}
+            (when present) is the cheapest-first per-store table — useful before you next
+            shop. Below that, three collapsible sections drill into lifetime totals,
+            activity timeline, and partial-action splits.
+          </p>
+          <p>
+            <span className="text-ga-text-primary font-medium">Manage this item</span>{' '}
+            (bottom) is for rare per-item config: change the unit type, edit name, merge
+            into another item, transfer purchase history, or delete the entry. Daily
+            actions live in the top banner so you don&apos;t scroll to act.
+          </p>
+        </div>
+      </details>
+
       <div className="bg-ga-bg-card border border-ga-border rounded-lg p-5 space-y-4">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -218,7 +256,10 @@ export default function CatalogEntryPage() {
               {entry.barcode && <span>🏷️ {entry.barcode}</span>}
               {entry.country_code && <span>{entry.country_code}</span>}
               {entry.needs_review && (
-                <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">
+                <span
+                  className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full"
+                  title="The app flagged this entry — usually because a 21-day reminder went unactioned. Review the active batches below; mark used or thrown to clear the flag."
+                >
                   Needs review
                 </span>
               )}
@@ -418,6 +459,7 @@ export default function CatalogEntryPage() {
             {/* Phase G: transfer history into another catalog row */}
             <button
               onClick={() => setTransferOpen(true)}
+              title="Move some past purchases of this item to a different catalog entry. Use when you realise two entries are the same product but only want to merge a portion of the history."
               className="px-3 py-1.5 text-sm rounded text-ga-text-secondary hover:bg-ga-bg-hover border border-ga-border"
             >
               ↪ Transfer history…
