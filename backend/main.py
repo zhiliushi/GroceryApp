@@ -39,6 +39,7 @@ from app.api.routes import (
     household,
     insights,
     meals,
+    preppers,
     purchases,
     receipt,
     reminders,
@@ -241,6 +242,7 @@ _ROUTERS: list[tuple] = [
     (admin.router, "/admin", ["admin"], None),
     (household.router, "/household", ["household"], None),
     (meals.router, "/meals", ["meals"], None),
+    (preppers.router, "/preppers", ["preppers"], None),
     (receipt.router, "/receipt", ["receipt"], _OCR_DEP),
     (scan.router, "/scan", ["scan"], _OCR_DEP),
     (catalog.router, "/catalog", ["catalog"], None),
@@ -355,6 +357,15 @@ async def on_startup():
         logger.info("common_ingredients seed: %s", summary)
     except Exception:
         logger.exception("common_ingredients seed failed (non-fatal)")
+
+    # Common-preserves seed — preppers feature. Same pattern: idempotent
+    # upsert, cheap startup probe, only runs against empty collection.
+    try:
+        from scripts import seed_common_preserves
+        summary = seed_common_preserves.run_if_empty()
+        logger.info("common_preserves seed: %s", summary)
+    except Exception:
+        logger.exception("common_preserves seed failed (non-fatal)")
 
     scheduler.start()
     logger.info("Background scheduler started")
@@ -529,6 +540,8 @@ async def get_current_user_info(request: Request, invitation_code: str | None = 
             "registration_complete": profile.get("registration_complete", False),
             "selected_tools": profile.get("selected_tools", []),
             "homemaker_enabled": profile.get("homemaker_enabled", False),
+
+            "preppers_enabled": profile.get("preppers_enabled", True),
         }
 
     if status == "pending":
@@ -541,6 +554,8 @@ async def get_current_user_info(request: Request, invitation_code: str | None = 
             "registration_complete": False,
             "selected_tools": profile.get("selected_tools", []),
             "homemaker_enabled": profile.get("homemaker_enabled", False),
+
+            "preppers_enabled": profile.get("preppers_enabled", True),
         }
 
     if not profile.get("registration_complete", False):
@@ -555,6 +570,8 @@ async def get_current_user_info(request: Request, invitation_code: str | None = 
             "currency_preference": profile.get("currency_preference"),
             "selected_tools": profile.get("selected_tools", []),
             "homemaker_enabled": profile.get("homemaker_enabled", False),
+
+            "preppers_enabled": profile.get("preppers_enabled", True),
             "invitation_code_used": profile.get("invitation_code_used"),
         }
 
@@ -571,6 +588,8 @@ async def get_current_user_info(request: Request, invitation_code: str | None = 
         "currency_preference": profile.get("currency_preference"),
         "selected_tools": profile.get("selected_tools", []),
         "homemaker_enabled": profile.get("homemaker_enabled", False),
+
+        "preppers_enabled": profile.get("preppers_enabled", True),
         # Shopping-list v3 preferences (per F4 / F7 / I3 / I6)
         "default_grocery_storage": profile.get("default_grocery_storage", "_unsorted"),
         "record_purchase_patterns": profile.get("record_purchase_patterns", False),

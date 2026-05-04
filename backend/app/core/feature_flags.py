@@ -63,6 +63,12 @@ DEFAULT_FLAGS: dict[str, Any] = {
     # Underscore (not dot) in keys to avoid Firestore nested-path interpretation.
     "homemaker_versioning": False,
     "homemaker_social": False,
+    # Preppers module — paid niche tier (cheaper than Plus). Logic-based
+    # preservation tracker (kimchi, pickles, jam shelf-life). Per-user
+    # gate is `users/{uid}.preppers_enabled`. During beta the per-user
+    # toggle defaults TRUE (anyone enrolled in beta can use it), but the
+    # global flag is the kill-switch.
+    "preppers_enabled": False,
     # Thresholds
     "nudge_thresholds": {"expiry": 5, "price": 10, "volume": 20},
 }

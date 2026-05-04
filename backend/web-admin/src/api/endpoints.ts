@@ -90,6 +90,14 @@ export const API = {
     `/api/meals/recipes/${rid}/ingredients/${idx}/comment/${cid}`,
   MEALS_COMMON_INGREDIENTS: '/api/meals/common-ingredients',
 
+  // Preppers (beta — niche tier)
+  PREPPERS_COMMON_PRESERVES: '/api/preppers/common-preserves',
+  PREPPERS_RECIPES: '/api/preppers/recipes',
+  PREPPERS_RECIPE: (rid: string) => `/api/preppers/recipes/${rid}`,
+  PREPPERS_BATCHES: '/api/preppers/batches',
+  PREPPERS_BATCH: (bid: string) => `/api/preppers/batches/${bid}`,
+  PREPPERS_BATCH_STATUS: (bid: string) => `/api/preppers/batches/${bid}/status`,
+
   // Household
   HOUSEHOLD_MY: '/api/household/my',
   HOUSEHOLD_CREATE: '/api/household/create',
@@ -119,6 +127,7 @@ export const API = {
   USER_DELETE: (uid: string) => `/api/admin/users/${uid}`,
   USER_TOOLS: (uid: string) => `/api/admin/users/${uid}/tools`,
   USER_HOMEMAKER: (uid: string) => `/api/admin/users/${uid}/homemaker`,
+  USER_PREPPERS: (uid: string) => `/api/admin/users/${uid}/preppers`,
 
   // Product Disputes
   DISPUTES_ADMIN: '/api/admin/disputes',

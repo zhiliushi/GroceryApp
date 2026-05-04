@@ -35,6 +35,8 @@ const MapPage = lazy(() => import('@/pages/map/MapPage'));
 const JoinPage = lazy(() => import('@/pages/join/JoinPage'));
 const MealsPage = lazy(() => import('@/pages/meals/MealsPage'));
 const RecipeFormPage = lazy(() => import('@/pages/meals/RecipeFormPage'));
+const PreppersPage = lazy(() => import('@/pages/preppers/PreppersPage'));
+const PrepRecipeFormPage = lazy(() => import('@/pages/preppers/PrepRecipeFormPage'));
 const StoragePage = lazy(() => import('@/pages/storage/StoragePage'));
 
 // Refactor pages
@@ -219,6 +221,9 @@ export const router = createBrowserRouter([
       { path: 'meals', element: <SuspenseWrapper><MealsPage /></SuspenseWrapper> },
       { path: 'meals/new', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
       { path: 'meals/:id/edit', element: <SuspenseWrapper><RecipeFormPage /></SuspenseWrapper> },
+      { path: 'preppers', element: <SuspenseWrapper><PreppersPage /></SuspenseWrapper> },
+      { path: 'preppers/new', element: <SuspenseWrapper><PrepRecipeFormPage /></SuspenseWrapper> },
+      { path: 'preppers/:id/edit', element: <SuspenseWrapper><PrepRecipeFormPage /></SuspenseWrapper> },
       // User manual — always accessible, no tier gating. The help content
       // is the same for free and paid users (paid features are tier-tagged
       // inside the manual itself).

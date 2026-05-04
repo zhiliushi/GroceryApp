@@ -42,6 +42,19 @@ export function useChangeHomemaker() {
   });
 }
 
+export function useChangePreppers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ uid, enabled }: { uid: string; enabled: boolean }) =>
+      apiClient.put(API.USER_PREPPERS(uid), { enabled }).then((r) => r.data),
+    onSuccess: (_data, { enabled }) => {
+      toast.success(`Preppers ${enabled ? 'enabled' : 'disabled'}`);
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Failed to update preppers access'),
+  });
+}
+
 export function useToggleUserStatus() {
   const qc = useQueryClient();
   return useMutation({

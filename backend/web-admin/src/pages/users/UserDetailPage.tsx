@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useUser } from '@/api/queries/useUsers';
 import { useInventory } from '@/api/queries/useInventory';
 import { useShoppingLists } from '@/api/queries/useShoppingLists';
-import { useChangeTier, useChangeHomemaker } from '@/api/mutations/useUserMutations';
+import { useChangeTier, useChangeHomemaker, useChangePreppers } from '@/api/mutations/useUserMutations';
 import DataTable, { type Column } from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -224,6 +224,10 @@ export default function UserDetailPage() {
                 <HomemakerToggle uid={user.uid} enabled={user.homemaker_enabled ?? false} />
               </div>
               <div>
+                <span className="text-ga-text-secondary block">Preppers</span>
+                <PreppersToggle uid={user.uid} enabled={user.preppers_enabled ?? true} />
+              </div>
+              <div>
                 <span className="text-ga-text-secondary block">Created</span>
                 <span className="text-ga-text-primary">{formatDate(user.createdAt)}</span>
               </div>
@@ -319,6 +323,33 @@ function HomemakerToggle({ uid, enabled }: { uid: string; enabled: boolean }) {
           : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
       )}
       title={enabled ? 'Click to disable homemaker access' : 'Click to enable homemaker access'}
+    >
+      {enabled ? 'ON' : 'OFF'}
+    </button>
+  );
+}
+
+/**
+ * Per-user preppers gate. Beta default = TRUE on signup; this toggle is
+ * the manual override admins use to revoke access. Combine with the global
+ * `preppers_enabled` feature flag for the full kill-switch.
+ */
+function PreppersToggle({ uid, enabled }: { uid: string; enabled: boolean }) {
+  const mutation = useChangePreppers();
+  return (
+    <button
+      onClick={() => {
+        if (mutation.isPending) return;
+        mutation.mutate({ uid, enabled: !enabled });
+      }}
+      disabled={mutation.isPending}
+      className={cn(
+        'px-2 py-0.5 text-[11px] rounded border',
+        enabled
+          ? 'bg-emerald-600 text-white border-transparent'
+          : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+      )}
+      title={enabled ? 'Click to disable preppers access' : 'Click to enable preppers access'}
     >
       {enabled ? 'ON' : 'OFF'}
     </button>

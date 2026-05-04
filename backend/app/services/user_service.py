@@ -102,6 +102,10 @@ def create_user_profile(
         "currency_preference": None,
         "selected_tools": [],
         "homemaker_enabled": False,
+        # Preppers (cheaper niche tier, logic-based preservation tracker).
+        # During beta, defaulted TRUE so anyone enrolled can try it; once
+        # billing lights up this flips to False on signup and admins toggle on.
+        "preppers_enabled": True,
         "household_id": None,
         "household_role": None,
         "invitation_code_used": invitation_code.upper() if invitation_code else None,
@@ -309,6 +313,44 @@ def is_homemaker_enabled(uid: str, sub: str) -> bool:
         return False
     from app.core import feature_flags
     return feature_flags.is_enabled(f"homemaker_{sub}")
+
+
+def update_user_preppers(uid: str, enabled: bool, admin_uid: str) -> bool:
+    """Toggle a user's preppers access.
+
+    Two-axis access (mirrors homemaker): per-user `preppers_enabled` AND
+    global feature flag `preppers_enabled` must both be True for the
+    /preppers routes to be reachable.
+    """
+    db = _get_db()
+    if not db.collection("users").document(uid).get().exists:
+        return False
+    import time
+    db.collection("users").document(uid).update({
+        "preppers_enabled": bool(enabled),
+        "preppers_changed_at": int(time.time() * 1000),
+        "preppers_changed_by": admin_uid,
+    })
+    logger.info(
+        "User %s preppers_enabled set to %s by %s", uid, enabled, admin_uid,
+    )
+    return True
+
+
+def is_preppers_enabled(uid: str) -> bool:
+    """Resolve preppers access for a user.
+
+    Truth table:
+      user.preppers_enabled  ×  feature_flag('preppers_enabled')  →  result
+      False                  ×  *                                  →  False
+      True                   ×  False                              →  False  (kill-switch)
+      True                   ×  True                               →  True
+    """
+    user = get_user(uid)
+    if not user or not user.get("preppers_enabled"):
+        return False
+    from app.core import feature_flags
+    return feature_flags.is_enabled("preppers_enabled")
 
 
 def update_user_status(uid: str, status: str, reason: str = "") -> bool:

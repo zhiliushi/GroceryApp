@@ -127,6 +127,28 @@ async def update_user_homemaker(
     }
 
 
+@router.put("/users/{uid}/preppers")
+async def update_user_preppers(
+    uid: str, body: dict, admin: UserInfo = Depends(require_admin),
+):
+    """Toggle the preppers subscription gate for a user.
+
+    Body: `{"enabled": bool}`. Per-user side; global flag
+    `preppers_enabled` is the kill-switch. Beta default = TRUE on
+    signup so enrolled users can try the feature.
+    """
+    enabled = body.get("enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(status_code=400, detail="`enabled` must be a boolean")
+    success = user_service.update_user_preppers(uid, enabled, admin.uid)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "success": True,
+        "message": f"User {uid} preppers_enabled set to {enabled}",
+    }
+
+
 @router.put("/users/{uid}/approve")
 async def approve_user(uid: str, admin: UserInfo = Depends(require_admin)):
     """Approve a pending user."""

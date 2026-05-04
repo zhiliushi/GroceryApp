@@ -25,6 +25,7 @@ const secondaryNav: NavItem[] = [
   { path: '/catalog', label: 'Catalog', icon: '📚' },
   { path: '/storage', label: 'Storage', icon: '🗄️' },
   { path: '/meals', label: 'Meals', icon: '🍳' },
+  { path: '/preppers', label: 'Preppers', icon: '🥒', requiresFlag: 'preppers_enabled' },
   { path: '/foodbanks', label: 'Foodbanks', icon: '📍' },
   { path: '/waste', label: 'Waste', icon: '🗑️' },
   { path: '/spending', label: 'Spending', icon: '💳' },

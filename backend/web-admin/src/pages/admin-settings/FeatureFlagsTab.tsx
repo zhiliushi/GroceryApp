@@ -71,6 +71,18 @@ const GROUPS: FlagGroup[] = [
       },
     ],
   },
+  {
+    title: 'Preppers module',
+    description:
+      'Beta: niche tier for home preservation tracking (kimchi, achar, kaya, jam, jerky shelf-life). Per-user toggle defaults TRUE on signup during beta — admins revoke from the user detail page. This flag is the global kill-switch.',
+    flags: [
+      {
+        key: 'preppers_enabled',
+        label: 'Preppers feature',
+        description: 'Master switch for the /preppers page + all preppers routes. When OFF the sidebar entry hides and routes 404. Per-user toggle on the user detail page is the other half of the gate.',
+      },
+    ],
+  },
 ];
 
 export default function FeatureFlagsTab() {

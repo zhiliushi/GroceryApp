@@ -33,7 +33,8 @@ const SECTIONS: Section[] = [
   { id: 'catalog', title: '8. Your personal catalog' },
   { id: 'tiers', title: '9. Free vs paid' },
   { id: 'meals-homemaker', title: '10. Meals: Homemaker add-on' },
-  { id: 'faq', title: '11. FAQ' },
+  { id: 'preppers', title: '11. Preppers (beta)' },
+  { id: 'faq', title: '12. FAQ' },
 ];
 
 export default function UserManualPage() {
@@ -112,6 +113,7 @@ export default function UserManualPage() {
           <Catalog />
           <Tiers />
           <MealsHomemaker />
+          <Preppers />
           <Faq />
 
           <footer className="pt-6 border-t border-ga-border text-xs text-ga-text-secondary">
@@ -196,6 +198,115 @@ function GettingStarted() {
         item a name, optionally an expiry, and you're done. Everything else
         (price, location, payment method, barcode) is optional and can be
         filled in later.
+      </p>
+
+      <H3>Signing in</H3>
+      <p>
+        Two ways to sign in on the <strong>Sign in</strong> screen:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>Email + password</strong> — what you set when you created the account.
+          Forgot it? Type your email above the form, then tap <em>Forgot password?</em> —
+          Firebase emails you a one-time reset link.
+        </li>
+        <li>
+          <strong>Sign in with Google</strong> — uses your Google account. No separate
+          password to remember, no verification email needed. You can link Google later
+          from <Link to="/settings" className="text-ga-accent hover:underline">Settings</Link>{' '}
+          if you started with email + password.
+        </li>
+      </ul>
+      <p className="text-xs text-ga-text-secondary">
+        If neither option lets you in, you may have hit one of the gating screens below
+        — look for the matching icon.
+      </p>
+
+      <H3>Joining via an invite link</H3>
+      <p>
+        Household invitations come as a link like <code>/join/ABC123</code>. Open it in
+        your browser:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          If you&apos;re not signed in yet, tap <em>Sign in to join</em>. The code stays
+          remembered through sign-in, and your account skips the admin approval queue
+          (invited accounts are auto-approved).
+        </li>
+        <li>
+          If you&apos;re already signed in and active, you&apos;ll see &quot;Join {`{household}`}&quot;
+          with the role the inviter picked. Tap <em>Join Household</em> to confirm, or{' '}
+          <em>Cancel</em> to keep the link valid for later.
+        </li>
+        <li>
+          <strong>Codes are email-bound</strong> — sign in with the email address that
+          received the invitation. A code generated for one email won&apos;t work on a
+          different account.
+        </li>
+        <li>
+          Invitations expire (admin-set window). If yours has, ask the inviter to
+          generate a fresh one.
+        </li>
+      </ul>
+
+      <H3>Filling in your registration</H3>
+      <p>
+        When you reach the <strong>&quot;Tell us about you&quot;</strong> screen, three fields:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>Display name</strong> — what household members and shopping-list
+          collaborators see next to your actions. Editable later in Settings.
+        </li>
+        <li>
+          <strong>Country</strong> — pre-filled from your browser locale. Used to
+          suggest local foodbanks and to pick a default currency.
+        </li>
+        <li>
+          <strong>Currency</strong> — re-derives when you change country. Past prices
+          keep their original FX rate; only future entries use the new setting. Editable
+          later in Settings.
+        </li>
+      </ul>
+      <p>
+        Submitting takes you to the dashboard. If you arrived via an invite link, the
+        backend auto-accepts the invitation on submit and joins you to the household
+        before redirect.
+      </p>
+
+      <H3>Account-state screens</H3>
+      <p>
+        GroceryApp is in <strong>closed beta</strong> — sign-up is gated. Depending on
+        how you arrived, you may see one of these screens before the dashboard:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>
+          <strong>✉️ Verify your email</strong> — appears right after you create an
+          account with email + password. Click the link in the email Firebase sent you,
+          then come back and tap <em>I&apos;ve verified — refresh</em>. If the email didn&apos;t
+          arrive, check spam, or use <em>Resend</em> (60-second cooldown). Replies to
+          that email bounce — it&apos;s automated.
+        </li>
+        <li>
+          <strong>⏳ Awaiting approval</strong> — appears for self-signup users while
+          an admin reviews your account. The page auto-checks every 30 seconds for the
+          first 30 minutes, then you can tap <em>Check approval status</em> manually.
+          Most requests are reviewed within 24 hours. If someone in your household sends
+          you an invitation email, opening that link skips this queue entirely.
+        </li>
+        <li>
+          <strong>🚧 Registration closed</strong> — appears when admin has paused new
+          sign-ups, or capacity is full. Invite links bypass this gate; otherwise sign
+          out and check back later.
+        </li>
+        <li>
+          <strong>🚫 Account disabled</strong> — terminal state. An admin disabled the
+          account; signing out and back in won&apos;t help. Contact the admin.
+        </li>
+      </ul>
+      <p className="text-xs text-ga-text-secondary">
+        Once approved + registration filled in, you go straight to the dashboard on
+        every subsequent sign-in.
       </p>
 
       <H3>The dashboard</H3>
@@ -964,12 +1075,93 @@ function MealsHomemaker() {
   );
 }
 
-// ── 11. FAQ ────────────────────────────────────────────────────────────────
+// ── 11. Preppers (beta) ────────────────────────────────────────────────────
+
+function Preppers() {
+  return (
+    <section className="space-y-3">
+      <H2 id="preppers">11. Preppers (beta)</H2>
+      <p>
+        Preppers is the niche tier for people who keep <strong>preserves</strong>{' '}
+        — kimchi fermenting in jars, achar in the cupboard, kaya in the fridge,
+        beef jerky in the dehydrator, batch-cooked stews in the freezer. The
+        feature tracks <strong>when each batch becomes ready</strong> and{' '}
+        <strong>when it expires</strong> so nothing gets forgotten.
+      </p>
+
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-xs">
+        <strong className="text-amber-300">Beta:</strong> the feature is open
+        to enrolled users. Pricing for the long-term niche tier is still TBD.
+        An <em>eligibility score meter</em> (data-readiness check) is coming
+        soon — for now, all enrolled users have full access.
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Recipe vs batch
+      </h3>
+      <ul className="list-disc list-inside space-y-1 text-xs text-ga-text-secondary">
+        <li>
+          A <strong className="text-ga-text-primary">recipe</strong> is your
+          reusable template (your kimchi recipe, with the brine ratio you like).
+        </li>
+        <li>
+          A <strong className="text-ga-text-primary">batch</strong> is a single
+          jar / tray you actually started on a given day. Same recipe →
+          many batches over time.
+        </li>
+      </ul>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Preservation types
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        Each batch is tagged with one of: 🦠 Fermented (kimchi, miso, kombucha)
+        · 🥒 Pickled (vinegar quick-pickles, achar) · 🥓 Cured (gravlax,
+        bacon) · 🍓 Jam / preserve (jam, kaya, sambal) · 🥫 Canned · 🌿 Dried
+        (jerky, herbs) · ❄️ Frozen (batch-cooked meals) · 🫒 Infused (oils,
+        vinegars).
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Common presets
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        The page ships with ~30 curated presets covering Malaysian and global
+        staples — you can start a batch from a preset with one click and the
+        ready-by / expires-by are pre-filled with sensible defaults. You can
+        always override per batch.
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Marking outcomes
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        Each active batch has two buttons: <strong>✓</strong> (consumed — eaten
+        / used up) and <strong>✗</strong> (discarded — spoiled / thrown out).
+        These move the batch out of the active list. The data flows into the
+        eligibility score meter once that lights up.
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        Why preppers is separate from cooking recipes
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        Cooking recipes (Meals page) are about{' '}
+        <em>"what do I make with what's expiring?"</em> — short-term, inventory-
+        driven. Preppers is about <em>"what do I have stockpiled and when does
+        it go off?"</em> — multi-day to multi-month preservation timelines.
+        Different mental model, different schema, different page.
+      </p>
+    </section>
+  );
+}
+
+// ── 12. FAQ ────────────────────────────────────────────────────────────────
 
 function Faq() {
   return (
     <section className="space-y-2">
-      <H2 id="faq">11. FAQ</H2>
+      <H2 id="faq">12. FAQ</H2>
 
       <Question q="My spending dashboard shows RM but I bought the item in SGD. Why?">
         Spending and waste figures are converted to your{' '}

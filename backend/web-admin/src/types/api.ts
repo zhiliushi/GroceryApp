@@ -35,6 +35,10 @@ export interface AuthUser {
    *  `homemaker_versioning` / `homemaker_social` feature flags via the
    *  `useHomemaker()` hook to resolve sub-feature access. */
   homemaker_enabled?: boolean;
+  /** Per-user preppers subscription gate. Combine with the global
+   *  `preppers_enabled` feature flag via `usePreppers()`. Defaults TRUE
+   *  during beta. */
+  preppers_enabled?: boolean;
 
   // ── Onboarding v2 additions ───────────────────────────────────────
   /** True once user has filled the registration form (name+country+currency). */
@@ -697,6 +701,95 @@ export interface CommonIngredient {
 
 export interface CommonIngredientsResponse {
   items: CommonIngredient[];
+  count: number;
+}
+
+// ── Preppers feature ───────────────────────────────────────────────────────
+
+/**
+ * Preservation type. Drives how the UI groups + filters batches and
+ * what defaults the batch form pre-fills.
+ */
+export type PrepType =
+  | 'ferment'   // kimchi, sauerkraut, kombucha, miso, tempeh
+  | 'cure'      // bacon, gravlax, salt-cured fish
+  | 'freeze'    // batch-cooked stews, freezer meals
+  | 'can'       // canned tomatoes, pressure-canned beans
+  | 'dry'       // dried herbs, jerky, sun-dried tomatoes
+  | 'pickle'    // quick-pickle in vinegar
+  | 'jam'       // jam, marmalade, kaya, sambal
+  | 'infuse';   // infused oils, vinegars
+
+export type PrepBatchStatus = 'active' | 'consumed' | 'discarded';
+
+/**
+ * Curated preserve template (cross-user, read-only for clients). Mirrors
+ * the common-ingredients pattern; ~25-30 entries covering Malaysian and
+ * global preserves with sensible default ready-after / shelf-life values.
+ */
+export interface CommonPreserve {
+  name_norm: string;
+  display_name: string;
+  prep_type: PrepType;
+  default_ready_after_hours: number;
+  default_shelf_life_days: number;
+  description?: string;
+  ingredients?: string[];
+}
+
+export interface CommonPreservesResponse {
+  items: CommonPreserve[];
+  count: number;
+}
+
+/**
+ * User-saved preservation template. Distinct from a cooking recipe; spawns
+ * batches via the start-batch flow. Soft-capped at 50 per user for first
+ * cut.
+ */
+export interface PrepRecipe {
+  id: string;
+  name: string;
+  prep_type: PrepType;
+  ready_after_hours: number;
+  shelf_life_days: number;
+  ingredients: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+  notes: string;
+  /** name_norm of the common-preserve this was cloned from, if any. */
+  common_preserve_ref?: string | null;
+}
+
+export interface PrepRecipesResponse {
+  recipes: PrepRecipe[];
+  count: number;
+  limit: number;
+}
+
+/**
+ * Active or completed preservation instance. `started_at` / `ready_at` /
+ * `expires_at` are ISO-8601 strings; the UI computes countdowns
+ * client-side.
+ */
+export interface PrepBatch {
+  id: string;
+  name: string;
+  prep_type: PrepType;
+  ready_after_hours: number;
+  shelf_life_days: number;
+  started_at: string;
+  ready_at: string;
+  expires_at: string;
+  status: PrepBatchStatus;
+  consumed_at: string | null;
+  discarded_at: string | null;
+  recipe_id?: string | null;
+  common_preserve_ref?: string | null;
+  ingredients_snapshot: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+  notes: string;
+}
+
+export interface PrepBatchesResponse {
+  batches: PrepBatch[];
   count: number;
 }
 
@@ -1410,6 +1503,9 @@ export interface FeatureFlags {
   // user.homemaker_enabled. Gate resolution lives in useHomemaker() hook.
   homemaker_versioning: boolean;
   homemaker_social: boolean;
+  // Preppers module — beta. Single global flag (paired with per-user
+  // `user.preppers_enabled`). Resolution lives in usePreppers() hook.
+  preppers_enabled: boolean;
   // Thresholds
   nudge_thresholds: NudgeThresholds;
   [key: string]: boolean | NudgeThresholds | unknown;
