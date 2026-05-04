@@ -1719,3 +1719,41 @@ async def cleanup_catalog_orphans(
         result.get("deleted_count", 0),
     )
     return result
+
+
+@router.post("/catalog/reconcile-refs")
+async def reconcile_catalog_refs(
+    body: dict = None,  # type: ignore[assignment]
+    admin: UserInfo = Depends(require_admin),
+):
+    """Reconcile transit_ref_count drift for one user's catalog rows.
+
+    Body:
+      user_id  : str  — REQUIRED (per-user scope; cross-user ops cost too much)
+      dry_run  : bool — default TRUE; returns drift report without writes
+
+    Drift sources: race conditions, crashes mid-mutation, manual Firestore
+    edits, pre-v3 rows that never had transit_ref_count initialized.
+    Walks the user's shopping_lists once, recounts refs per name_norm,
+    diffs against stored counter.
+
+    Returns: {dry_run, rows_checked, drift_count, fixed_count, sample[]}
+    """
+    from app.services import catalog_service
+    from fastapi import HTTPException
+
+    body = body or {}
+    user_id = body.get("user_id")
+    if not user_id or not isinstance(user_id, str):
+        raise HTTPException(status_code=400, detail="user_id is required")
+    dry_run = body.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        raise HTTPException(status_code=400, detail="dry_run must be boolean")
+
+    result = catalog_service.reconcile_transit_refs(user_id, dry_run=dry_run)
+    logger.info(
+        "admin.reconcile_refs actor=%s target=%s dry_run=%s drift=%d fixed=%d",
+        admin.uid, user_id, dry_run,
+        result.get("drift_count", 0), result.get("fixed_count", 0),
+    )
+    return result

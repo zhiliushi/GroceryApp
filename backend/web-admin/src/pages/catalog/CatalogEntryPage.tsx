@@ -4,6 +4,7 @@ import { useCatalogEntry, useCatalog } from '@/api/queries/useCatalog';
 import { useCatalogOverview } from '@/api/queries/useCatalogOverview';
 import {
   useDeleteCatalogEntry,
+  usePreviewDeleteCatalogEntry,
   useMergeCatalogEntry,
   useUpdateCatalogEntry,
 } from '@/api/mutations/useCatalogMutations';
@@ -36,6 +37,7 @@ export default function CatalogEntryPage() {
   const { data: overview } = useCatalogOverview(nameNorm);
   const updateMutation = useUpdateCatalogEntry();
   const deleteMutation = useDeleteCatalogEntry();
+  const previewDeleteMutation = usePreviewDeleteCatalogEntry();
   const mergeMutation = useMergeCatalogEntry();
 
   const [editingName, setEditingName] = useState(false);
@@ -103,16 +105,52 @@ export default function CatalogEntryPage() {
         setMergeOpen(true);
         break;
       case 'delete':
-        if (
-          window.confirm(
-            `Delete catalog entry "${entry.display_name}"? Its ${entry.total_purchases} purchase(s) will become orphan history.`,
-          )
-        ) {
-          deleteMutation.mutate(
-            { nameNorm: entry.name_norm },
-            { onSuccess: () => navigate('/catalog') },
-          );
-        }
+        // v3 cascade: fetch preview first to surface shopping-list impact,
+        // then confirm with concrete counts.
+        previewDeleteMutation.mutate(entry.name_norm, {
+          onSuccess: (preview) => {
+            const lines: string[] = [
+              `Delete catalog entry "${entry.display_name}"?`,
+              '',
+              `${entry.total_purchases} purchase(s) will keep their snapshot history (the catalog row will be removed but past events stay).`,
+            ];
+            const repointed =
+              (preview.primaries_repointed || 0) + (preview.alternatives_repointed || 0);
+            const cascadeDeleted =
+              (preview.primaries_deleted || 0) + (preview.alternatives_deleted || 0);
+            if (repointed > 0) {
+              lines.push('');
+              lines.push(
+                `${repointed} shopping-list reference${repointed === 1 ? '' : 's'} will revert to "${preview.global_revert_to_name}" (the global product name).`,
+              );
+            }
+            if (cascadeDeleted > 0) {
+              lines.push('');
+              lines.push(
+                `⚠ ${cascadeDeleted} shopping-list item${cascadeDeleted === 1 ? '' : 's'} will be REMOVED (no global product to revert to).`,
+              );
+            }
+            if (window.confirm(lines.join('\n'))) {
+              deleteMutation.mutate(
+                { nameNorm: entry.name_norm },
+                { onSuccess: () => navigate('/catalog') },
+              );
+            }
+          },
+          onError: () => {
+            // If preview fails (e.g. active purchases), still let the user try
+            if (
+              window.confirm(
+                `Could not preview cascade. Delete catalog entry "${entry.display_name}" anyway?`,
+              )
+            ) {
+              deleteMutation.mutate(
+                { nameNorm: entry.name_norm },
+                { onSuccess: () => navigate('/catalog') },
+              );
+            }
+          },
+        });
         break;
       default:
         break;

@@ -635,32 +635,42 @@ def cascade_delete_catalog_entry(
     name_norm: str,
     *,
     revert_to_global_if_possible: bool = True,
+    dry_run: bool = False,
 ) -> dict:
     """User-initiated catalog delete with cascade to shopping-list refs.
 
     Behavior (per Shahir's 2026-05-04 directive):
-      - For every shopping-list PRIMARY referencing this name_norm:
-          if a global product exists for the primary's barcode AND
-          revert_to_global_if_possible:
-              repoint source_catalog_name_norm + display_name to global
-          else:
-              delete the primary (cascade-deletes its alternatives)
-      - For every shopping-list ALTERNATIVE referencing this name_norm:
-          same revert-or-delete logic
-      - Active purchases: NOT touched (the rename cascade already
-        snapshots display_name onto event docs, so the purchase row
-        keeps its display name even after catalog delete). delete_catalog
-        _entry blocks on active_purchases>0 unless force=True; we never
-        force from here.
-      - Then deletes the catalog entry itself + releases quota.
+      "delete in item catalog (on user added items can be deleted by user)
+       = cascade delete in shoppings and other pages (if global exist,
+         then item name revert to global name)"
+
+    For each shopping-list PRIMARY or ALTERNATIVE referencing this name_norm:
+      - If the catalog row had a barcode AND `products/{barcode}` exists in
+        the global product DB AND revert_to_global_if_possible:
+          → revert: clear the ref's source_catalog_name_norm (catalog row
+            is being deleted) AND set display_name to the global product
+            name. The shopping list shows the global name; future re-scans
+            will recreate a global_linked catalog entry.
+      - Else: cascade-delete the primary (or strip the alternative).
+
+    Active purchase events are NOT touched. The existing rename cascade
+    snapshots display_name onto event docs at rename time, so the purchase
+    row keeps its display name even after catalog delete. delete_catalog
+    _entry still blocks on active_purchases > 0 — we never `force` from
+    here, so a catalog row with active inventory cannot be deleted via
+    this path (user must dispose of inventory first).
+
+    dry_run=True → returns the same shape but doesn't mutate. Used by the
+    frontend to surface the cascade preview before committing.
 
     Returns: {
+      'dry_run': bool,
       'deleted': bool,
-      'shopping_list_primaries_repointed': int,
-      'shopping_list_primaries_deleted': int,
-      'shopping_list_alternatives_repointed': int,
-      'shopping_list_alternatives_deleted': int,
-      'global_target_name_norm': str | None,
+      'global_revert_to_name': str | None,   # global product name if revert applied
+      'primaries_repointed': int,            # display_name updated to global
+      'primaries_deleted': int,              # cascade-deleted (no global)
+      'alternatives_repointed': int,
+      'alternatives_deleted': int,
     }
 
     Raises:
@@ -673,33 +683,37 @@ def cascade_delete_catalog_entry(
         raise NotFoundError(f"Catalog entry '{name_norm}' not found")
     data = snap.to_dict() or {}
 
-    # Resolve revert target if applicable
-    barcode = data.get("barcode")
-    target_name_norm: Optional[str] = None
-    target_display: Optional[str] = None
-    if revert_to_global_if_possible and barcode:
-        # If a global product exists for this barcode, the user's
-        # global_linked catalog row (if any) would have a different
-        # name_norm derived from the global product name. We don't have
-        # a 1:1 mapping here, so only revert when there's a clear
-        # global linkage. Conservative: only revert if there's an
-        # existing user catalog entry that's 'global_linked' for the
-        # same barcode — meaning the user already had two parallel
-        # entries (one custom, one global). Otherwise cascade-delete.
-        try:
-            other = find_by_barcode(user_id, barcode)
-            if other and other.get("name_norm") != name_norm and (other.get("catalog_mode") == "global_linked"):
-                target_name_norm = other.get("name_norm")
-                target_display = other.get("display_name")
-        except Exception:
-            # find_by_barcode may not exist or may fail; conservative fallback.
-            target_name_norm = None
+    # Pre-flight: block dry_run too if active_purchases would block real run
+    if (data.get("active_purchases") or 0) > 0:
+        raise ConflictError(
+            f"Cannot delete catalog entry '{name_norm}': has {data.get('active_purchases')} active purchases",
+            details={"active_purchases": data.get("active_purchases")},
+        )
 
-    # Walk shopping_lists for refs (per-user scan; bounded by list cap)
+    # Resolve revert target via the GLOBAL products collection (NOT user
+    # catalog). If the catalog row has a barcode AND products/{barcode}
+    # exists, we can revert the display name to the global product name.
+    barcode = data.get("barcode")
+    revert_to_name: Optional[str] = None
+    if revert_to_global_if_possible and barcode:
+        try:
+            from app.services import product_service
+            global_product = product_service.get_product(barcode)
+            if global_product:
+                revert_to_name = (
+                    global_product.get("product_name")
+                    or global_product.get("name")
+                    or None
+                )
+        except Exception as exc:
+            logger.warning("cascade: global lookup failed barcode=%s: %s", barcode, exc)
+
+    # Walk shopping_lists for refs (per-user scan; bounded by per-list cap × list count)
     repointed_primaries = 0
-    deleted_primaries: list[tuple[str, str]] = []  # (list_id, item_id)
+    deleted_primaries: list[tuple[str, str]] = []
     repointed_alts = 0
-    deleted_alts: list[tuple[str, str, str]] = []  # (list_id, item_id, alt_id)
+    deleted_alts: list[tuple[str, str, str]] = []
+    pending_updates: list[tuple[str, str, dict]] = []  # (list_id, item_id, updates)
 
     lists_ref = _db().collection("users").document(user_id).collection("shopping_lists")
     for list_doc in lists_ref.stream():
@@ -711,7 +725,6 @@ def cascade_delete_catalog_entry(
             primary_ref = item_data.get("source_catalog_name_norm")
             primary_match = primary_ref == name_norm
 
-            # Check alternatives — embedded array
             alts: list[dict] = list(item_data.get("prices") or [])
             alt_indices_matching: list[int] = [
                 i for i, a in enumerate(alts)
@@ -723,42 +736,68 @@ def cascade_delete_catalog_entry(
 
             updates: dict = {}
             if primary_match:
-                if target_name_norm:
-                    updates["source_catalog_name_norm"] = target_name_norm
-                    if target_display:
-                        updates["item_name"] = target_display
-                        updates["name_norm"] = target_name_norm
+                if revert_to_name:
+                    # Revert: clear ref (catalog row is being deleted) +
+                    # update display_name to global product name. Don't
+                    # change name_norm (would shift the doc identity).
+                    updates["source_catalog_name_norm"] = None
+                    updates["item_name"] = revert_to_name
                     repointed_primaries += 1
                 else:
                     deleted_primaries.append((list_id, item_id))
 
             if alt_indices_matching:
-                # Mutate alts in place
-                if target_name_norm:
+                if revert_to_name:
                     new_alts = list(alts)
                     for i in alt_indices_matching:
-                        new_alts[i] = {**new_alts[i], "source_catalog_name_norm": target_name_norm}
-                        if target_display and not new_alts[i].get("candidate_name"):
-                            new_alts[i]["candidate_name"] = target_display
+                        new_alts[i] = {
+                            **new_alts[i],
+                            "source_catalog_name_norm": None,
+                            # Only override candidate_name if user hadn't typed one
+                            "candidate_name": (
+                                new_alts[i].get("candidate_name") or revert_to_name
+                            ),
+                        }
                     updates["prices"] = new_alts
                     repointed_alts += len(alt_indices_matching)
                 else:
-                    # If primary wasn't matched but alts were, drop the matching alts
                     if not primary_match:
+                        # Strip matching alts; primary stays
                         new_alts = [a for i, a in enumerate(alts) if i not in alt_indices_matching]
                         updates["prices"] = new_alts
                         for i in alt_indices_matching:
                             deleted_alts.append((list_id, item_id, alts[i].get("id", "?")))
+                    else:
+                        # Primary's being cascade-deleted anyway; alts go with it.
+                        # Don't double-count alts as "deleted" here.
+                        pass
 
-            # If we're going to delete the primary, skip writing updates (the
-            # delete will handle it). Otherwise write the merged updates.
-            if primary_match and not target_name_norm:
-                # Defer to the delete loop below
+            if primary_match and not revert_to_name:
+                # Primary will be deleted; skip per-item update
                 pass
             elif updates:
-                items_ref.document(item_id).update(updates)
+                pending_updates.append((list_id, item_id, updates))
 
-    # Deletes — per primary, do via batch
+    if dry_run:
+        return {
+            "dry_run": True,
+            "deleted": False,
+            "global_revert_to_name": revert_to_name,
+            "primaries_repointed": repointed_primaries,
+            "primaries_deleted": len(deleted_primaries),
+            "alternatives_repointed": repointed_alts,
+            "alternatives_deleted": len(deleted_alts),
+        }
+
+    # Apply pending updates
+    for (list_id, item_id, updates) in pending_updates:
+        lists_ref.document(list_id).collection("items").document(item_id).update(updates)
+
+    # Cascade-delete primaries (use the v3 delete_item path so transit ref
+    # counters + GC fire correctly downstream — but BYPASS for this case
+    # because we're already deleting the catalog row itself; other refs
+    # will be handled separately if they share name_norm with siblings).
+    # Simpler: raw batch delete; the catalog row's own delete handles quota.
     if deleted_primaries:
         batch = _db().batch()
         for (list_id, item_id) in deleted_primaries:
@@ -766,16 +805,25 @@ def cascade_delete_catalog_entry(
             batch.delete(ref)
         batch.commit()
 
-    # Now delete the catalog row itself (releases quota inside delete_catalog_entry)
+    # Delete the catalog row (releases quota inside delete_catalog_entry)
     delete_catalog_entry(user_id, name_norm, force=False)
 
+    logger.info(
+        "catalog.cascade_delete user=%s name_norm=%s revert=%s "
+        "primaries(repoint=%d, delete=%d) alts(repoint=%d, delete=%d)",
+        user_id, name_norm, bool(revert_to_name),
+        repointed_primaries, len(deleted_primaries),
+        repointed_alts, len(deleted_alts),
+    )
+
     return {
+        "dry_run": False,
         "deleted": True,
-        "shopping_list_primaries_repointed": repointed_primaries,
-        "shopping_list_primaries_deleted": len(deleted_primaries),
-        "shopping_list_alternatives_repointed": repointed_alts,
-        "shopping_list_alternatives_deleted": len(deleted_alts),
-        "global_target_name_norm": target_name_norm,
+        "global_revert_to_name": revert_to_name,
+        "primaries_repointed": repointed_primaries,
+        "primaries_deleted": len(deleted_primaries),
+        "alternatives_repointed": repointed_alts,
+        "alternatives_deleted": len(deleted_alts),
     }
 
 
@@ -1031,3 +1079,79 @@ def _check_barcode_not_linked_elsewhere(
                 },
             },
         )
+
+
+def reconcile_transit_refs(user_id: str, *, dry_run: bool = True) -> dict:
+    """Recount transit_ref_count for every user_custom catalog row by walking
+    the user's shopping_lists. Fixes drift from race conditions, crashes,
+    or manual Firestore edits.
+
+    For each row:
+      stored = doc.transit_ref_count or 0
+      actual = count of (primary refs + alt refs) across user's lists
+      if stored != actual: fix (or report when dry_run)
+
+    Returns: { dry_run, rows_checked, drift_count, fixed_count, sample[] }
+    """
+    catalog_query = (
+        _db().collection(_COLLECTION)
+        .where(filter=FieldFilter("user_id", "==", user_id))
+    )
+    rows: list[dict] = []
+    for snap in catalog_query.stream():
+        d = snap.to_dict() or {}
+        d["_doc_id"] = snap.id
+        rows.append(d)
+
+    # Walk shopping_lists once and count refs per name_norm
+    actual_counts: dict[str, int] = {}
+    lists_ref = _db().collection("users").document(user_id).collection("shopping_lists")
+    for list_doc in lists_ref.stream():
+        items_ref = lists_ref.document(list_doc.id).collection("items")
+        for item_snap in items_ref.stream():
+            item = item_snap.to_dict() or {}
+            primary_ref = item.get("source_catalog_name_norm")
+            if primary_ref:
+                actual_counts[primary_ref] = actual_counts.get(primary_ref, 0) + 1
+            for alt in (item.get("prices") or []):
+                alt_ref = alt.get("source_catalog_name_norm")
+                if alt_ref:
+                    actual_counts[alt_ref] = actual_counts.get(alt_ref, 0) + 1
+
+    drift: list[dict] = []
+    for row in rows:
+        nn = row.get("name_norm")
+        if not nn:
+            continue
+        stored = row.get("transit_ref_count") or 0
+        actual = actual_counts.get(nn, 0)
+        if stored != actual:
+            drift.append({
+                "name_norm": nn,
+                "display_name": row.get("display_name"),
+                "stored": stored,
+                "actual": actual,
+                "delta": actual - stored,
+            })
+
+    fixed = 0
+    if not dry_run:
+        for d in drift:
+            doc_ref = _db().collection(_COLLECTION).document(_doc_id(user_id, d["name_norm"]))
+            try:
+                doc_ref.update({"transit_ref_count": d["actual"]})
+                fixed += 1
+            except Exception as exc:
+                logger.warning("reconcile: failed user=%s name=%s: %s", user_id, d["name_norm"], exc)
+
+    logger.info(
+        "catalog.reconcile_transit_refs user=%s dry_run=%s rows=%d drift=%d fixed=%d",
+        user_id, dry_run, len(rows), len(drift), fixed,
+    )
+    return {
+        "dry_run": dry_run,
+        "rows_checked": len(rows),
+        "drift_count": len(drift),
+        "fixed_count": fixed,
+        "sample": drift[:50],
+    }

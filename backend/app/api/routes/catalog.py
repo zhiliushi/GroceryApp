@@ -224,8 +224,43 @@ async def merge_catalog_entry(
 async def delete_catalog_entry(
     name_norm: str,
     force: bool = Query(False, description="force delete even if active_purchases > 0"),
+    preview: bool = Query(False, description="dry-run: return cascade counts without deleting"),
     user: UserInfo = Depends(get_current_user),
 ):
-    """Delete a catalog entry. Blocked if it has active purchases unless force=true."""
-    catalog_service.delete_catalog_entry(user.uid, name_norm, force=force)
-    return {"success": True, "name_norm": name_norm}
+    """Delete a catalog entry. v3 behavior: cascades to shopping-list refs.
+
+    Per Shahir's 2026-05-04 directive — when a user deletes a custom catalog
+    entry that's referenced by shopping-list primaries / alternatives:
+      - if `products/{barcode}` exists for the catalog row's barcode:
+          revert the shopping-list display_name to the global product name;
+          clear source_catalog_name_norm
+      - else: cascade-delete the primaries / strip the alternatives
+
+    Blocked if active_purchases > 0 unless force=true (existing behavior;
+    cascade path doesn't accept force, so use the legacy delete_catalog
+    _entry path for that edge case via ?force=true).
+
+    preview=true → returns cascade counts without mutating. Use this to
+    populate a confirm dialog: "X primaries will be repointed, Y deleted,
+    Z alternatives repointed, W deleted."
+    """
+    if force:
+        # Legacy path: bypass cascade and use raw delete with force.
+        # Used when user explicitly wants to wipe even with active stock.
+        catalog_service.delete_catalog_entry(user.uid, name_norm, force=True)
+        return {
+            "success": True,
+            "name_norm": name_norm,
+            "force": True,
+            "cascade": False,
+        }
+
+    result = catalog_service.cascade_delete_catalog_entry(
+        user.uid, name_norm, dry_run=preview,
+    )
+    return {
+        "success": True,
+        "name_norm": name_norm,
+        "cascade": True,
+        **result,
+    }
