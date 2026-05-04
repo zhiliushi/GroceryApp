@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '@/components/shared/PageHeader';
 import { cn } from '@/utils/cn';
 import PageManagementTab from './PageManagementTab';
@@ -28,7 +29,22 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key'];
 
 export default function AdminSettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('features');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as TabKey | null) ?? 'features';
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    TABS.some((t) => t.key === initialTab) ? initialTab : 'features',
+  );
+
+  // P1.5: deep-link from Telegram notifications. /admin-settings?tab=feedback&id=X
+  // — keep activeTab in sync if the user lands with the param. The
+  // feedback row's `?id=` is consumed by FeedbackTab itself.
+  useEffect(() => {
+    const fromUrl = searchParams.get('tab') as TabKey | null;
+    if (fromUrl && TABS.some((t) => t.key === fromUrl) && fromUrl !== activeTab) {
+      setActiveTab(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   return (
     <div className="p-6">

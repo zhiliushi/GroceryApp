@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     MINDEE_API_KEY: str = ""  # from mindee.com dashboard
     MISTRAL_API_KEY: str = ""  # LLM fallback for receipt parsing (free tier: 1M tokens/month)
 
+    # Admin Telegram notifications (P1.5 — feedback alerting)
+    # One-way push channel: backend sends; admin reads on phone; admin
+    # replies via the web admin UI (NOT via Telegram). See
+    # `app/services/notification_service.py`. Setup runbook in
+    # `docs/TELEGRAM_ADMIN_SETUP.md`. Both fields empty disables
+    # notifications silently — feedback creation never fails because of
+    # this.
+    TELEGRAM_BOT_TOKEN: str = ""       # from @BotFather; never commit
+    TELEGRAM_ADMIN_CHAT_ID: str = ""   # numeric chat-id; not a secret but env-var for cleanliness
+
     # Environment
     ENVIRONMENT: str = "development"
 

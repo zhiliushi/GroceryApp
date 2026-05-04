@@ -34,6 +34,7 @@ export const API = {
   MY_GROCERY_PREFERENCES: '/api/me/grocery-preferences',
   // Feedback (cap-hit auto-prompt + general feedback form + RPi-ready)
   FEEDBACK: '/api/feedback',
+  FEEDBACK_MINE: '/api/feedback/mine',
   ADMIN_FEEDBACK: '/api/admin/feedback',
   ADMIN_FEEDBACK_ITEM: (id: string) => `/api/admin/feedback/${id}`,
 

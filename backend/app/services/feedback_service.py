@@ -92,6 +92,8 @@ def create_feedback(
         "context": context or {},
         "status": "new",
         "admin_notes": None,
+        "admin_response": None,
+        "responded_at": None,
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
         "schema_version": 1,
@@ -101,6 +103,18 @@ def create_feedback(
         "feedback.created id=%s user=%s kind=%s source=%s",
         doc["id"], user_id, kind, source,
     )
+
+    # P1.5: fire-and-forget Telegram notification to admin chat. Wrapped
+    # so a notification outage NEVER blocks feedback writes. See
+    # `app/services/notification_service.py` for the silent-on-failure
+    # contract.
+    try:
+        from app.services import notification_service, config_service
+        web_public_url = (config_service.get_system_config() or {}).get("web_public_url") or ""
+        notification_service.notify_admin_feedback(doc, web_public_url=web_public_url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("feedback.notify admin failed (non-fatal): %s", exc)
+
     return doc
 
 
@@ -111,7 +125,18 @@ def list_feedback(
     user_id: Optional[str] = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """Admin: browse feedback. Filter by kind/status/user (all optional)."""
+    """Admin: browse feedback. Filter by kind/status/user (all optional).
+
+    Sort behaviour:
+      - When `user_id` is provided we sort in Python after the read,
+        avoiding a composite (`user_id` + `created_at` desc) index that
+        we don't want to maintain at closed-beta scale (per-user row
+        count is tiny). Same trick used in `list_reminders` —
+        cf. `nudge_service.py:140-158`.
+      - Otherwise (admin browse), Firestore-side `order_by(created_at)`
+        is fine: equality filters on kind/status compose with the
+        single-field index already in place.
+    """
     q = _db().collection(_COLLECTION)
     if kind:
         if kind not in _VALID_KINDS:
@@ -123,13 +148,20 @@ def list_feedback(
         q = q.where(filter=FieldFilter("status", "==", status))
     if user_id:
         q = q.where(filter=FieldFilter("user_id", "==", user_id))
-    q = q.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
+        # No order_by here — sort in Python below.
+    else:
+        q = q.order_by("created_at", direction=firestore.Query.DESCENDING)
+    q = q.limit(limit)
 
     out: list[dict[str, Any]] = []
     for snap in q.stream():
         data = snap.to_dict() or {}
         data["id"] = snap.id
         out.append(data)
+
+    if user_id:
+        out.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+
     return out
 
 

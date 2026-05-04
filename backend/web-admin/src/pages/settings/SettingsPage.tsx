@@ -8,6 +8,7 @@ import SecuritySection from '@/components/settings/SecuritySection';
 import DisplayCurrencySection from '@/components/settings/DisplayCurrencySection';
 import MergeNudgeWidget from '@/components/settings/MergeNudgeWidget';
 import GrocerySection from '@/components/settings/GrocerySection';
+import MyFeedbackSection from '@/components/settings/MyFeedbackSection';
 
 const FSM_DATA = [
   {
@@ -110,6 +111,9 @@ export default function SettingsPage() {
 
         {/* Catalog cleanup — likely duplicates + transfer audit log (Phase G) */}
         <MergeNudgeWidget />
+
+        {/* P1.5: user-side feedback list. Auto-hides if user has none. */}
+        <MyFeedbackSection />
 
         {/* Security */}
         <SecuritySection />

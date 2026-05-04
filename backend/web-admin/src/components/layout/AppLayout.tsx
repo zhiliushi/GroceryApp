@@ -4,12 +4,14 @@ import FloatingScanButton from '@/components/barcode/FloatingScanButton';
 import StickyAddButton from './StickyAddButton';
 import PrimaryActionFab from './PrimaryActionFab';
 import HouseholdSwitcher from './HouseholdSwitcher';
+import FeedbackButton from '@/components/feedback/FeedbackButton';
 import QuickAddModal from '@/components/quickadd/QuickAddModal';
 import GlobalSearchBar from '@/components/search/GlobalSearchBar';
 import UpdatePrompt from '@/components/pwa/UpdatePrompt';
 import InstallPrompt from '@/components/pwa/InstallPrompt';
 import CatalogCleanupBanner from '@/components/banners/CatalogCleanupBanner';
 import MaintenanceBanner from '@/components/banners/MaintenanceBanner';
+import { RouteHistoryTracker } from '@/hooks/useRouteHistory';
 import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/utils/cn';
 
@@ -71,6 +73,11 @@ export default function AppLayout() {
           pill at right-36 and the global content). No-op today (single
           household per user); shows real switcher rows once MH-3b lands. */}
       <HouseholdSwitcher />
+      {/* P1.5: persistent feedback button. Mobile = bottom-right FAB stacked
+          above PrimaryActionFab. Desktop = top-right pill in the safe-zone. */}
+      <FeedbackButton />
+      {/* P1.5: tracks last 5 routes for the feedback context blob. No render. */}
+      <RouteHistoryTracker />
       <QuickAddModal open={quickAddOpen} onClose={closeQuickAdd} />
 
       {/* Mobile-only speed-dial FAB — consolidates Add + Scan into one thumb-zone control. */}

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import { API } from '@/api/endpoints';
 import { toast } from 'sonner';
+import { cn } from '@/utils/cn';
 
 /**
  * Admin feedback browse + triage tab.
@@ -68,6 +70,9 @@ function statusColor(s: FeedbackStatus): string {
 }
 
 export default function FeedbackTab() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkId = searchParams.get('id');
+
   const [filterKind, setFilterKind] = useState<'' | FeedbackKind>('');
   const [filterStatus, setFilterStatus] = useState<'' | FeedbackStatus>('');
   const [filterUser, setFilterUser] = useState('');
@@ -75,6 +80,12 @@ export default function FeedbackTab() {
   const [busy, setBusy] = useState(false);
   const [editingNotesFor, setEditingNotesFor] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
+
+  // P1.5 deep-link from Telegram. After list loads, scroll the matching
+  // row into view + temporarily highlight it. Param is consumed once so
+  // a refresh doesn't keep re-scrolling.
+  const rowRefs = useRef<Map<string, HTMLLIElement | null>>(new Map());
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   async function load() {
     setBusy(true);
@@ -97,6 +108,24 @@ export default function FeedbackTab() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // After data lands, if there's an `?id=` deep-link, scroll-into-view +
+  // highlight. Highlight clears after 3s. URL param is consumed (tab
+  // param stays so the tab navigation isn't broken on refresh).
+  useEffect(() => {
+    if (!deepLinkId || !data) return;
+    const node = rowRefs.current.get(deepLinkId);
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightId(deepLinkId);
+    // Consume the id param so refresh doesn't re-trigger
+    const next = new URLSearchParams(searchParams);
+    next.delete('id');
+    setSearchParams(next, { replace: true });
+    const t = window.setTimeout(() => setHighlightId(null), 3000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId, data]);
 
   async function setStatus(id: string, status: FeedbackStatus) {
     try {
@@ -223,7 +252,17 @@ export default function FeedbackTab() {
         {items.length > 0 && (
           <ul className="divide-y divide-ga-border">
             {items.map((f) => (
-              <li key={f.id} className="py-3">
+              <li
+                key={f.id}
+                ref={(el) => {
+                  if (el) rowRefs.current.set(f.id, el);
+                  else rowRefs.current.delete(f.id);
+                }}
+                className={cn(
+                  'py-3 transition-colors',
+                  highlightId === f.id && 'ring-2 ring-ga-accent rounded-md bg-ga-accent/5 px-2 -mx-2',
+                )}
+              >
                 <div className="flex items-start gap-3 flex-wrap">
                   <div className="flex flex-col gap-1 min-w-[180px]">
                     <span className={`text-xs px-1.5 py-0.5 rounded inline-block w-fit ${statusColor(f.status)}`}>

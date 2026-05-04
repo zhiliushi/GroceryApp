@@ -63,6 +63,34 @@ export interface AuthUser {
   maintenance_message?: string;
 }
 
+// === Feedback ===
+// P1.5 — admin notifications + my-feedback view (2026-05-04).
+export type FeedbackKind = 'cap_request' | 'bug' | 'feature' | 'general';
+export type FeedbackStatus = 'new' | 'triaged' | 'resolved' | 'wont_fix';
+
+export interface FeedbackEntry {
+  id: string;
+  user_id: string;
+  user_email?: string | null;
+  kind: FeedbackKind;
+  source: string;
+  message: string;
+  context?: Record<string, unknown>;
+  status: FeedbackStatus;
+  admin_notes?: string | null;
+  /** Set when admin types a reply on FeedbackTab. Surfaces to the user
+   *  in MyFeedbackSection + as an in-app notification (P6). */
+  admin_response?: string | null;
+  responded_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MyFeedbackResponse {
+  items: FeedbackEntry[];
+  count: number;
+}
+
 // === Dashboard ===
 export interface DashboardStats {
   total_users: number;

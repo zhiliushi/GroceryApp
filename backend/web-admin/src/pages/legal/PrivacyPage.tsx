@@ -89,6 +89,18 @@ export default function PrivacyPage() {
             data; no account data sent), Google Vision / Mindee (only if <code>ocr_enabled</code>
             flag is ON; image bytes sent for OCR, never stored by us).
           </li>
+          <li>
+            <strong>Telegram Bot API</strong> (admin notifications only):
+            when you submit feedback via the in-app form, a notification is
+            sent to the operator's Telegram chat so they can read it on their
+            phone and respond promptly. The notification carries: your email,
+            the page you submitted from, your message text (up to 1500 chars),
+            and your last 5 visited routes. Your Telegram-side data is governed
+            by Telegram's own privacy policy. Disabling: clear the relevant
+            backend env vars; feedback writes still work, only the push channel
+            stops. No data flows to Telegram for users who don't submit
+            feedback.
+          </li>
         </ul>
       </Section>
 

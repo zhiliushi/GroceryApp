@@ -44,3 +44,19 @@ async def submit_feedback(
         context=body.context,
         user_email=user.email,
     )
+
+
+@router.get("/mine")
+async def list_my_feedback(
+    limit: int = 50,
+    user: UserInfo = Depends(get_current_user),
+):
+    """User-scoped feedback list. Powers the My Feedback view in
+    Settings — closes the loop so users can see what they submitted +
+    where each item stands.
+
+    Auth: any authenticated user; returns only their own rows. Admin
+    browse (all users) lives at /api/admin/feedback per admin.py.
+    """
+    items = feedback_service.list_feedback(user_id=user.uid, limit=limit)
+    return {"items": items, "count": len(items)}

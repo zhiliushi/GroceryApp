@@ -38,5 +38,11 @@ services:
         sync: false
       - key: FIREBASE_WEB_PROJECT_ID
         sync: false
+      # Admin Telegram alerts (P1.5 — feedback notifications). Both empty
+      # = silently disabled. Setup: docs/TELEGRAM_ADMIN_SETUP.md
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false  # from @BotFather; never commit
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false  # numeric; from /getUpdates after starting a chat with the bot
     healthCheckPath: /health
     autoDeploy: true
