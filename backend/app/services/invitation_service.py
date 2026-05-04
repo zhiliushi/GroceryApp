@@ -160,8 +160,13 @@ def accept_invite(
         ValueError: with a human-readable message for any of:
             - Invalid code, already used, revoked, expired
             - Email mismatch (if invitation is email-bound)
-            - User already in another household / same household
+            - User already a member of THIS household (dedup)
             - Household full / not found
+
+    MH-3c: multi-membership is allowed. The previous "already in another
+    household" cross-household block has been removed. Users may join N
+    households as a member; ownership is still single (enforced separately
+    in `household_service.create_household`).
     """
     from app.services import household_service
 
@@ -203,20 +208,16 @@ def accept_invite(
             if invited_email != actual_email:
                 raise ValueError("This invitation is for a different email address.")
 
-        # Read user — check existing household membership
+        # Read user — only blocks if they're already a member of THIS household.
+        # MH-3c: cross-household block removed; multi-membership is allowed.
         user_ref = db.collection("users").document(uid)
         user_snap = user_ref.get(transaction=txn)
-        existing_hid = None
+        existing_active_hid = None
         if user_snap.exists:
-            existing_hid = (user_snap.to_dict() or {}).get("household_id")
+            existing_active_hid = (user_snap.to_dict() or {}).get("household_id")
 
-        if existing_hid:
-            if existing_hid == invitation["household_id"]:
-                raise ValueError("You're already a member of this household.")
-            raise ValueError(
-                f"You're already in another household. Leave first to join "
-                f"'{invitation.get('household_name', 'this household')}'."
-            )
+        if existing_active_hid == invitation["household_id"]:
+            raise ValueError("You're already a member of this household.")
 
         # Read target household
         household_id = invitation["household_id"]
@@ -265,10 +266,35 @@ def accept_invite(
             "members": members,
             "updated_at": now_iso,
         })
-        txn.update(user_ref, {
+
+        # MH-3c: write canonical membership doc inside the same transaction.
+        # Idempotent via merge; safe to retry.
+        membership_ref = (
+            db.collection("users").document(uid)
+            .collection("memberships").document(household_id)
+        )
+        txn.set(membership_ref, {
             "household_id": household_id,
-            "household_role": "member",
-        })
+            "role": "member",
+            "joined_at": now_iso,
+            "frozen": False,
+        }, merge=True)
+
+        # Legacy active-scope shadow: only set if the user has no current scope.
+        # New users get this household as their first scope. Multi-household
+        # users keep their existing scope and switch via the SPA pill.
+        if user_snap.exists:
+            if not existing_active_hid:
+                txn.update(user_ref, {
+                    "household_id": household_id,
+                    "household_role": "member",
+                })
+        else:
+            txn.set(user_ref, {
+                "household_id": household_id,
+                "household_role": "member",
+            }, merge=True)
+
         txn.update(inv_ref, {
             "status": "accepted",
             "accepted_by": uid,
