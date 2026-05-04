@@ -60,19 +60,32 @@ export default function AboutPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const r = await fetch(API.EXTERNAL_LINKS, { credentials: 'omit' });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const body = (await r.json()) as PublicLinksResponse;
-        if (!cancelled) setData(body);
-      } catch (err) {
-        if (!cancelled) {
-          const msg = err instanceof Error ? err.message : 'Failed to load links';
-          setError(msg);
+      const maxAttempts = 4;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const r = await fetch(API.EXTERNAL_LINKS, { credentials: 'omit' });
+          if (r.status === 429 && attempt < maxAttempts) {
+            const retryAfter = Number(r.headers.get('Retry-After')) || 0;
+            const capped = Math.min(retryAfter, 4) * 1000;
+            const waitMs = Math.max(capped, 1500 * attempt);
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+            continue;
+          }
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const body = (await r.json()) as PublicLinksResponse;
+          if (!cancelled) {
+            setData(body);
+            setError(null);
+          }
+          break;
+        } catch (err) {
+          if (attempt === maxAttempts && !cancelled) {
+            const msg = err instanceof Error ? err.message : 'Failed to load links';
+            setError(msg);
+          }
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;

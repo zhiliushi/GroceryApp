@@ -97,6 +97,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         authenticated_limit: int = 200,
         exempt_paths: tuple[str, ...] = (
             "/health", "/static", "/assets", "/sw.js", "/manifest.webmanifest",
+            # Public read for AboutPage. Cheap (≤50-doc Firestore read), no
+            # auth, equivalent to static content. Rate-limiting it would
+            # break the donation page for users behind shared NATs.
+            "/api/external-links",
         ),
     ):
         super().__init__(app)
