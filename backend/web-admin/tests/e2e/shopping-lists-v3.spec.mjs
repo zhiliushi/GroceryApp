@@ -179,14 +179,18 @@ export default {
 
     // ─── Step 3 of v3: checkout (tick the alt) ─────────────────
     await step('tick-alternative', async () => {
-      // Find the alt row by brand name and tick its checkbox
+      // Find the alt row by brand name and tick its checkbox.
+      // Using click() (not check()) — check() auto-retries on state mismatch
+      // and races with React Query's invalidate→refetch cycle that updates
+      // the controlled checkbox. The next assertion (footer "1 ticked")
+      // gates on the actual state change.
       const altRow = page
         .locator('li')
         .filter({ has: page.locator(`text="${ALT_BRAND}"`) })
         .first()
-      await altRow.locator('input[type="checkbox"]').check()
+      await altRow.locator('input[type="checkbox"]').click()
       // Footer should now show "1 ticked"
-      await expect(page.locator('text=/1 ticked/').first()).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator('text=/1 ticked/').first()).toBeVisible({ timeout: 10_000 })
     })
 
     await step('checkout-footer-shows-totals', async () => {

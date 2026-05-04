@@ -399,11 +399,14 @@ def add_item(uid: str, list_id: str, payload: Dict[str, Any], *, source: str = "
     # their catalog cap. We let it bubble up to the route layer.
     if not cleaned.get("source_catalog_name_norm"):
         from app.services import catalog_service
+        # `source` on the catalog row is the originating flow (must be in
+        # VALID_SOURCES). The shopping-list-item's own `source` field
+        # already captures the entry-point detail (manual/scan/catalog/...).
         catalog_entry = catalog_service.upsert_catalog_entry(
             user_id=uid,
             display_name=cleaned["item_name"],
             barcode=cleaned.get("barcode"),
-            source=f"shopping_list_v3:{source}",
+            source="shopping_list_v3",
             actor_uid=uid,
         )
         cleaned["source_catalog_name_norm"] = catalog_entry["name_norm"]
@@ -669,7 +672,7 @@ def add_price(
                 user_id=uid,
                 display_name=display_name,
                 barcode=cleaned.get("barcode"),
-                source="shopping_list_v3:alt",
+                source="shopping_list_v3",
                 actor_uid=uid,
             )
             cleaned["source_catalog_name_norm"] = catalog_entry["name_norm"]

@@ -39,6 +39,7 @@ VALID_SOURCES = frozenset({
     "receipt",
     "manual",
     "test_seed",  # admin /seed-test-data endpoint tag, used for idempotent teardown
+    "shopping_list_v3",  # catalog rows auto-created via v3 shopping-list flow
 })
 
 
