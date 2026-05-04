@@ -1,0 +1,1 @@
+import{t as e}from"./useQuery-MzIT-t93.js";import{t}from"./client-2OIR4hLK.js";import{t as n}from"./endpoints-CT0ohmEW.js";import{t as r}from"./index-D3HfrdBd.js";function i(){return e({queryKey:r.household,queryFn:()=>t.get(n.HOUSEHOLD_MY).then(e=>e.data),staleTime:6e4})}export{i as t};
