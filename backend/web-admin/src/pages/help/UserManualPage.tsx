@@ -1180,6 +1180,23 @@ function Preppers() {
       </p>
 
       <h3 className="text-sm font-semibold text-emerald-400 mt-4">
+        "Worth keeping in rotation" recommendations
+      </h3>
+      <p className="text-xs text-ga-text-secondary">
+        Below your active batches, a <strong>✨ Worth keeping in rotation</strong>{' '}
+        section surfaces preserves whose ingredients overlap with your saved
+        cooking recipes (Meals page) and your frequently-bought catalog
+        items. Each tile shows a <strong>★ N matches</strong> badge —
+        more matches = stronger fit for your cooking pattern.
+      </p>
+      <p className="text-xs text-ga-text-secondary">
+        Already-active preserves are excluded automatically. New users
+        with no recipes / no purchase history see an empty state with
+        guidance — add a few recipes or build up your catalog and the
+        list populates.
+      </p>
+
+      <h3 className="text-sm font-semibold text-emerald-400 mt-4">
         "Use first" rotation
       </h3>
       <p className="text-xs text-ga-text-secondary">

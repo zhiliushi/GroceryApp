@@ -6,6 +6,7 @@ import {
   usePrepEligibility,
   usePrepRecipes,
   usePreppersHousehold,
+  usePreppersRecommendations,
   usePreppersSupply,
   useCreatePrepBatch,
   useSetPrepBatchStatus,
@@ -21,6 +22,8 @@ import type {
   PrepEligibility,
   PrepHousehold,
   PrepRecipe,
+  PrepRecommendation,
+  PrepRecommendationsResponse,
   PrepSupplyEstimate,
 } from '@/types/api';
 
@@ -44,6 +47,7 @@ export default function PreppersPage() {
   const { data: eligibility } = usePrepEligibility(enabled);
   const { data: household } = usePreppersHousehold(enabled);
   const { data: supply } = usePreppersSupply(enabled);
+  const { data: recommendations } = usePreppersRecommendations(enabled);
 
   if (!enabled) {
     return <NotAvailable userEnabled={userEnabled} flagEnabled={flagEnabled} />;
@@ -69,6 +73,7 @@ export default function PreppersPage() {
       {eligibility && <EligibilityScore eligibility={eligibility} />}
 
       <ActiveBatches batches={batches?.batches} loading={batchesLoading} />
+      {recommendations && <Recommendations data={recommendations} />}
       <MyRecipes recipes={recipes?.recipes} loading={recipesLoading} />
       <CommonPresets preserves={preserves?.items} loading={preservesLoading} />
     </div>
@@ -501,6 +506,101 @@ function BatchRow({
           🗑
         </button>
       </div>
+    </li>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function Recommendations({ data }: { data: PrepRecommendationsResponse }) {
+  const recs = data.recommendations;
+  if (recs.length === 0 && data.user_signal_count === 0) {
+    // No signal at all — explain how to populate it.
+    return (
+      <section className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-ga-text-primary mb-1 flex items-center gap-2">
+          ✨ Worth keeping in rotation
+        </h2>
+        <p className="text-xs text-ga-text-secondary">{data.explanation}</p>
+      </section>
+    );
+  }
+  if (recs.length === 0) {
+    // Has signal but no preserve matched — gentle nudge.
+    return (
+      <section className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-ga-text-primary mb-1 flex items-center gap-2">
+          ✨ Worth keeping in rotation
+        </h2>
+        <p className="text-xs text-ga-text-secondary">{data.explanation}</p>
+      </section>
+    );
+  }
+  return (
+    <section className="bg-ga-bg-card border border-ga-border rounded-lg p-4">
+      <header className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold text-ga-text-primary flex items-center gap-2">
+          ✨ Worth keeping in rotation
+        </h2>
+        <span className="text-[10px] text-ga-text-secondary">
+          based on your cooking + buys
+        </span>
+      </header>
+      <p className="text-[10px] text-ga-text-secondary italic mb-3">
+        {data.explanation}
+      </p>
+      <ul className="space-y-2">
+        {recs.map((r) => (
+          <RecommendationRow key={r.preserve.name_norm} rec={r} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function RecommendationRow({ rec }: { rec: PrepRecommendation }) {
+  const start = useCreatePrepBatch();
+  const matched = rec.matched_ingredients;
+  return (
+    <li className="flex items-center justify-between gap-3 px-3 py-2 bg-ga-bg-hover/40 rounded-md">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <span className="text-2xl flex-shrink-0">
+          {PREP_TYPE_ICONS[rec.preserve.prep_type] || '🥫'}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="text-sm text-ga-text-primary truncate">
+              {rec.preserve.display_name}
+            </div>
+            <span
+              className="text-[10px] uppercase tracking-wider bg-emerald-500/20 text-emerald-200 px-1.5 py-0.5 rounded-full flex-shrink-0"
+              title={rec.reasoning}
+            >
+              ★ {rec.score} match{rec.score !== 1 ? 'es' : ''}
+            </span>
+          </div>
+          <div className="text-[10px] text-ga-text-secondary truncate">
+            matches: {matched.slice(0, 3).join(', ')}
+            {matched.length > 3 ? '…' : ''}
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={() =>
+          start.mutate({
+            name: rec.preserve.display_name,
+            prep_type: rec.preserve.prep_type,
+            ready_after_hours: rec.preserve.default_ready_after_hours,
+            shelf_life_days: rec.preserve.default_shelf_life_days,
+            servings: 4,
+            common_preserve_ref: rec.preserve.name_norm,
+          })
+        }
+        disabled={start.isPending}
+        className="text-xs px-3 py-1.5 bg-ga-accent/20 hover:bg-ga-accent/30 text-ga-accent rounded flex-shrink-0"
+      >
+        Start batch
+      </button>
     </li>
   );
 }

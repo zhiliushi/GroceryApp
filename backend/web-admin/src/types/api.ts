@@ -798,6 +798,39 @@ export interface PrepBatchesResponse {
 }
 
 /**
+ * One "worth keeping in rotation" recommendation: a preserve from the
+ * common-preserves catalog whose ingredients overlap with the user's
+ * cooking recipes / frequent-buy catalog. Already-active preserves are
+ * excluded server-side.
+ */
+export interface PrepRecommendation {
+  preserve: {
+    name_norm: string;
+    display_name: string;
+    prep_type: PrepType;
+    default_ready_after_hours: number;
+    default_shelf_life_days: number;
+    description: string;
+  };
+  /** Number of preserve ingredients matched against signal pool. */
+  score: number;
+  matched_ingredients: string[];
+  match_sources: {
+    from_recipes: string[];
+    from_catalog: string[];
+  };
+  reasoning: string;
+}
+
+export interface PrepRecommendationsResponse {
+  recommendations: PrepRecommendation[];
+  user_signal_count: number;
+  recipe_ingredient_count: number;
+  frequent_catalog_count: number;
+  explanation: string;
+}
+
+/**
  * Household composition used by the preppers supply estimate. Per-person
  * daily servings are configurable; defaults are 3.0 / 2.5 / 2.5.
  */

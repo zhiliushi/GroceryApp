@@ -25,6 +25,7 @@ from app.services import (
     prep_batch_service,
     prep_eligibility_service,
     prep_recipe_service,
+    prep_recommendation_service,
     prep_supply_service,
     user_service,
 )
@@ -101,6 +102,21 @@ async def update_preppers_household(
 async def get_preppers_supply_estimate(user: UserInfo = Depends(require_preppers)):
     """Days-of-supply projection from active batches + household composition."""
     return prep_supply_service.compute_supply_estimate(user.uid)
+
+
+# ---------------------------------------------------------------------------
+# Recommendations — "worth keeping in rotation"
+# ---------------------------------------------------------------------------
+
+
+@router.get("/recommendations")
+async def get_preppers_recommendations(
+    top_k: int = 5, user: UserInfo = Depends(require_preppers),
+):
+    """Score common preserves by ingredient overlap with the user's cooking
+    recipes + frequent-buy catalog. Excludes preserves already in an active
+    batch."""
+    return prep_recommendation_service.compute_recommendations(user.uid, top_k=top_k)
 
 
 # ---------------------------------------------------------------------------

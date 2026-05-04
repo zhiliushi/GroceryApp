@@ -106,6 +106,7 @@ export const API = {
   PREPPERS_ELIGIBILITY: '/api/preppers/eligibility',
   PREPPERS_HOUSEHOLD: '/api/preppers/household',
   PREPPERS_SUPPLY_ESTIMATE: '/api/preppers/supply-estimate',
+  PREPPERS_RECOMMENDATIONS: '/api/preppers/recommendations',
 
   // Household
   HOUSEHOLD_MY: '/api/household/my',

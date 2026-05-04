@@ -10,6 +10,7 @@ import type {
   PrepHousehold,
   PrepRecipe,
   PrepRecipesResponse,
+  PrepRecommendationsResponse,
   PrepSupplyEstimate,
 } from '@/types/api';
 
@@ -104,6 +105,7 @@ export function useCreatePrepBatch() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
     },
   });
 }
@@ -123,6 +125,7 @@ export function useSetPrepBatchStatus() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
     },
   });
 }
@@ -135,6 +138,7 @@ export function useDeletePrepBatch() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['preppers', 'batches'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
     },
   });
 }
@@ -183,6 +187,7 @@ export function useUpdatePreppersHousehold() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['preppers', 'household'] });
       qc.invalidateQueries({ queryKey: ['preppers', 'supply-estimate'] });
+      qc.invalidateQueries({ queryKey: ['preppers', 'recommendations'] });
     },
   });
 }
@@ -201,5 +206,23 @@ export function usePreppersSupply(enabled = true) {
         .then((r) => r.data),
     enabled,
     staleTime: 30_000,
+  });
+}
+
+/**
+ * "Worth keeping in rotation" preserve recommendations. Scored by
+ * ingredient overlap with cooking recipes + frequent-buy catalog.
+ * Cached longer than batches since it changes only when new recipes
+ * are added or new items become frequent.
+ */
+export function usePreppersRecommendations(enabled = true) {
+  return useQuery({
+    queryKey: ['preppers', 'recommendations'],
+    queryFn: () =>
+      apiClient
+        .get<PrepRecommendationsResponse>(API.PREPPERS_RECOMMENDATIONS)
+        .then((r) => r.data),
+    enabled,
+    staleTime: 5 * 60_000,
   });
 }
