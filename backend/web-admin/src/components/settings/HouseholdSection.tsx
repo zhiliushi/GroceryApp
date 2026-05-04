@@ -318,7 +318,114 @@ function HouseholdView({ data, currentUid }: { data: import('@/types/api').House
         )}
       </div>
 
+      {/* MH-4: "Create your own household" — visible only to non-owners.
+          Asymmetric model: owner=1, member=N. Backend create_household
+          enforces "you can only own one"; this UI surfaces the entry only
+          when it's actionable. Hidden for owners (they already have one).
+          The form below is a thin shell that calls useCreateHousehold;
+          on success the new household becomes the user's active scope and
+          existing memberships stay intact. */}
+      {!isOwner && (
+        <div className="border-t border-ga-border pt-4">
+          <CreateOwnHouseholdInline availableRoles={data.available_roles} />
+        </div>
+      )}
+
       <ConfirmDialog state={dialog.state} onCancel={dialog.close} />
     </div>
+  );
+}
+
+
+// ==========================================================================
+// MH-4 — "Create your own household" inline form
+// ==========================================================================
+
+/**
+ * Collapsible "Create your own household" entry, surfaced inside HouseholdView
+ * for users who are members of someone else's household but don't yet own one.
+ *
+ * Mirrors the create form from NoHouseholdView but compact (no separate Join
+ * input; that's the parent's job). On success the new household becomes the
+ * user's active scope automatically (per backend behaviour); existing
+ * memberships stay intact.
+ *
+ * Hidden by default — collapsed `<details>` so the entry is discoverable
+ * without dominating the section. Discoverability rationale (asymmetric
+ * model, owner=1/member=N) lives in docs/PLAN_ONBOARDING_V2.md MH-4.
+ */
+function CreateOwnHouseholdInline({ availableRoles }: { availableRoles: FamilyRole[] }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [selectedRole, setSelectedRole] = useState('papa');
+  const createMutation = useCreateHousehold();
+
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      className="group"
+    >
+      <summary className="cursor-pointer list-none text-xs text-ga-accent hover:underline flex items-center gap-1.5">
+        <span>+ Create your own household</span>
+        <span className="text-[10px] text-ga-text-secondary group-open:rotate-180 transition-transform">▾</span>
+      </summary>
+
+      <div className="mt-3 space-y-3 pl-2 border-l border-ga-border">
+        <p className="text-xs text-ga-text-secondary leading-snug">
+          Become the owner of a new household alongside your current memberships.
+          You&apos;ll switch to it as your active view; existing memberships stay
+          and you can switch back via the household pill in the top bar. You can
+          only own one household at a time.
+        </p>
+
+        <div>
+          <label className="block text-xs text-ga-text-secondary mb-1">Household name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. My Family"
+            maxLength={50}
+            className="w-full bg-ga-bg-hover border border-ga-border rounded-lg px-3 py-2 text-sm text-ga-text-primary"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-ga-text-secondary mb-1">Your role</label>
+          <div className="flex gap-1.5 flex-wrap">
+            {availableRoles.map((role) => (
+              <button
+                key={role.key}
+                type="button"
+                onClick={() => setSelectedRole(role.key)}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-xs flex items-center gap-1',
+                  selectedRole === role.key
+                    ? 'bg-ga-accent text-white'
+                    : 'border border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+                )}
+              >
+                <span>{role.icon}</span> {role.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button
+          onClick={() => createMutation.mutate({ name, role: selectedRole })}
+          disabled={name.trim().length < 2 || createMutation.isPending}
+          title="Create a new household where you are the owner. Existing memberships stay; the new one becomes your active view."
+          className="bg-ga-accent hover:bg-ga-accent/90 disabled:opacity-50 text-white text-xs font-medium rounded-lg px-3 py-1.5"
+        >
+          {createMutation.isPending ? 'Creating…' : '🏠 Create Household'}
+        </button>
+
+        {createMutation.error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400">
+            {(createMutation.error as Error).message}
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
