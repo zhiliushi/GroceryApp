@@ -232,6 +232,10 @@ See [`docs/FUTURE_HOUSEHOLD_CATALOG_MERGE.md`](FUTURE_HOUSEHOLD_CATALOG_MERGE.md
 
 Currently `insights_service._narrative(milestone, stats)` is rule-based. Swap to LLM call (Ollama local first, fallback to OpenAI). Tests become more flexible (look for key facts, not exact text).
 
+### D7. Receipt-scan bulk import — **~4 days**
+
+See [`docs/FUTURE_RECEIPT_OCR.md`](FUTURE_RECEIPT_OCR.md). User-flagged in the 2026-05-04 walkthrough as the single highest-leverage UX investment ("Saturday shop = a chore, 8-10 minutes to log 15 items"). Captures a receipt photo, returns parsed `{store, total, currency, lines: [{name, qty, price}]}`, draft purchase events on a confirmation page, bulk-save. Trigger when D2 mobile refactor is underway or real-user fatigue reports accumulate.
+
 ---
 
 ## ⚪ Phase E — Observability & scale (when the user base grows past ~100 DAU)
