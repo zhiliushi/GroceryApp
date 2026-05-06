@@ -1553,6 +1553,10 @@ export interface PurchaseCreateRequest {
   country?: string;
   /** Phase D: store_id to charge this purchase against. Defaults server-side to "unknown". */
   store_id?: string | null;
+  /** Category slug from frontend ITEM_CATEGORIES preset (e.g.
+   *  'fruit_veg', 'jam_honey', 'dairy'). Backend writes to the
+   *  catalog row's default_category — set-only-if-missing. */
+  category?: string;
 }
 
 /**

@@ -90,6 +90,13 @@ def create_purchase(
     # countries via quota_service.check_state_quota / check_country_quota.
     state: Optional[str] = None,
     country: Optional[str] = None,
+    # Category slug from the frontend ITEM_CATEGORIES preset list
+    # (e.g. "fruit_veg", "jam_honey", "dairy"). When provided, written
+    # to the catalog row's default_category — set-only-if-missing
+    # semantics inside catalog_service.upsert_catalog_entry, so the
+    # first-add wins and re-categorization happens via direct catalog
+    # edits (not via re-add).
+    category: Optional[str] = None,
 ) -> dict:
     """Create a purchase event. Transactionally upserts catalog entry + increments counters.
 
@@ -130,6 +137,7 @@ def create_purchase(
                 else None
             ),
             default_location=location,
+            default_category=category,
             source=source,
             actor_uid=user_id,
         )
@@ -148,6 +156,12 @@ def create_purchase(
             # Attach barcode to existing catalog entry
             catalog_service.update_catalog_entry(user_id, resolved_name_norm, {"barcode": barcode})
             country_code = country_code or country_service.detect_country_by_barcode(barcode)
+        # Backfill default_category on existing catalog row when caller
+        # provided one and the row hasn't been categorized yet. Mirrors
+        # the upsert path's set-only-if-missing semantic so explicit
+        # recategorization remains a separate edit.
+        if category and not catalog_entry.get("default_category"):
+            catalog_service.update_catalog_entry(user_id, resolved_name_norm, {"default_category": category})
 
     # --- Parse expiry (natural language overrides raw ISO if both provided) ---
     parsed_expiry = expiry_date
@@ -299,6 +313,13 @@ def create_multi_pack(
     # base_unit_label and the catalog's unit_type.
     pack_label: Optional[str] = None,
     base_unit: Optional[str] = None,
+    # Single-mode parity (added 2026-06-05): bulk mode previously
+    # dropped these fields. Threaded through here so each generated
+    # event carries them like a single-mode purchase would.
+    category: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    state: Optional[str] = None,
+    country: Optional[str] = None,
 ) -> dict:
     """Create N events sharing a `multi_pack_parent_id`.
 
@@ -346,6 +367,12 @@ def create_multi_pack(
             # multi-pack mode is by definition a packed purchase.
             pack_label=pack_label or "pack",
             base_unit=base_unit,
+            # Single-mode parity (2026-06-05): bulk now passes through
+            # category / payment / state / country just like single does.
+            category=category,
+            payment_method=payment_method,
+            state=state,
+            country=country,
         )
         events.append(ev)
 

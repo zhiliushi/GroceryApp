@@ -25,6 +25,7 @@ import DidYouMeanSuggestions from './DidYouMeanSuggestions';
 import QuotaHitPicker from '@/components/quota/QuotaHitPicker';
 import StoreSelect from '@/components/stores/StoreSelect';
 import { cn } from '@/utils/cn';
+import { ITEM_CATEGORIES } from '@/utils/categories';
 import type { CatalogEntry, PaymentMethod, ScanInfo } from '@/types/api';
 
 interface QuickAddModalProps {
@@ -109,6 +110,10 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
   // 30 distinct values each (backend `quota_service`).
   const [state, setState] = useState<string>('');
   const [country, setCountry] = useState<string>('');
+  // Category — preset slug from ITEM_CATEGORIES. Empty string = let
+  // the backend leave default_category null (uncategorized). Pre-fills
+  // from the matched catalog row's default_category when present.
+  const [category, setCategory] = useState<string>('');
 
   // Lock the page-behind from scrolling while this modal is open.
   // Without this, scroll events over the backdrop (or after the modal
@@ -159,6 +164,9 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
       setStoreLabel('');
       setState('');
       setCountry('');
+      // Pre-fill category from the matched catalog row when present.
+      // Defaults to '' (uncategorized) for first-time items.
+      setCategory(defaults?.catalogEntry?.default_category ?? '');
     }
   }, [open, defaults, userCurrency]);
 
@@ -271,6 +279,11 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
       if (entry.unit_type && unit === 'count') {
         setUnit(defaultBaseUnit(entry.unit_type));
       }
+      // Pre-fill category from the catalog row. Only override when the
+      // user hasn't picked one this session — let manual selection win.
+      if (entry.default_category && !category) {
+        setCategory(entry.default_category);
+      }
     }
   }
 
@@ -304,6 +317,13 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
           base_unit_label: unit,
           base_unit: unit,
           pack_label: packLabel || 'pack',
+          // Bulk-mode parity (added 2026-06-05): pass through the same
+          // optional fields single-mode does. Backend route forwards
+          // each to per-event create_purchase calls.
+          category: category || null,
+          payment_method: paymentMethod || null,
+          state: state.trim() || null,
+          country: country.trim() || null,
         },
         {
           onSuccess: () => { onSaved?.(); onClose(); },
@@ -336,6 +356,7 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
         currency: price && currency ? currency : undefined,
         payment_method: paymentMethod || undefined,
         store_id: storeId || undefined,
+        category: category || undefined,
       },
       {
         onSuccess: () => onClose(),
@@ -458,6 +479,29 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
           </div>
 
           <ExpiryInput value={expiryRaw} onChange={setExpiryRaw} />
+
+          {/* Category — preset dropdown only (no free text) so the
+              corpus stays clean as the user crosses 1000+ items.
+              Pre-fills from the matched catalog row's default_category.
+              Empty = "uncategorized" — backend leaves the catalog row
+              alone in that case. See utils/categories.ts for the list. */}
+          <div>
+            <label className="block text-xs text-ga-text-secondary mb-1">
+              Category
+            </label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-3 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
+            >
+              <option value="">— Pick one (optional) —</option>
+              {ITEM_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.emoji} {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* UNIT_TYPE_TOUCHPOINT — Single vs Bulk segmented control.
               Replaces the old "Multi-pack purchase" checkbox + dynamic
@@ -683,10 +727,12 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
 
               {/* Optional descriptive pack label. Kept SEPARATE from the
                   column headers so renaming a pack ("carton" → "case")
-                  doesn't change the field labels. */}
+                  doesn't change the field labels. Filter out 'loose'
+                  from bulk-mode suggestions — it conceptually only
+                  fits single-mode (one item, no container). */}
               <div>
                 <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
-                  Pack label (optional)
+                  Container type (optional)
                 </label>
                 <input
                   type="text"
@@ -695,16 +741,18 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
                   onChange={(e) =>
                     setPackLabel(e.target.value.trim().toLowerCase())
                   }
-                  placeholder="carton / box / bag / bottle / case …"
+                  placeholder="pack / carton / box / bag / bottle …"
                   className="w-full px-2 py-2 bg-ga-bg-card border border-ga-border rounded-md text-ga-text-primary focus:outline-none focus:border-ga-accent"
                 />
                 <datalist id="pack-label-suggestions">
-                  {suggestedPackLabels(matchedUnitType).map((label) => (
-                    <option key={label} value={label} />
-                  ))}
+                  {suggestedPackLabels(matchedUnitType)
+                    .filter((label) => label !== 'loose')
+                    .map((label) => (
+                      <option key={label} value={label} />
+                    ))}
                 </datalist>
                 <p className="mt-1 text-[10px] text-ga-text-secondary">
-                  Optional, but adds accuracy to waste / recommendation
+                  What's it sold in? (carton, bottle, bag, etc.) Optional, adds accuracy to waste / recommendation
                   insights (e.g. "you tend to throw 1 unfinished bottle
                   per case").
                 </p>
@@ -785,6 +833,60 @@ export default function QuickAddModal({ open, onClose, defaults, onSaved }: Quic
                   />
                 </div>
               </div>
+
+              {/* Bulk-mode parity (added 2026-06-05): Store + Payment
+                  fields used to live only in single-mode's "More
+                  details" section. Bulk needs them too — buying 6
+                  cartons of milk is still paid with cash/card from a
+                  specific store. Same shape as single-mode below. */}
+              {financialTracking && (
+                <>
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      Store (where bought)
+                    </label>
+                    <StoreSelect
+                      value={storeId}
+                      valueLabel={storeLabel}
+                      onChange={(id, label) => {
+                        setStoreId(id);
+                        setStoreLabel(label);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-ga-text-secondary mb-1 uppercase tracking-wide">
+                      Payment
+                    </label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {(
+                        [
+                          { key: 'cash', label: 'Cash', emoji: '💵' },
+                          { key: 'ewallet', label: 'eWallet', emoji: '📱' },
+                          { key: 'debit_card', label: 'Debit', emoji: '💳' },
+                          { key: 'credit_card', label: 'Credit', emoji: '💳' },
+                        ] as const
+                      ).map((m) => (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() =>
+                            setPaymentMethod(paymentMethod === m.key ? '' : m.key)
+                          }
+                          className={cn(
+                            'px-2 py-1.5 rounded-md border text-xs transition-colors',
+                            paymentMethod === m.key
+                              ? 'border-ga-accent bg-ga-accent/10 text-ga-text-primary'
+                              : 'border-ga-border text-ga-text-secondary hover:bg-ga-bg-hover',
+                          )}
+                        >
+                          <span aria-hidden="true">{m.emoji}</span> {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <p className="text-[10px] text-ga-text-secondary">
                 Saving creates {packCount} separate event

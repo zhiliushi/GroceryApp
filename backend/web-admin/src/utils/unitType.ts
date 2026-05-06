@@ -32,9 +32,16 @@ export const DEFAULT_BASE_UNIT_BY_TYPE: Record<UnitType, BaseUnit> = {
   weight: 'g',
 };
 
-/** Pack-label dropdown suggestions. Free-text is still allowed. */
+/** Pack-label dropdown suggestions. Free-text is still allowed.
+ *
+ * Order matters: callers (notably QuickAddModal bulk-mode init) take
+ * `[0]` as the default. 'loose' is moved to the end of every list so
+ * bulk-mode defaults to a sensible "pack"/"carton" rather than
+ * "loose" (which conceptually only fits single-mode where pack_size=1).
+ * Single-mode hardcodes pack_label='loose' independently — these
+ * suggestions don't drive that path. */
 export const SUGGESTED_PACK_LABELS_BY_TYPE: Record<UnitType, string[]> = {
-  count: ['loose', 'pack', 'carton', 'tray', 'box'],
+  count: ['pack', 'carton', 'tray', 'box', 'loose'],
   volume: ['carton', 'bottle', 'jug', 'can', 'sachet'],
   weight: ['pack', 'box', 'bag', 'jar', 'tin', 'loose'],
 };

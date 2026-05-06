@@ -125,6 +125,13 @@ class PurchaseCreate(BaseModel):
     # to "unknown" server-side when omitted.
     store_id: Optional[str] = None
 
+    # Category — preset slug from the frontend ITEM_CATEGORIES list
+    # (e.g. "fruit_veg", "dairy", "jam_honey"). When supplied, written
+    # to the catalog row's `default_category` so subsequent purchases
+    # of the same item inherit it. Free-text not validated server-side
+    # to keep the schema simple — the frontend dropdown is the gate.
+    category: Optional[str] = None
+
 
 class PurchaseUpdate(BaseModel):
     """Partial update for a purchase event."""

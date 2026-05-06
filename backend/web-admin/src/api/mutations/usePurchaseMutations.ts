@@ -78,6 +78,13 @@ export interface MultiPackCreateRequest {
   pack_label?: string | null;
   base_unit?: string | null;
   store_id?: string | null;
+  // Single-mode parity (added 2026-06-05): bulk now accepts the same
+  // optional fields single-mode does. Backend route passes them to
+  // create_multi_pack which forwards to each generated event.
+  category?: string | null;
+  payment_method?: string | null;
+  state?: string | null;
+  country?: string | null;
 }
 
 export interface MultiPackCreateResponse {

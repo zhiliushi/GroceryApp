@@ -82,6 +82,9 @@ async def create_purchase(
         # values each; QuotaExceededError otherwise).
         state=data.state,
         country=data.country,
+        # Category slug from frontend ITEM_CATEGORIES — written to the
+        # catalog row's default_category so subsequent purchases inherit.
+        category=data.category,
         source="api",
     )
     background_tasks.add_task(_check_milestones_safe, user.uid)
@@ -147,6 +150,14 @@ async def create_multi_pack(
             # base_unit_label/inference when omitted.
             pack_label=body.get("pack_label"),
             base_unit=body.get("base_unit"),
+            # Category + payment_method + state/country were missing from
+            # the multi-pack route — bulk mode now mirrors single-mode
+            # parity for these fields. All optional, all set-only-if-
+            # missing on the catalog upsert.
+            category=body.get("category"),
+            payment_method=body.get("payment_method"),
+            state=body.get("state"),
+            country=body.get("country"),
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
